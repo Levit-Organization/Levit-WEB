@@ -62,7 +62,12 @@ class RegistroService
     public function criarRegistro(string $moduloId, string $empresaId, string $usuarioId, array $dados): array
     {
         $campos         = $this->confirmarModuloDaEmpresa($moduloId, $empresaId, true);
+        $modulo         = $this->moduloModel->find($moduloId);
         $dadosValidados = $this->validarDadosDoRegistro($campos, $dados);
+
+        if ($modulo && $modulo['tipo'] === 'recrutamento') {
+            $dadosValidados['_fase_atual'] = 'triagem';
+        }
 
         $registroId = $this->registroModel->insert([
             'modulo_id'  => $moduloId,

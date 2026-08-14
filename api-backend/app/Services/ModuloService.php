@@ -26,9 +26,14 @@ class ModuloService
      */
     public function criarModulo(string $empresaId, string $usuarioId, array $dados): array
     {
+        $tipo   = $dados['tipo'] ?? 'dados';
         $campos = $dados['campos'] ?? [];
 
-        if (empty($campos)) {
+        if (! in_array($tipo, ['dados', 'arquivo', 'recrutamento'], true)) {
+            throw new \DomainException("Tipo de módulo inválido: '{$tipo}'.");
+        }
+
+        if ($tipo === 'dados' && empty($campos)) {
             throw new \DomainException('O módulo precisa de pelo menos um campo.');
         }
 
@@ -43,6 +48,7 @@ class ModuloService
             'empresa_id' => $empresaId,
             'nome'       => $dados['nome'],
             'icone'      => $dados['icone'] ?? null,
+            'tipo'       => $tipo,
             'criado_por' => $usuarioId,
         ]);
 

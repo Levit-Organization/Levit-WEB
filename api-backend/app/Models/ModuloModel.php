@@ -13,6 +13,7 @@ class ModuloModel extends BaseModel
         'empresa_id',
         'nome',
         'icone',
+        'tipo',
         'criado_por',
     ];
 

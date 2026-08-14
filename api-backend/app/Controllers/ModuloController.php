@@ -21,7 +21,8 @@ class ModuloController extends BaseApiController
         $rules = [
             'nome'   => ['required', 'min_length[2]', 'max_length[100]'],
             'icone'  => ['permit_empty', 'max_length[50]'],
-            'campos' => ['required'],
+            'tipo'   => ['permit_empty', 'in_list[dados,arquivo,recrutamento]'],
+            'campos' => ['permit_empty'],
         ];
 
         if (! $this->validateData($dados, $rules)) {

@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Modules from './pages/Modules';
 import ModuleForm from './pages/ModuleForm';
 import ModuleRecords from './pages/ModuleRecords';
+import RecrutamentoKanban from './pages/RecrutamentoKanban';
 
 function App() {
   return (
@@ -24,6 +25,12 @@ function App() {
           <Route path="/dashboard" element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/recrutamento" element={
+            <ProtectedRoute>
+              <RecrutamentoKanban />
             </ProtectedRoute>
           } />
           

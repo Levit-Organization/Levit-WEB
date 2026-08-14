@@ -13,6 +13,7 @@ export default function Layout({ children }) {
 
   const navItems = [
     { name: 'Dashboard', path: '/dashboard' },
+    { name: 'Recrutamento', path: '/recrutamento' },
     { name: 'Módulos', path: '/modulos' },
     { divider: true },
     { name: 'Equipe', path: '/equipe' },

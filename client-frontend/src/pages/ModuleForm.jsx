@@ -10,7 +10,8 @@ export default function ModuleForm() {
 
   const [formData, setFormData] = useState({
     nome: '',
-    icone: 'extension'
+    icone: 'extension',
+    tipo: 'dados'
   });
   const [campos, setCampos] = useState([]);
   const [camposOriginais, setCamposOriginais] = useState([]);
@@ -37,7 +38,8 @@ export default function ModuleForm() {
       if (modulo) {
         setFormData({
           nome: modulo.nome,
-          icone: modulo.icone || 'extension'
+          icone: modulo.icone || 'extension',
+          tipo: modulo.tipo || 'dados'
         });
         if (modulo.campos) {
           setCampos(modulo.campos);
@@ -224,8 +226,23 @@ export default function ModuleForm() {
                 className="w-full px-4 py-2 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
               />
             </div>
-            
+
             <div>
+              <label className="block text-sm font-medium mb-1">Tipo de Módulo</label>
+              <select 
+                name="tipo"
+                value={formData.tipo}
+                onChange={handleInputChange}
+                disabled={isEditing}
+                className="w-full px-4 py-2 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm disabled:bg-gray-100"
+              >
+                <option value="dados">Dados (Padrão)</option>
+                <option value="arquivo">Arquivos</option>
+                <option value="recrutamento">Recrutamento</option>
+              </select>
+            </div>
+            
+            <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-2">Ícone</label>
               <div className="flex flex-wrap gap-2">
                 {iconOptions.map(icon => (
