@@ -5,24 +5,17 @@ use CodeIgniter\Router\RouteCollection;
 /** @var RouteCollection $routes */
 $routes->get('/', 'Home::index');
 
-// Handle all CORS preflight OPTIONS requests
-$routes->options('(:any)', static function () {
-    return service('response')
-        ->setStatusCode(204)
-        ->setHeader('Access-Control-Allow-Origin', 'http://localhost:5173')
-        ->setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-        ->setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-        ->setHeader('Access-Control-Allow-Credentials', 'true')
-        ->setHeader('Access-Control-Max-Age', '7200');
-});
+$routes->addPlaceholder('uuid', '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
+$routes->set404Override('App\Controllers\Home::naoEncontrado');
 
 $routes->group('api/v1', function ($routes) {
+
     $routes->post('auth/registrar', 'AuthController::registrar');
     $routes->post('auth/login', 'AuthController::login');
     $routes->post('auth/logout', 'AuthController::logout', ['filter' => 'auth']);
 
     $routes->get('modulos', 'ModuloController::listar', ['filter' => 'auth']);
-    $routes->get('modulos/(:segment)', 'ModuloController::buscar/$1', ['filter' => 'auth']);
+    $routes->get('modulos/(:segment)', 'ModuloController::detalhes/$1', ['filter' => 'auth']);
     $routes->post('modulos', 'ModuloController::criar', ['filter' => 'auth:gerenciar_modulos']);
     $routes->put('modulos/(:segment)', 'ModuloController::atualizar/$1', ['filter' => 'auth:gerenciar_modulos']);
     $routes->delete('modulos/(:segment)', 'ModuloController::excluir/$1', ['filter' => 'auth:gerenciar_modulos']);
@@ -40,9 +33,24 @@ $routes->group('api/v1', function ($routes) {
     $routes->get('modulos/(:segment)/arquivos/(:segment)', 'ArquivoController::baixar/$1/$2', ['filter' => 'auth']);
     $routes->delete('modulos/(:segment)/arquivos/(:segment)', 'ArquivoController::excluir/$1/$2', ['filter' => 'auth']);
 
+    $routes->get('recrutamento/kanban', 'CandidatoController::kanbanGlobal', ['filter' => 'auth']);
+    $routes->put('recrutamento/candidatos/(:segment)/fase', 'CandidatoController::moverFaseGlobal/$1', ['filter' => 'auth']);
+
     $routes->post('publico/candidatura/(:segment)', 'CandidatoController::candidatar/$1', ['filter' => 'ratelimit']);
-    $routes->get('recrutamento/kanban', 'CandidatoController::kanban', ['filter' => 'auth']);
-    $routes->get('recrutamento/candidatos/(:segment)', 'CandidatoController::detalhes/$1', ['filter' => 'auth']);
-    $routes->put('recrutamento/candidatos/(:segment)/fase', 'CandidatoController::moverFase/$1', ['filter' => 'auth']);
-    $routes->delete('recrutamento/candidatos/(:segment)', 'CandidatoController::excluir/$1', ['filter' => 'auth:gerenciar_recrutamento']);
+    $routes->get('modulos/(:segment)/kanban', 'CandidatoController::kanban/$1', ['filter' => 'auth']);
+    $routes->get('modulos/(:segment)/candidatos/(:segment)', 'CandidatoController::detalhes/$1/$2', ['filter' => 'auth']);
+    $routes->put('modulos/(:segment)/candidatos/(:segment)/fase', 'CandidatoController::moverFase/$1/$2', ['filter' => 'auth']);
+    $routes->delete('modulos/(:segment)/candidatos/(:segment)', 'CandidatoController::excluir/$1/$2', ['filter' => 'auth:gerenciar_recrutamento']);
+    $routes->post('modulos/(:segment)/fases', 'ModuloController::adicionarFase/$1', ['filter' => 'auth:gerenciar_modulos']);
+    $routes->put('modulos/(:segment)/fases/reordenar', 'ModuloController::reordenarFases/$1', ['filter' => 'auth:gerenciar_modulos']);
+    $routes->put('modulos/(:segment)/fases/(:segment)', 'ModuloController::atualizarFase/$1/$2', ['filter' => 'auth:gerenciar_modulos']);
+    $routes->delete('modulos/(:segment)/fases/(:segment)', 'ModuloController::excluirFase/$1/$2', ['filter' => 'auth:gerenciar_modulos']);
+
+    $routes->get('cargos', 'CargoController::listar', ['filter' => 'auth:gerenciar_equipe']);
+    $routes->post('cargos', 'CargoController::criar', ['filter' => 'auth:gerenciar_equipe']);
+
+    $routes->post('equipe/convidar', 'EquipeController::convidar', ['filter' => 'auth:gerenciar_equipe']);
+    $routes->get('equipe', 'EquipeController::listarMembros', ['filter' => 'auth:gerenciar_equipe']);
+    $routes->delete('equipe/(:segment)', 'EquipeController::removerMembro/$1', ['filter' => 'auth:gerenciar_equipe']);
+    $routes->post('publico/convite/aceitar', 'EquipeController::aceitarConvite', ['filter' => 'ratelimit']);
 });

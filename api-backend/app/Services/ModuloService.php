@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\CampoModuloModel;
 use App\Models\ModuloModel;
 use App\Exceptions\NaoEncontradoException;
+use App\Models\FaseRecrutamentoModel;
+use App\Models\CandidatoModel;
 
 class ModuloService
 {
@@ -12,11 +14,15 @@ class ModuloService
 
     protected ModuloModel $moduloModel;
     protected CampoModuloModel $campoModuloModel;
+    protected FaseRecrutamentoModel $faseRecrutamentoModel;
+    protected CandidatoModel $candidatoModel;
 
     public function __construct()
     {
-        $this->moduloModel      = new ModuloModel();
-        $this->campoModuloModel = new CampoModuloModel();
+        $this->moduloModel           = new ModuloModel();
+        $this->campoModuloModel      = new CampoModuloModel();
+        $this->faseRecrutamentoModel = new FaseRecrutamentoModel();
+        $this->candidatoModel        = new CandidatoModel();
     }
 
     /**
@@ -28,6 +34,7 @@ class ModuloService
     {
         $tipo   = $dados['tipo'] ?? 'dados';
         $campos = $dados['campos'] ?? [];
+        $fases  = $dados['fases'] ?? [];
 
         if (! in_array($tipo, ['dados', 'arquivo', 'recrutamento'], true)) {
             throw new \DomainException("Tipo de módulo inválido: '{$tipo}'.");
@@ -37,8 +44,18 @@ class ModuloService
             throw new \DomainException('O módulo precisa de pelo menos um campo.');
         }
 
+        if ($tipo === 'recrutamento' && empty($fases)) {
+            $fases = ['Triagem', 'Entrevista', 'Aprovado'];
+        }
+
         foreach ($campos as $campo) {
             $this->validarCampo($campo);
+        }
+
+        foreach ($fases as $nomeFase) {
+            if (! is_string($nomeFase) || trim($nomeFase) === '') {
+                throw new \DomainException('Toda fase precisa de um nome.');
+            }
         }
 
         $db = db_connect();
@@ -58,6 +75,14 @@ class ModuloService
                 'nome'      => $campo['nome'],
                 'tipo'      => $campo['tipo'],
                 'opcoes'    => $campo['opcoes'] ?? null,
+                'ordem'     => $ordem,
+            ]);
+        }
+
+        foreach ($fases as $ordem => $nomeFase) {
+            $this->faseRecrutamentoModel->insert([
+                'modulo_id' => $moduloId,
+                'nome'      => $nomeFase,
                 'ordem'     => $ordem,
             ]);
         }
@@ -133,6 +158,13 @@ class ModuloService
             ->where('modulo_id', $moduloId)
             ->orderBy('ordem', 'ASC')
             ->findAll();
+
+        if ($modulo['tipo'] === 'recrutamento') {
+            $modulo['fases'] = $this->faseRecrutamentoModel
+                ->where('modulo_id', $moduloId)
+                ->orderBy('ordem', 'ASC')
+                ->findAll();
+        }
 
         return $modulo;
     }
@@ -279,6 +311,121 @@ class ModuloService
         }
 
         $this->campoModuloModel->delete($campoId);
+    }
+
+        private function buscarFaseValidada(string $faseId, string $moduloId, string $empresaId): array
+    {
+        $fase = $this->faseRecrutamentoModel
+            ->select('fase_recrutamento.*')
+            ->join('modulo', 'modulo.id = fase_recrutamento.modulo_id')
+            ->where('fase_recrutamento.id', $faseId)
+            ->where('fase_recrutamento.modulo_id', $moduloId)
+            ->where('modulo.empresa_id', $empresaId)
+            ->first();
+
+        if (! $fase) {
+            throw new NaoEncontradoException('Fase não encontrada.');
+        }
+
+        return $fase;
+    }
+
+    public function adicionarFase(string $moduloId, string $empresaId, string $nomeFase): array
+    {
+        $modulo = $this->moduloModel
+            ->where('id', $moduloId)
+            ->where('empresa_id', $empresaId)
+            ->where('tipo', 'recrutamento')
+            ->first();
+
+        if (! $modulo) {
+            throw new NaoEncontradoException('Vaga não encontrada.');
+        }
+
+        if (trim($nomeFase) === '') {
+            throw new \DomainException('Toda fase precisa de um nome.');
+        }
+
+        $proximaOrdem = $this->faseRecrutamentoModel
+            ->where('modulo_id', $moduloId)
+            ->countAllResults();
+
+        $this->faseRecrutamentoModel->insert([
+            'modulo_id' => $moduloId,
+            'nome'      => $nomeFase,
+            'ordem'     => $proximaOrdem,
+        ]);
+
+        return $this->buscarModuloComCampos($moduloId, $empresaId);
+    }
+
+    public function atualizarFase(string $faseId, string $moduloId, string $empresaId, string $novoNome): array
+    {
+        $this->buscarFaseValidada($faseId, $moduloId, $empresaId);
+
+        if (trim($novoNome) === '') {
+            throw new \DomainException('Toda fase precisa de um nome.');
+        }
+
+        $this->faseRecrutamentoModel->update($faseId, ['nome' => $novoNome]);
+
+        return $this->buscarModuloComCampos($moduloId, $empresaId);
+    }
+
+    public function reordenarFases(string $moduloId, string $empresaId, array $ordemFaseIds): array
+    {
+        $modulo = $this->moduloModel
+            ->where('id', $moduloId)
+            ->where('empresa_id', $empresaId)
+            ->where('tipo', 'recrutamento')
+            ->first();
+
+        if (! $modulo) {
+            throw new NaoEncontradoException('Vaga não encontrada.');
+        }
+
+        $idsExistentes = array_column(
+            $this->faseRecrutamentoModel->where('modulo_id', $moduloId)->findAll(),
+            'id'
+        );
+
+        $listaBate = count($ordemFaseIds) === count($idsExistentes)
+            && empty(array_diff($ordemFaseIds, $idsExistentes));
+
+        if (! $listaBate) {
+            throw new \DomainException('A lista enviada não corresponde exatamente às fases desta vaga.');
+        }
+
+        $db = db_connect();
+        $db->transStart();
+
+        foreach ($ordemFaseIds as $ordem => $faseId) {
+            $this->faseRecrutamentoModel->update($faseId, ['ordem' => $ordem]);
+        }
+
+        $db->transComplete();
+
+        if ($db->transStatus() === false) {
+            throw new \RuntimeException('Não foi possível reordenar as fases. Tente novamente.');
+        }
+
+        return $this->buscarModuloComCampos($moduloId, $empresaId);
+    }
+
+    /**
+     * @throws \DomainException se ainda existir candidato ativo nessa fase
+     */
+    public function excluirFase(string $faseId, string $moduloId, string $empresaId): void
+    {
+        $this->buscarFaseValidada($faseId, $moduloId, $empresaId);
+
+        $totalCandidatos = $this->candidatoModel->where('fase_atual_id', $faseId)->countAllResults();
+
+        if ($totalCandidatos > 0) {
+            throw new \DomainException('Não é possível excluir uma fase que ainda possui candidatos.');
+        }
+
+        $this->faseRecrutamentoModel->delete($faseId);
     }
 
     /**

@@ -4,48 +4,58 @@ namespace App\Services;
 
 use App\Exceptions\NaoEncontradoException;
 use App\Models\CandidatoModel;
-use App\Models\EmpresaModel;
+use App\Models\FaseRecrutamentoModel;
 use App\Models\HistoricoFaseModel;
-use App\Models\RegistroModel;
+use App\Models\ModuloModel;
 
 class CandidatoService
 {
-    private const FASES_VALIDAS = ['triagem', 'entrevista', 'teste tecnico', 'aprovado'];
-
-    protected EmpresaModel $empresaModel;
+    protected ModuloModel $moduloModel;
+    protected FaseRecrutamentoModel $faseRecrutamentoModel;
     protected CandidatoModel $candidatoModel;
     protected HistoricoFaseModel $historicoFaseModel;
-    protected RegistroModel $registroModel;
 
     public function __construct()
     {
-        $this->empresaModel       = new EmpresaModel();
-        $this->candidatoModel     = new CandidatoModel();
-        $this->historicoFaseModel = new HistoricoFaseModel();
-        $this->registroModel      = new RegistroModel();
+        $this->moduloModel           = new ModuloModel();
+        $this->faseRecrutamentoModel = new FaseRecrutamentoModel();
+        $this->candidatoModel        = new CandidatoModel();
+        $this->historicoFaseModel    = new HistoricoFaseModel();
     }
 
     /**
-     * Registra uma candidatura pública — endpoint sem autenticação.
-     * Mantido para compatibilidade, mas o foco agora são os módulos customizados.
+     * Registra uma candidatura pública para uma vaga específica.
+     *
+     * @throws NaoEncontradoException se a vaga não existir
+     * @throws \DomainException se o e-mail já se candidatou a essa vaga
      */
-    public function criarCandidatura(string $empresaId, array $dados): array
+    public function criarCandidatura(string $moduloId, array $dados): array
     {
-        if (! $this->empresaModel->find($empresaId)) {
-            throw new NaoEncontradoException('Empresa não encontrada.');
-        }
-
-        $jaExiste = $this->candidatoModel
-            ->where('empresa_id', $empresaId)
-            ->where('email', $dados['email'])
+        $modulo = $this->moduloModel
+            ->where('id', $moduloId)
+            ->where('tipo', 'recrutamento')
             ->first();
 
-        if ($jaExiste) {
-            throw new \DomainException('Você já se candidatou para esta empresa anteriormente.');
+        if (! $modulo) {
+            throw new NaoEncontradoException('Vaga não encontrada.');
+        }
+
+        if ($this->candidatoModel->where('modulo_id', $moduloId)->where('email', $dados['email'])->first()) {
+            throw new \DomainException('Você já se candidatou para esta vaga anteriormente.');
+        }
+
+        $primeiraFase = $this->faseRecrutamentoModel
+            ->where('modulo_id', $moduloId)
+            ->orderBy('ordem', 'ASC')
+            ->first();
+
+        if (! $primeiraFase) {
+            throw new \RuntimeException('Esta vaga ainda não tem nenhuma fase configurada.');
         }
 
         $candidatoId = $this->candidatoModel->insert([
-            'empresa_id'     => $empresaId,
+            'modulo_id'      => $moduloId,
+            'fase_atual_id'  => $primeiraFase['id'],
             'nome'           => $dados['nome'],
             'email'          => $dados['email'],
             'telefone'       => $dados['telefone'] ?? null,
@@ -53,129 +63,135 @@ class CandidatoService
             'mensagem'       => $dados['mensagem'] ?? null,
         ]);
 
-        return $this->candidatoModel->find($candidatoId);
+        return $this->buscarCandidato($candidatoId, $moduloId, $modulo['empresa_id']);
     }
 
     /**
-     * Monta o Kanban pegando registros de todos os módulos do tipo 'recrutamento'.
+     * Monta o Kanban da vaga, agrupado por fase (na ordem configurada),
+     * com contagem por coluna.
      */
-    public function listarKanban(string $empresaId): array
+    public function listarKanban(string $moduloId, string $empresaId): array
     {
-        $db = db_connect();
-        
-        $registros = $db->query(
-            "SELECT registro.*, modulo.nome as vaga, modulo.id as modulo_id
-             FROM registro 
-             JOIN modulo ON modulo.id = registro.modulo_id 
-             WHERE modulo.empresa_id = ? AND modulo.tipo = 'recrutamento'
-             ORDER BY registro.criado_em ASC",
-            [$empresaId]
-        )->getResultArray();
+        $this->confirmarVagaDaEmpresa($moduloId, $empresaId);
 
-        // Pre-fetch all field names for recruitment modules
-        $camposRows = $db->query(
-            "SELECT cm.id, cm.nome, cm.modulo_id
-             FROM campo_modulo cm
-             JOIN modulo m ON m.id = cm.modulo_id
-             WHERE m.empresa_id = ? AND m.tipo = 'recrutamento'",
-            [$empresaId]
-        )->getResultArray();
+        $fases = $this->faseRecrutamentoModel
+            ->where('modulo_id', $moduloId)
+            ->orderBy('ordem', 'ASC')
+            ->findAll();
 
-        $campoNomes = [];
-        foreach ($camposRows as $campo) {
-            $campoNomes[$campo['id']] = $campo['nome'];
-        }
+        $candidatos = $this->candidatoModel
+            ->where('modulo_id', $moduloId)
+            ->orderBy('criado_em', 'ASC')
+            ->findAll();
 
         $kanban = [];
 
-        foreach (self::FASES_VALIDAS as $fase) {
-            $kanban[$fase] = ['total' => 0, 'candidatos' => []];
+        foreach ($fases as $fase) {
+            $kanban[$fase['id']] = [
+                'fase'       => $fase['nome'],
+                'total'      => 0,
+                'candidatos' => [],
+            ];
         }
 
-        foreach ($registros as $registro) {
-            $dadosRaw = json_decode($registro['dados'], true) ?? [];
-            $fase = $dadosRaw['_fase_atual'] ?? 'triagem';
-            
-            if (!in_array($fase, self::FASES_VALIDAS, true)) {
-                $fase = 'triagem';
-            }
+        foreach ($candidatos as $candidato) {
+            $faseId = $candidato['fase_atual_id'];
 
-            // Replace UUID keys with human-readable field names
-            $dadosLegivel = [];
-            foreach ($dadosRaw as $key => $value) {
-                if ($key === '_fase_atual') continue;
-                $nome = $campoNomes[$key] ?? $key;
-                $dadosLegivel[$nome] = $value;
+            if (isset($kanban[$faseId])) {
+                $kanban[$faseId]['candidatos'][] = $candidato;
+                $kanban[$faseId]['total']++;
             }
-            
-            $registro['dados'] = $dadosLegivel;
-            $registro['fase_atual'] = $fase;
-            $kanban[$fase]['candidatos'][] = $registro;
-            $kanban[$fase]['total']++;
         }
 
         return $kanban;
     }
 
     /**
-     * Move de fase um registro de recrutamento.
+     * @throws NaoEncontradoException se candidato ou fase não existirem nesta vaga
+     * @throws \DomainException se o candidato já estiver nessa fase
      */
-    public function moverFase(string $registroId, string $empresaId, string $novaFase, string $usuarioId): array
+    public function moverFase(string $candidatoId, string $moduloId, string $empresaId, string $novaFaseId, string $usuarioId): array
     {
-        if (! in_array($novaFase, self::FASES_VALIDAS, true)) {
-            throw new \DomainException("Fase inválida: '{$novaFase}'.");
+        $this->confirmarVagaDaEmpresa($moduloId, $empresaId);
+
+        $candidato = $this->candidatoModel
+            ->where('id', $candidatoId)
+            ->where('modulo_id', $moduloId)
+            ->first();
+
+        if (! $candidato) {
+            throw new NaoEncontradoException('Candidato não encontrado.');
         }
 
-        $db = db_connect();
-        $registro = $db->query(
-            "SELECT registro.* FROM registro 
-             JOIN modulo ON modulo.id = registro.modulo_id 
-             WHERE registro.id = ? AND modulo.empresa_id = ? AND modulo.tipo = 'recrutamento'",
-            [$registroId, $empresaId]
-        )->getRowArray();
-
-        if (! $registro) {
-            throw new NaoEncontradoException('Registro de candidato não encontrado.');
+        if (! $this->faseRecrutamentoModel->where('id', $novaFaseId)->where('modulo_id', $moduloId)->first()) {
+            throw new NaoEncontradoException('Fase não encontrada nesta vaga.');
         }
-        
-        $dados = json_decode($registro['dados'], true) ?? [];
-        $faseAtual = $dados['_fase_atual'] ?? 'triagem';
 
-        if ($faseAtual === $novaFase) {
+        if ($candidato['fase_atual_id'] === $novaFaseId) {
             throw new \DomainException('O candidato já está nessa fase.');
         }
 
-        $dados['_fase_atual'] = $novaFase;
-        
-        $this->registroModel->update($registroId, [
-            'dados' => $dados,
-            'atualizado_por' => $usuarioId
+        $db = db_connect();
+        $db->transStart();
+
+        $this->candidatoModel->update($candidatoId, ['fase_atual_id' => $novaFaseId]);
+
+        $this->historicoFaseModel->insert([
+            'candidato_id'     => $candidatoId,
+            'fase_anterior_id' => $candidato['fase_atual_id'],
+            'fase_nova_id'     => $novaFaseId,
+            'alterado_por'     => $usuarioId,
         ]);
 
-        return $this->buscarCandidato($registroId, $empresaId);
-    }
+        $db->transComplete();
 
-    public function buscarCandidato(string $registroId, string $empresaId): array
-    {
-        $db = db_connect();
-        $registro = $db->query(
-            "SELECT registro.* FROM registro 
-             JOIN modulo ON modulo.id = registro.modulo_id 
-             WHERE registro.id = ? AND modulo.empresa_id = ? AND modulo.tipo = 'recrutamento'",
-            [$registroId, $empresaId]
-        )->getRowArray();
-
-        if (! $registro) {
-            throw new NaoEncontradoException('Registro de candidato não encontrado.');
+        if ($db->transStatus() === false) {
+            throw new \RuntimeException('Não foi possível mover o candidato. Tente novamente.');
         }
-        
-        $registro['dados'] = json_decode($registro['dados'], true) ?? [];
-        return $registro;
+
+        return $this->buscarCandidato($candidatoId, $moduloId, $empresaId);
     }
 
-    public function excluirCandidato(string $registroId, string $empresaId): void
+    /**
+     * Busca um candidato com verificação completa de posse — vaga
+     * pertence à empresa, candidato pertence à vaga — numa única query.
+     */
+    public function buscarCandidato(string $candidatoId, string $moduloId, string $empresaId): array
     {
-        $this->buscarCandidato($registroId, $empresaId);
-        $this->registroModel->delete($registroId);
+        $candidato = $this->candidatoModel
+            ->select('candidato.*')
+            ->join('modulo', 'modulo.id = candidato.modulo_id')
+            ->where('candidato.id', $candidatoId)
+            ->where('candidato.modulo_id', $moduloId)
+            ->where('modulo.empresa_id', $empresaId)
+            ->first();
+
+        if (! $candidato) {
+            throw new NaoEncontradoException('Candidato não encontrado.');
+        }
+
+        return $candidato;
+    }
+
+    public function excluirCandidato(string $candidatoId, string $moduloId, string $empresaId): void
+    {
+        $this->buscarCandidato($candidatoId, $moduloId, $empresaId);
+        $this->candidatoModel->delete($candidatoId);
+    }
+
+    /**
+     * @throws NaoEncontradoException se a vaga não existir/pertencer à empresa
+     */
+    private function confirmarVagaDaEmpresa(string $moduloId, string $empresaId): void
+    {
+        $existe = $this->moduloModel
+            ->where('id', $moduloId)
+            ->where('empresa_id', $empresaId)
+            ->where('tipo', 'recrutamento')
+            ->first();
+
+        if (! $existe) {
+            throw new NaoEncontradoException('Vaga não encontrada.');
+        }
     }
 }

@@ -2,21 +2,17 @@
 
 namespace App\Models;
 
-class CandidatoModel extends BaseModel
+class FaseRecrutamentoModel extends BaseModel
 {
-    protected $table      = 'candidato';
+    protected $table      = 'fase_recrutamento';
     protected $primaryKey = 'id';
 
     protected $returnType = 'array';
 
     protected $allowedFields = [
         'modulo_id',
-        'fase_atual_id',
         'nome',
-        'email',
-        'telefone',
-        'cargo_desejado',
-        'mensagem',
+        'ordem',
     ];
 
     protected $useTimestamps = false;

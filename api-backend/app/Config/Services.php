@@ -18,6 +18,9 @@ use App\Libraries\AuthenticatedUser;
  * method format you should use for your service methods. For more examples,
  * see the core Services file at system/Config/Services.php.
  */
+use App\Services\Storage\StorageServiceInterface;
+use App\Services\Storage\BackblazeStorageService;
+
 class Services extends BaseService
 {
     /*
@@ -37,5 +40,14 @@ class Services extends BaseService
         }
 
         return new AuthenticatedUser();
+    }
+
+    public static function storage(bool $getShared = true): StorageServiceInterface
+    {
+        if ($getShared) {
+            return static::getSharedInstance('storage');
+        }
+
+        return new BackblazeStorageService();
     }
 }

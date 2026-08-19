@@ -3,17 +3,14 @@
 namespace App\Controllers;
 
 use App\Services\AuthService;
-use App\Services\JwtService;
 
 class AuthController extends BaseApiController
 {
     protected AuthService $authService;
-    protected JwtService $jwtService;
 
     public function __construct()
     {
         $this->authService = new AuthService();
-        $this->jwtService  = new JwtService();
     }
 
     public function registrar()
@@ -46,37 +43,14 @@ class AuthController extends BaseApiController
             return $this->respondError($e->getMessage(), 500);
         }
 
-        $token = $this->jwtService->gerar([
-            'sub'        => $resultado['usuario']['id'],
-            'empresa_id' => $resultado['empresa']['id'],
-        ]);
+
 
         return $this->respondSuccess(
-            $this->respostaAutenticacao($resultado['usuario'], $resultado['empresa']),
+            $this->authService->montarRespostaAutenticacao($resultado['usuario'], $resultado['empresa']),
             201
         );
     }
 
-    private function respostaAutenticacao(array $usuario, array $empresa): array
-    {
-        $token = $this->jwtService->gerar([
-            'sub'        => $usuario['id'],
-            'empresa_id' => $empresa['id'],
-        ]);
-
-        return [
-            'token'   => $token,
-            'usuario' => [
-                'id'    => $usuario['id'],
-                'nome'  => $usuario['nome'],
-                'email' => $usuario['email'],
-            ],
-            'empresa' => [
-                'id'   => $empresa['id'],
-                'nome' => $empresa['nome'],
-            ],
-        ];
-    }
 
     public function login()
     {
@@ -98,7 +72,7 @@ class AuthController extends BaseApiController
         }
 
         return $this->respondSuccess(
-            $this->respostaAutenticacao($resultado['usuario'], $resultado['empresa']),
+            $this->authService->montarRespostaAutenticacao($resultado['usuario'], $resultado['empresa']),
             200
         );
     }

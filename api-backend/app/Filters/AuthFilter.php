@@ -38,7 +38,13 @@ class AuthFilter implements FilterInterface
                 ->setJSON(['status' => 'error', 'message' => 'Token inválido ou expirado.']);
         }
 
-        $permissoes = $authService->permissoesDoUsuario($claims->sub);
+        $permissoes = $authService->dadosDeAutorizacao($claims->sub);
+
+        if ($permissoes === null) {
+            return service('response')
+                ->setStatusCode(401)
+                ->setJSON(['status' => 'error', 'message' => 'Token inválido ou expirado.']);
+        }
 
         service('authenticatedUser')->preencher(
             $claims->sub,

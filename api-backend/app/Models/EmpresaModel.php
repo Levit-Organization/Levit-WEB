@@ -15,6 +15,7 @@ class EmpresaModel extends BaseModel
         'setor_atuacao',
         'email_corporativo',
         'logo',
+        'administrador_principal_id',
     ];
 
     protected $useTimestamps = true;

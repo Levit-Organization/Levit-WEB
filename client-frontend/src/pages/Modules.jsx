@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { moduloService } from '../services/moduloService';
 
 export default function Modules() {
   const [modulos, setModulos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchModulos();
@@ -83,10 +84,10 @@ export default function Modules() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {modulos.map((modulo) => (
-            <Link 
+            <div 
               key={modulo.id} 
-              to={`/modulos/${modulo.id}/registros`}
-              className="bg-white border border-divider rounded-xl p-5 flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition group"
+              onClick={() => navigate(`/modulos/${modulo.id}/registros`)}
+              className="bg-white border border-divider rounded-xl p-5 flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition group cursor-pointer"
             >
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-12 h-12 rounded-lg flex items-center justify-center text-white bg-primary shrink-0">
@@ -118,7 +119,7 @@ export default function Modules() {
                   Excluir
                 </button>
               </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}

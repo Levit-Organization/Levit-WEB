@@ -11,8 +11,8 @@ class HistoricoFaseModel extends BaseModel
 
     protected $allowedFields = [
         'candidato_id',
-        'fase_anterior',
-        'fase_nova',
+        'fase_anterior_id',
+        'fase_nova_id',
         'alterado_por',
     ];
 
