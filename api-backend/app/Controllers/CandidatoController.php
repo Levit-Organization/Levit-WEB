@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Exceptions\NaoEncontradoException;
+use App\Models\FaseRecrutamentoModel;
 use App\Services\CandidatoService;
 
 class CandidatoController extends BaseApiController
@@ -55,19 +56,29 @@ class CandidatoController extends BaseApiController
                               ->where('tipo', 'recrutamento')
                               ->findAll();
                               
-        $kanban = [
-            'triagem'       => ['total' => 0, 'candidatos' => []],
-            'entrevista'    => ['total' => 0, 'candidatos' => []],
-            'teste tecnico' => ['total' => 0, 'candidatos' => []],
-            'aprovado'      => ['total' => 0, 'candidatos' => []]
-        ];
-
         if (empty($modulos)) {
-            return $this->respondSuccess($kanban);
+            return $this->respondSuccess([
+                'triagem' => ['total' => 0, 'candidatos' => []]
+            ]);
         }
         
         $moduloIds = array_column($modulos, 'id');
         $modulosMap = array_column($modulos, 'nome', 'id');
+        
+        $faseModel = new FaseRecrutamentoModel();
+        $fases = $faseModel->whereIn('modulo_id', $moduloIds)->orderBy('ordem', 'ASC')->findAll();
+        
+        $kanban = [];
+        if (empty($fases)) {
+            $kanban['triagem'] = ['total' => 0, 'candidatos' => []];
+        } else {
+            foreach ($fases as $f) {
+                $fNome = strtolower(trim($f['nome']));
+                if (!isset($kanban[$fNome])) {
+                    $kanban[$fNome] = ['total' => 0, 'candidatos' => []];
+                }
+            }
+        }
         
         // Map field UUIDs to Human-readable names
         $campos = $campoModuloModel->whereIn('modulo_id', $moduloIds)->findAll();
@@ -99,9 +110,9 @@ class CandidatoController extends BaseApiController
                 'atualizado_em' => $reg['atualizado_em']
             ];
             
-            // Map unmapped phases to triagem
+            // Map unmapped phases to the first available column
             if (!isset($kanban[$fase])) {
-                $fase = 'triagem';
+                $fase = array_key_first($kanban);
             }
             
             $kanban[$fase]['candidatos'][] = $item;

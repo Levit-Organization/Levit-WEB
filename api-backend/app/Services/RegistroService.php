@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\NaoEncontradoException;
 use App\Models\CampoModuloModel;
+use App\Models\FaseRecrutamentoModel;
 use App\Models\ModuloModel;
 use App\Models\RegistroModel;
 
@@ -63,6 +64,15 @@ class RegistroService
     {
         $campos         = $this->confirmarModuloDaEmpresa($moduloId, $empresaId, true);
         $dadosValidados = $this->validarDadosDoRegistro($campos, $dados);
+
+        $modulo = $this->moduloModel->where('id', $moduloId)->first();
+        if ($modulo && $modulo['tipo'] === 'recrutamento') {
+            $faseModel = new FaseRecrutamentoModel();
+            $primeiraFase = $faseModel->where('modulo_id', $moduloId)->orderBy('ordem', 'ASC')->first();
+            
+            $nomeFase = $primeiraFase ? strtolower(trim($primeiraFase['nome'])) : 'triagem';
+            $dadosValidados['_fase_atual'] = $nomeFase;
+        }
 
         $registroId = $this->registroModel->insert([
             'modulo_id'  => $moduloId,

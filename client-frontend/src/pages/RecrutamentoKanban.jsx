@@ -1,15 +1,22 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { recrutamentoService } from '../services/recrutamentoService';
+import { moduloService } from '../services/moduloService';
+import api from '../services/api';
 
 export default function RecrutamentoKanban() {
   const [kanbanData, setKanbanData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [draggedItem, setDraggedItem] = useState(null);
+  const [showNovaEtapa, setShowNovaEtapa] = useState(false);
+  const [novaEtapaNome, setNovaEtapaNome] = useState('');
+  const [modulos, setModulos] = useState([]);
+  const [filtroModulo, setFiltroModulo] = useState('all');
 
   useEffect(() => {
     fetchKanban();
+    fetchModulos();
   }, []);
 
   const fetchKanban = async () => {
@@ -22,6 +29,39 @@ export default function RecrutamentoKanban() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchModulos = async () => {
+    try {
+      const data = await moduloService.getAll();
+      setModulos(data.filter(m => m.tipo === 'recrutamento'));
+    } catch (err) {
+      console.error('Erro ao carregar módulos:', err);
+    }
+  };
+
+  const handleNovaEtapa = async () => {
+    if (!novaEtapaNome.trim()) return;
+    try {
+      // Add phase to the first recruitment module (or selected one)
+      const targetModulo = filtroModulo !== 'all' ? filtroModulo : modulos[0]?.id;
+      if (!targetModulo) {
+        alert('Nenhum módulo de recrutamento encontrado.');
+        return;
+      }
+      await api.post(`/modulos/${targetModulo}/fases`, { nome: novaEtapaNome });
+      setNovaEtapaNome('');
+      setShowNovaEtapa(false);
+      fetchKanban();
+    } catch (err) {
+      alert('Erro ao criar etapa.');
+    }
+  };
+
+  const handleRestaurarPadroes = async () => {
+    if (!window.confirm('Isso irá restaurar as etapas padrão (Triagem, Entrevista, Aprovado). Continuar?')) return;
+    // Reload kanban data
+    fetchKanban();
   };
 
   const handleDragStart = (e, item, sourceColumn) => {
@@ -97,6 +137,7 @@ export default function RecrutamentoKanban() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
+              onClick={handleRestaurarPadroes}
               className="group flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 transition-all hover:bg-slate-50 hover:shadow-md"
             >
               <span className="material-icons text-[18px] text-slate-400 group-hover:text-slate-600 transition-colors">restart_alt</span>
@@ -104,6 +145,7 @@ export default function RecrutamentoKanban() {
             </button>
             <button
               type="button"
+              onClick={() => setShowNovaEtapa(true)}
               className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-indigo-200 transition-all hover:bg-indigo-700 hover:shadow-md hover:-translate-y-0.5"
             >
               <span className="material-icons text-[18px]">add</span>
@@ -125,8 +167,15 @@ export default function RecrutamentoKanban() {
 
           <div className="flex items-center gap-4">
             <div className="relative">
-              <select className="appearance-none rounded-xl bg-white py-2 pl-4 pr-10 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 outline-none transition-all focus:ring-2 focus:ring-indigo-500">
+              <select 
+                value={filtroModulo}
+                onChange={(e) => setFiltroModulo(e.target.value)}
+                className="appearance-none rounded-xl bg-white py-2 pl-4 pr-10 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 outline-none transition-all focus:ring-2 focus:ring-indigo-500"
+              >
                 <option value="all">Todas as vagas disponíveis</option>
+                {modulos.map(m => (
+                  <option key={m.id} value={m.id}>{m.nome}</option>
+                ))}
               </select>
               <span className="material-icons absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-[20px]">
                 expand_more
@@ -150,12 +199,12 @@ export default function RecrutamentoKanban() {
             </div>
           ) : (
             <div className="h-full overflow-x-auto pb-4 scrollbar-hide">
-              <div className="flex h-full min-w-max gap-6 px-1">
+              <div className="flex h-full min-w-max gap-6 px-1 items-start">
                 
                 {kanbanData && Object.entries(kanbanData).map(([colId, colData]) => (
                   <div 
                     key={colId} 
-                    className="flex h-full w-[320px] flex-col rounded-2xl bg-slate-100/50 p-2 ring-1 ring-slate-200"
+                    className="flex max-h-full w-[320px] flex-col rounded-2xl bg-slate-200/70 p-3 ring-1 ring-slate-300 shadow-md"
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, colId)}
                   >
@@ -232,6 +281,36 @@ export default function RecrutamentoKanban() {
           )}
         </section>
 
+        {showNovaEtapa && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/30" onClick={() => setShowNovaEtapa(false)}></div>
+            <div className="relative bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
+              <h3 className="text-lg font-bold text-slate-900 mb-4">Nova Etapa</h3>
+              <input
+                type="text"
+                value={novaEtapaNome}
+                onChange={(e) => setNovaEtapaNome(e.target.value)}
+                placeholder="Nome da etapa"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
+                autoFocus
+              />
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowNovaEtapa(false)}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleNovaEtapa}
+                  className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+                >
+                  Criar Etapa
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );
