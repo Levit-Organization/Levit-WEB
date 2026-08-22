@@ -23,5 +23,3 @@ class EmpresaModel extends BaseModel
     protected $updatedField  = 'atualizado_em';
     protected $dateFormat    = 'datetime';
 }
-
-?>

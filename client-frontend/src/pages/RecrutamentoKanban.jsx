@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Layout from '../components/Layout';
 import { recrutamentoService } from '../services/recrutamentoService';
 import { moduloService } from '../services/moduloService';
@@ -13,6 +13,26 @@ export default function RecrutamentoKanban() {
   const [novaEtapaNome, setNovaEtapaNome] = useState('');
   const [modulos, setModulos] = useState([]);
   const [filtroModulo, setFiltroModulo] = useState('all');
+  const [selectedCard, setSelectedCard] = useState(null);
+
+  const scrollContainerRef = useRef(null);
+
+  // Auto-scroll when dragging near edges
+  const handleDragOverWithScroll = useCallback((e) => {
+    e.preventDefault();
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const edgeSize = 100; // pixels from edge to trigger scroll
+    const scrollSpeed = 18;
+
+    if (e.clientX - rect.left < edgeSize) {
+      container.scrollLeft -= scrollSpeed;
+    } else if (rect.right - e.clientX < edgeSize) {
+      container.scrollLeft += scrollSpeed;
+    }
+  }, []);
 
   useEffect(() => {
     fetchKanban();
@@ -34,7 +54,11 @@ export default function RecrutamentoKanban() {
   const fetchModulos = async () => {
     try {
       const data = await moduloService.getAll();
-      setModulos(data.filter(m => m.tipo === 'recrutamento'));
+      const recrutamento = data.filter(m => m.tipo === 'recrutamento');
+      setModulos(recrutamento);
+      if (recrutamento.length > 0 && filtroModulo === 'all') {
+        setFiltroModulo(recrutamento[0].id);
+      }
     } catch (err) {
       console.error('Erro ao carregar módulos:', err);
     }
@@ -71,6 +95,7 @@ export default function RecrutamentoKanban() {
 
   const handleDragOver = (e) => {
     e.preventDefault();
+    handleDragOverWithScroll(e);
   };
 
   const handleDrop = async (e, targetColumnId) => {
@@ -83,8 +108,14 @@ export default function RecrutamentoKanban() {
       return;
     }
     
-    // Optimistic update
-    const newKanban = { ...kanbanData };
+    // Optimistic update (deep copy to avoid state mutation)
+    const newKanban = {};
+    for (const [key, value] of Object.entries(kanbanData)) {
+      newKanban[key] = {
+        ...value,
+        candidatos: [...value.candidatos],
+      };
+    }
     
     // Remove from source
     newKanban[sourceColumn].candidatos = newKanban[sourceColumn].candidatos.filter(c => c.id !== item.id);
@@ -92,7 +123,7 @@ export default function RecrutamentoKanban() {
     
     // Add to target
     const updatedItem = { ...item, dados: { ...item.dados, _fase_atual: targetColumnId } };
-    newKanban[targetColumnId].candidatos.push(updatedItem);
+    newKanban[targetColumnId].candidatos = [...newKanban[targetColumnId].candidatos, updatedItem];
     newKanban[targetColumnId].total++;
     
     setKanbanData(newKanban);
@@ -108,20 +139,27 @@ export default function RecrutamentoKanban() {
     }
   };
 
-  // Helper to extract a primary title from dynamic fields
-  const getPrimaryTitle = (dados) => {
-    const commonNames = ['Nome', 'nome', 'Título', 'titulo', 'Candidato'];
-    for (let key of commonNames) {
-      if (dados[key]) return String(dados[key]);
+  // Helper: find a field value by common name patterns
+  const getCardField = (dados, patterns) => {
+    for (const pattern of patterns) {
+      for (const [k, v] of Object.entries(dados)) {
+        if (k.toLowerCase().includes(pattern.toLowerCase()) && v && !k.startsWith('_')) {
+          return String(v);
+        }
+      }
     }
-    // Fallback to the first non-hidden key
-    const firstKey = Object.keys(dados).find(k => !k.startsWith('_'));
-    return firstKey ? String(dados[firstKey]) : 'Registro sem nome';
+    return null;
   };
 
+  const CARD_FIELDS = [
+    { label: 'Nome', patterns: ['Nome completo', 'Nome', 'Candidato'] },
+    { label: 'Contato', patterns: ['Contato', 'Telefone', 'Email', 'WhatsApp'] },
+    { label: 'Objetivo', patterns: ['Objetivo', 'Cargo desejado', 'Vaga', 'Área'] },
+  ];
+
   return (
-    <Layout>
-      <div className="flex min-h-0 flex-1 flex-col bg-slate-50/50 p-6 font-sans">
+    <Layout noPadding>
+      <div className="flex min-h-0 flex-1 flex-col bg-slate-50/50 p-6 font-sans h-full overflow-hidden">
         
         {/* Cabeçalho Premium */}
         <header className="mb-8 flex shrink-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -172,7 +210,6 @@ export default function RecrutamentoKanban() {
                 onChange={(e) => setFiltroModulo(e.target.value)}
                 className="appearance-none rounded-xl bg-white py-2 pl-4 pr-10 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 outline-none transition-all focus:ring-2 focus:ring-indigo-500"
               >
-                <option value="all">Todas as vagas disponíveis</option>
                 {modulos.map(m => (
                   <option key={m.id} value={m.id}>{m.nome}</option>
                 ))}
@@ -194,84 +231,110 @@ export default function RecrutamentoKanban() {
         {/* Área do Kanban */}
         <section className="min-h-0 flex-1 overflow-hidden">
           {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+            <div className="h-full overflow-x-auto pb-4">
+              <div className="flex h-full min-w-max gap-6 px-1 items-start">
+                {[1, 2, 3].map((skeleton) => (
+                  <div key={skeleton} className="flex w-[320px] flex-col rounded-2xl bg-slate-200/70 p-3 ring-1 ring-slate-300 shadow-md animate-pulse">
+                    {/* Skeleton header */}
+                    <div className="mb-3 flex items-center justify-between px-3 pt-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 w-2 rounded-full bg-slate-300"></div>
+                        <div className="h-4 w-20 bg-slate-300 rounded"></div>
+                      </div>
+                      <div className="h-6 w-6 bg-white rounded-full"></div>
+                    </div>
+                    {/* Skeleton cards */}
+                    {[1, 2, 3].map((card) => (
+                      <div key={card} className="mb-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                        <div className="flex items-start justify-between gap-2 mb-3">
+                          <div className="flex-1">
+                            <div className="h-4 w-32 bg-slate-200 rounded mb-2"></div>
+                            <div className="h-3 w-24 bg-slate-100 rounded mb-1"></div>
+                            <div className="h-3 w-28 bg-slate-100 rounded"></div>
+                          </div>
+                          <div className="h-8 w-8 bg-slate-100 rounded-full"></div>
+                        </div>
+                        <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
+                          <div className="h-5 w-20 bg-slate-100 rounded-lg"></div>
+                          <div className="h-3 w-16 bg-slate-100 rounded"></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
-            <div className="h-full overflow-x-auto pb-4 scrollbar-hide">
+            <div ref={scrollContainerRef} className="h-full overflow-x-auto pb-4 scrollbar-hide" onDragOver={handleDragOver}>
               <div className="flex h-full min-w-max gap-6 px-1 items-start">
                 
                 {kanbanData && Object.entries(kanbanData).map(([colId, colData]) => (
                   <div 
-                    key={colId} 
-                    className="flex max-h-full w-[320px] flex-col rounded-2xl bg-slate-200/70 p-3 ring-1 ring-slate-300 shadow-md"
+                    key={colId}
+                    className="h-full w-[320px] shrink-0"
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, colId)}
                   >
+                    {/* Coluna visual — tamanho dos cards */}
+                    <div className="flex max-h-full flex-col rounded-2xl bg-slate-200/70 p-3 ring-1 ring-slate-300 shadow-md">
                     
-                    {/* Header da Coluna */}
-                    <div className="mb-3 flex items-center justify-between px-3 pt-2">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-indigo-500"></div>
-                        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-                          {colId}
-                        </h3>
-                      </div>
-                      <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-white px-2 text-xs font-bold text-slate-600 shadow-sm">
-                        {colData.total || 0}
-                      </span>
-                    </div>
-
-                    {/* Área de Cards */}
-                    <div className="flex-1 space-y-3 overflow-y-auto px-1 pb-2">
-                      
-                      {colData.candidatos.map(item => (
-                        <article 
-                          key={item.id}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, item, colId)}
-                          className="group cursor-grab rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-1 hover:shadow-lg active:cursor-grabbing"
-                        >
-                          <div className="mb-3 flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <h4 className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
-                                {getPrimaryTitle(item.dados)}
-                              </h4>
-                              
-                              {/* Mostra os campos dinâmicos de forma compacta e elegante */}
-                              <div className="mt-2 space-y-1">
-                                {Object.entries(item.dados)
-                                  .filter(([k]) => !k.startsWith('_') && k.toLowerCase() !== 'nome')
-                                  .map(([k, v]) => (
-                                  <div key={k} className="text-xs text-slate-500 truncate">
-                                    <span className="font-medium text-slate-400">{k}:</span> {typeof v === 'object' ? JSON.stringify(v) : v}
-                                  </div>
-                                ))}
-                              </div>
-                              
-                            </div>
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-50 text-slate-400 transition-colors group-hover:bg-indigo-50 group-hover:text-indigo-500">
-                              <span className="material-icons text-[16px]">drag_indicator</span>
-                            </div>
-                          </div>
-                          
-                          <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
-                            <div className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 truncate max-w-[150px]">
-                              <span className="material-icons text-[14px]">work</span>
-                              {item.vaga}
-                            </div>
-                            <div className="text-[10px] text-slate-400 font-medium">
-                              {new Date(item.atualizado_em || item.criado_em).toLocaleDateString()}
-                            </div>
-                          </div>
-                        </article>
-                      ))}
-
-                      {colData.candidatos.length === 0 && (
-                        <div className="text-center p-6 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-sm font-medium">
-                          Nenhum registro
+                      {/* Header da Coluna */}
+                      <div className="mb-3 flex items-center justify-between px-3 pt-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-2 rounded-full bg-indigo-500"></div>
+                          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+                            {colId}
+                          </h3>
                         </div>
-                      )}
+                        <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-white px-2 text-xs font-bold text-slate-600 shadow-sm">
+                          {colData.total || 0}
+                        </span>
+                      </div>
+
+                      {/* Área de Cards */}
+                      <div className="flex-1 space-y-3 overflow-y-auto px-1 pb-2">
+                        
+                        {colData.candidatos.map(item => (
+                          <article 
+                            key={item.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, item, colId)}
+                            onClick={() => setSelectedCard({ ...item, colId })}
+                            className="group cursor-grab rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-1 hover:shadow-lg active:cursor-grabbing"
+                          >
+                            {/* 3 campos obrigatórios */}
+                            <h4 className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
+                              {getCardField(item.dados, CARD_FIELDS[0].patterns) || 'Sem nome'}
+                            </h4>
+                            <div className="mt-2 space-y-1">
+                              <div className="text-xs text-slate-500 truncate flex items-center gap-1">
+                                <span className="material-icons text-[13px] text-slate-400">call</span>
+                                {getCardField(item.dados, CARD_FIELDS[1].patterns) || '—'}
+                              </div>
+                              <div className="text-xs text-slate-500 truncate flex items-center gap-1">
+                                <span className="material-icons text-[13px] text-slate-400">flag</span>
+                                {getCardField(item.dados, CARD_FIELDS[2].patterns) || '—'}
+                              </div>
+                            </div>
+                            
+                            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+                              <div className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 truncate max-w-[150px]">
+                                <span className="material-icons text-[14px]">work</span>
+                                {item.vaga}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-medium">
+                                {new Date(item.atualizado_em || item.criado_em).toLocaleDateString()}
+                              </div>
+                            </div>
+                          </article>
+                        ))}
+
+                        {colData.candidatos.length === 0 && (
+                          <div className="text-center p-6 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-sm font-medium">
+                            Nenhum registro
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -307,6 +370,59 @@ export default function RecrutamentoKanban() {
                 >
                   Criar Etapa
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Detalhes do Card */}
+        {selectedCard && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop com blur */}
+            <div 
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-md transition-opacity" 
+              onClick={() => setSelectedCard(null)}
+            ></div>
+            
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                <h3 className="text-lg font-bold text-slate-900 truncate pr-4">
+                  {getCardField(selectedCard.dados, CARD_FIELDS[0].patterns) || 'Detalhes do Registro'}
+                </h3>
+                <button
+                  onClick={() => setSelectedCard(null)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-colors"
+                >
+                  <span className="material-icons text-[20px]">close</span>
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                <div className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 mb-4">
+                  <span className="material-icons text-[14px]">view_kanban</span>
+                  Fase atual: {selectedCard.colId}
+                </div>
+                
+                <div className="grid grid-cols-1 gap-4">
+                  {Object.entries(selectedCard.dados)
+                    .filter(([k]) => !k.startsWith('_'))
+                    .map(([key, value]) => (
+                      <div key={key} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                        <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                          {key}
+                        </span>
+                        <span className="block text-sm font-medium text-slate-900 whitespace-pre-wrap break-words">
+                          {typeof value === 'object' ? JSON.stringify(value) : (value || '—')}
+                        </span>
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
+              
+              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs font-medium text-slate-500">
+                <span className="truncate max-w-[60%]">Vaga: <strong className="text-slate-700">{selectedCard.vaga}</strong></span>
+                <span className="shrink-0">Atualizado: {new Date(selectedCard.atualizado_em || selectedCard.criado_em).toLocaleDateString()}</span>
               </div>
             </div>
           </div>

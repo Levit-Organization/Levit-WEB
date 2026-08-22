@@ -48,6 +48,16 @@ class ModuloService
             $fases = ['Triagem', 'Entrevista', 'Aprovado'];
         }
 
+        // Campos obrigatórios para módulos de recrutamento
+        if ($tipo === 'recrutamento') {
+            $camposObrigatorios = [
+                ['nome' => 'Nome completo', 'tipo' => 'texto'],
+                ['nome' => 'Contato',       'tipo' => 'texto'],
+                ['nome' => 'Objetivo',      'tipo' => 'texto'],
+            ];
+            $campos = array_merge($camposObrigatorios, $campos);
+        }
+
         foreach ($campos as $campo) {
             $this->validarCampo($campo);
         }

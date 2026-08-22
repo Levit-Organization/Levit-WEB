@@ -15,31 +15,30 @@ export function AuthProvider({ children }) {
   });
   const [loading, setLoading] = useState(true);
 
-  // Load profile from API if token exists
+  // Validate that stored auth data is still present
   const carregarPerfil = useCallback(async () => {
     const token = localStorage.getItem('levit_token');
     if (!token) {
+      setUsuario(null);
+      setEmpresa(null);
       setLoading(false);
       return;
     }
 
-    try {
-      const res = await api.get('/auth/me');
-      const { usuario: usr, empresa: emp } = res.data.data;
-      setUsuario(usr);
-      setEmpresa(emp);
-      localStorage.setItem('levit_user', JSON.stringify(usr));
-      localStorage.setItem('levit_empresa', JSON.stringify(emp));
-    } catch {
-      // Token invalid, clear everything
+    // Use stored data from localStorage (already loaded in initial state)
+    // If user/empresa data is missing but token exists, clear everything
+    const savedUser = localStorage.getItem('levit_user');
+    const savedEmpresa = localStorage.getItem('levit_empresa');
+
+    if (!savedUser || !savedEmpresa) {
       localStorage.removeItem('levit_token');
       localStorage.removeItem('levit_user');
       localStorage.removeItem('levit_empresa');
       setUsuario(null);
       setEmpresa(null);
-    } finally {
-      setLoading(false);
     }
+
+    setLoading(false);
   }, []);
 
   useEffect(() => {

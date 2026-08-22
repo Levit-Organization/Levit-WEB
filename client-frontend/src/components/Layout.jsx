@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-export default function Layout({ children }) {
+export default function Layout({ children, noPadding = false }) {
   const { usuario, empresa, iniciais, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -24,9 +24,9 @@ export default function Layout({ children }) {
   ];
 
   return (
-    <div className="min-h-screen flex bg-background font-sans text-gray-900">
+    <div className="h-screen flex bg-background font-sans text-gray-900 overflow-hidden">
       {/* SIDEBAR */}
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-0 overflow-hidden'} bg-white border-r border-divider flex flex-col justify-between shrink-0 transition-all duration-300`}>
+      <aside className={`${sidebarOpen ? 'w-64' : 'w-0 overflow-hidden'} bg-white border-r border-divider flex flex-col justify-between shrink-0 transition-all duration-300 overflow-y-auto`}>
         <div>
           {/* Logo */}
           <div className="h-20 flex items-center px-6 border-b border-divider">
@@ -98,7 +98,7 @@ export default function Layout({ children }) {
       </aside>
 
       {/* ÁREA PRINCIPAL */}
-      <main className="flex-1 p-8 overflow-y-auto flex flex-col h-screen">
+      <main className={`flex-1 overflow-y-auto flex flex-col ${noPadding ? '' : 'p-8'}`}>
         {children}
       </main>
     </div>
