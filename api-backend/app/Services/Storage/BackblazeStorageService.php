@@ -12,7 +12,7 @@ class BackblazeStorageService implements StorageServiceInterface
 
     public function __construct()
     {
-        $this->bucket = env('B2_BUCKET');
+        $this->bucket = env('B2_BUCKET') ?? '';
 
         $this->client = new S3Client([
             'version'                 => 'latest',

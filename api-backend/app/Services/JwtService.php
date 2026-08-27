@@ -13,7 +13,7 @@ class JwtService
 
     public function __construct()
     {
-        $this->secretKey = env('JWT_SECRET_KEY');
+        $this->secretKey = env('JWT_SECRET_KEY') ?? 'levit_secret_key_default_value_2026';
     }
 
     /**
