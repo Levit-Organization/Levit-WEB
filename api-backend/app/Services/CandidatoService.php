@@ -194,4 +194,99 @@ class CandidatoService
             throw new NaoEncontradoException('Vaga não encontrada.');
         }
     }
+
+        /**
+     * Monta um Kanban único com candidatos de TODAS as vagas da empresa,
+     * agrupado por nome de fase (não por ID, já que cada vaga tem suas
+     * próprias fases). Candidatos vêm com o nome da vaga anexado, pra o
+     * front-end conseguir distinguir de onde cada um veio.
+     */
+    public function listarKanbanGlobal(string $empresaId): array
+    {
+        $vagas = $this->moduloModel
+            ->where('empresa_id', $empresaId)
+            ->where('tipo', 'recrutamento')
+            ->findAll();
+
+        if (empty($vagas)) {
+            return [];
+        }
+
+        $vagaIds        = array_column($vagas, 'id');
+        $nomeVagaPorId  = array_column($vagas, 'nome', 'id');
+
+        $fases = $this->faseRecrutamentoModel
+            ->whereIn('modulo_id', $vagaIds)
+            ->orderBy('ordem', 'ASC')
+            ->findAll();
+
+        $nomeFasePorId = array_column($fases, 'nome', 'id');
+
+        $kanban = [];
+        foreach ($fases as $fase) {
+            $chave = strtolower(trim($fase['nome']));
+            if (! isset($kanban[$chave])) {
+                $kanban[$chave] = ['fase' => $fase['nome'], 'total' => 0, 'candidatos' => []];
+            }
+        }
+
+        $candidatos = $this->candidatoModel
+            ->whereIn('modulo_id', $vagaIds)
+            ->orderBy('criado_em', 'ASC')
+            ->findAll();
+
+        foreach ($candidatos as $candidato) {
+            $nomeFase = $nomeFasePorId[$candidato['fase_atual_id']] ?? null;
+            $chave    = $nomeFase ? strtolower(trim($nomeFase)) : 'outros';
+
+            if (! isset($kanban[$chave])) {
+                $kanban[$chave] = ['fase' => $nomeFase ?? 'Outros', 'total' => 0, 'candidatos' => []];
+            }
+
+            $candidato['vaga'] = $nomeVagaPorId[$candidato['modulo_id']] ?? null;
+
+            $kanban[$chave]['candidatos'][] = $candidato;
+            $kanban[$chave]['total']++;
+        }
+
+        return $kanban;
+    }
+
+    /**
+     * Move um candidato pra uma fase informada pelo NOME (não pelo ID) —
+     * necessário pra visão global, onde o front-end só sabe a coluna
+     * (nome da fase), não qual fase_recrutamento.id específico daquela vaga.
+     *
+     * @throws NaoEncontradoException se o candidato não existir, ou a vaga
+     *         dele não tiver uma fase com esse nome
+     */
+    public function moverFaseGlobalPorNome(string $candidatoId, string $empresaId, string $nomeFase, string $usuarioId): array
+    {
+        $candidato = $this->candidatoModel
+            ->select('candidato.*')
+            ->join('modulo', 'modulo.id = candidato.modulo_id')
+            ->where('candidato.id', $candidatoId)
+            ->where('modulo.empresa_id', $empresaId)
+            ->first();
+
+        if (! $candidato) {
+            throw new NaoEncontradoException('Candidato não encontrado.');
+        }
+
+        $nomeFaseNormalizado = strtolower(trim($nomeFase));
+        $faseAlvo = null;
+
+        foreach ($this->faseRecrutamentoModel->where('modulo_id', $candidato['modulo_id'])->findAll() as $fase) {
+            if (strtolower(trim($fase['nome'])) === $nomeFaseNormalizado) {
+                $faseAlvo = $fase;
+                break;
+            }
+        }
+
+        if ($faseAlvo === null) {
+            throw new NaoEncontradoException("A vaga deste candidato não possui uma fase chamada '{$nomeFase}'.");
+        }
+
+        return $this->moverFase($candidatoId, $candidato['modulo_id'], $empresaId, $faseAlvo['id'], $usuarioId);
+    }
 }

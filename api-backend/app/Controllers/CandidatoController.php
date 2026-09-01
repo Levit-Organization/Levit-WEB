@@ -3,7 +3,6 @@
 namespace App\Controllers;
 
 use App\Exceptions\NaoEncontradoException;
-use App\Models\FaseRecrutamentoModel;
 use App\Services\CandidatoService;
 
 class CandidatoController extends BaseApiController
@@ -44,88 +43,15 @@ class CandidatoController extends BaseApiController
         return $this->respondSuccess($candidato, 201);
     }
 
-    public function kanbanGlobal()
+    public function kanban($moduloId)
     {
-        $user = service('authenticatedUser');
-        $moduloModel = new \App\Models\ModuloModel();
-        $registroModel = new \App\Models\RegistroModel();
-        $campoModuloModel = new \App\Models\CampoModuloModel();
-        
-        // Find all modules of type 'recrutamento'
-        $modulos = $moduloModel->where('empresa_id', $user->empresaId)
-                              ->where('tipo', 'recrutamento')
-                              ->findAll();
-                              
-        if (empty($modulos)) {
-            return $this->respondSuccess([
-                'triagem' => ['total' => 0, 'candidatos' => []]
-            ]);
-        }
-        
-        $moduloIds = array_column($modulos, 'id');
-        $modulosMap = array_column($modulos, 'nome', 'id');
-        
-        $faseModel = new FaseRecrutamentoModel();
-        $fases = $faseModel->whereIn('modulo_id', $moduloIds)->orderBy('ordem', 'ASC')->findAll();
-        
-        $kanban = [];
-        if (empty($fases)) {
-            $kanban['triagem'] = ['total' => 0, 'candidatos' => []];
-        } else {
-            foreach ($fases as $f) {
-                $fNome = strtolower(trim($f['nome']));
-                if (!isset($kanban[$fNome])) {
-                    $kanban[$fNome] = ['total' => 0, 'candidatos' => []];
-                }
-            }
-        }
-        
-        // Map field UUIDs to Human-readable names
-        $campos = $campoModuloModel->whereIn('modulo_id', $moduloIds)->findAll();
-        $camposMap = array_column($campos, 'nome', 'id');
-        
-        // Fetch all generic records from these recruitment modules
-        $registros = $registroModel->whereIn('modulo_id', $moduloIds)->findAll();
-        
-        foreach ($registros as $reg) {
-            $dados = $reg['dados'] ?? [];
-            $fase = $dados['_fase_atual'] ?? 'triagem';
-            
-            $dadosFormatados = [];
-            foreach ($dados as $k => $v) {
-                if ($k === '_fase_atual') {
-                    $dadosFormatados[$k] = $v;
-                } else {
-                    $nomeAmigavel = $camposMap[$k] ?? $k;
-                    $dadosFormatados[$nomeAmigavel] = $v;
-                }
-            }
-            
-            // Reconstruct the item object the UI expects
-            $item = [
-                'id'            => $reg['id'],
-                'vaga'          => $modulosMap[$reg['modulo_id']] ?? 'Vaga',
-                'dados'         => $dadosFormatados,
-                'criado_em'     => $reg['criado_em'],
-                'atualizado_em' => $reg['atualizado_em']
-            ];
-            
-            // Map unmapped phases to the first available column
-            if (!isset($kanban[$fase])) {
-                $fase = array_key_first($kanban);
-            }
-            
-            $kanban[$fase]['candidatos'][] = $item;
-            $kanban[$fase]['total']++;
+        try {
+            $kanban = $this->candidatoService->listarKanban($moduloId, service('authenticatedUser')->empresaId);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
         }
 
         return $this->respondSuccess($kanban, 200);
-    }
-
-    public function kanban($moduloId)
-    {
-        // Now redirects to global since UI expects a global Kanban
-        return $this->kanbanGlobal();
     }
 
     public function detalhes($moduloId, $candidatoId)
@@ -137,29 +63,6 @@ class CandidatoController extends BaseApiController
         }
 
         return $this->respondSuccess($candidato, 200);
-    }
-
-    public function moverFaseGlobal($registroId)
-    {
-        $dadosInput = $this->request->getJSON(true);
-        $novaFase = $dadosInput['fase'] ?? 'triagem';
-        
-        $registroModel = new \App\Models\RegistroModel();
-        $registro = $registroModel->find($registroId);
-        
-        if (!$registro) {
-            return $this->respondError('Registro não encontrado.', 404);
-        }
-        
-        $dados = $registro['dados'] ?? [];
-        $dados['_fase_atual'] = $novaFase;
-        
-        $registroModel->update($registroId, [
-            'dados'          => $dados,
-            'atualizado_por' => service('authenticatedUser')->id
-        ]);
-        
-        return $this->respondSuccess(['message' => 'Fase atualizada com sucesso']);
     }
 
     public function moverFase($moduloId, $candidatoId)
@@ -193,5 +96,28 @@ class CandidatoController extends BaseApiController
         }
 
         return $this->respondSuccess(null, 200);
+    }
+
+    public function kanbanGlobal()
+    {
+        $kanban = $this->candidatoService->listarKanbanGlobal(service('authenticatedUser')->empresaId);
+
+        return $this->respondSuccess($kanban, 200);
+    }
+
+    public function moverFaseGlobal($candidatoId)
+    {
+        $dados = $this->request->getJSON(true) ?? [];
+        $user  = service('authenticatedUser');
+
+        try {
+            $candidato = $this->candidatoService->moverFaseGlobalPorNome($candidatoId, $user->empresaId, $dados['fase'] ?? '', $user->id);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 422);
+        }
+
+        return $this->respondSuccess($candidato, 200);
     }
 }

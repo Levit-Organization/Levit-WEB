@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { moduloService } from '../services/moduloService';
 import { registroService } from '../services/registroService';
+import { arquivoService } from '../services/arquivoService';
 
 export default function ModuleRecords() {
   const { id } = useParams();
@@ -14,6 +15,7 @@ export default function ModuleRecords() {
   const [showForm, setShowForm] = useState(false);
   const [editingRegistro, setEditingRegistro] = useState(null);
   const [formDados, setFormDados] = useState({});
+  const [selectedFile, setSelectedFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -28,6 +30,12 @@ export default function ModuleRecords() {
         moduloService.getById(id),
         registroService.getAll(id)
       ]);
+      
+      if (moduloData.tipo === 'recrutamento') {
+        navigate('/recrutamento', { replace: true });
+        return;
+      }
+
       setModulo(moduloData);
       setRegistros(registrosData);
     } catch (err) {
@@ -80,30 +88,51 @@ export default function ModuleRecords() {
   };
 
   const handleSave = async () => {
-    setSaving(true);
-    setError('');
     try {
-      if (editingRegistro) {
-        await registroService.update(id, editingRegistro.id, { dados: formDados });
+      setSaving(true);
+      setError('');
+      if (modulo?.tipo === 'arquivo') {
+        if (!selectedFile) {
+          throw new Error('Selecione um arquivo.');
+        }
+        await arquivoService.upload(id, selectedFile);
       } else {
-        await registroService.create(id, { dados: formDados });
+        if (editingRegistro) {
+          await registroService.update(id, editingRegistro.id, { dados: formDados });
+        } else {
+          await registroService.create(id, { dados: formDados });
+        }
       }
       closeForm();
+      setSelectedFile(null);
       fetchData();
     } catch (err) {
-      setError(err.response?.data?.message || 'Erro ao salvar registro.');
+      setError(err.message || err.response?.data?.message || 'Erro ao salvar registro.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (registroId) => {
-    if (!window.confirm('Tem certeza que deseja excluir este registro?')) return;
+    if (!window.confirm('Tem certeza que deseja excluir?')) return;
     try {
-      await registroService.delete(id, registroId);
+      if (modulo?.tipo === 'arquivo') {
+        await arquivoService.delete(id, registroId);
+      } else {
+        await registroService.delete(id, registroId);
+      }
       fetchData();
     } catch (err) {
       console.error(err);
+      alert('Erro ao excluir.');
+    }
+  };
+
+  const handleDownload = async (registroId, fileName) => {
+    try {
+      await arquivoService.downloadFile(id, registroId, fileName);
+    } catch (e) {
+      alert('Erro ao baixar arquivo.');
     }
   };
 
@@ -203,8 +232,8 @@ export default function ModuleRecords() {
             onClick={openNewForm}
             className="bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/80 transition flex items-center gap-1.5"
           >
-            <span className="material-icons text-base">add</span>
-            Novo Registro
+            <span className="material-icons text-base">{modulo?.tipo === 'arquivo' ? 'upload' : 'add'}</span>
+            {modulo?.tipo === 'arquivo' ? 'Enviar Arquivo' : 'Novo Registro'}
           </button>
         </div>
       </header>
@@ -244,11 +273,18 @@ export default function ModuleRecords() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-divider bg-gray-50/50">
-                  {visibleCampos.map(campo => (
-                    <th key={campo.id} className="text-left px-4 py-3 font-semibold text-xs text-light-text uppercase tracking-wider">
-                      {campo.nome}
-                    </th>
-                  ))}
+                  {modulo?.tipo === 'arquivo' ? (
+                    <>
+                      <th className="text-left px-4 py-3 font-semibold text-xs text-light-text uppercase tracking-wider">Arquivo</th>
+                      <th className="text-left px-4 py-3 font-semibold text-xs text-light-text uppercase tracking-wider">Tamanho</th>
+                    </>
+                  ) : (
+                    visibleCampos.map(campo => (
+                      <th key={campo.id} className="text-left px-4 py-3 font-semibold text-xs text-light-text uppercase tracking-wider">
+                        {campo.nome}
+                      </th>
+                    ))
+                  )}
                   <th className="text-left px-4 py-3 font-semibold text-xs text-light-text uppercase tracking-wider">Criado em</th>
                   <th className="text-right px-4 py-3 font-semibold text-xs text-light-text uppercase tracking-wider">Ações</th>
                 </tr>
@@ -256,23 +292,44 @@ export default function ModuleRecords() {
               <tbody>
                 {registros.map((registro) => (
                   <tr key={registro.id} className="border-b border-divider last:border-0 hover:bg-gray-50/50 transition-colors">
-                    {visibleCampos.map(campo => (
-                      <td key={campo.id} className="px-4 py-3 truncate max-w-[200px]" title={registro.dados?.[campo.id] ?? '—'}>
-                        {registro.dados?.[campo.id] ?? <span className="text-light-text">—</span>}
-                      </td>
-                    ))}
+                    {modulo?.tipo === 'arquivo' ? (
+                      <>
+                        <td className="px-4 py-3 truncate max-w-[200px]" title={registro.arquivo_nome}>
+                          {registro.arquivo_nome || <span className="text-light-text">--</span>}
+                        </td>
+                        <td className="px-4 py-3 text-light-text text-xs">
+                          {registro.arquivo_tamanho ? (registro.arquivo_tamanho / 1024).toFixed(2) + ' KB' : '--'}
+                        </td>
+                      </>
+                    ) : (
+                      visibleCampos.map(campo => (
+                        <td key={campo.id} className="px-4 py-3 truncate max-w-[200px]" title={registro.dados?.[campo.id] ?? '--'}>
+                          {registro.dados?.[campo.id] ?? <span className="text-light-text">--</span>}
+                        </td>
+                      ))
+                    )}
                     <td className="px-4 py-3 text-light-text text-xs">
-                      {registro.criado_em ? new Date(registro.criado_em).toLocaleDateString('pt-BR') : '—'}
+                      {registro.criado_em ? new Date(registro.criado_em).toLocaleDateString('pt-BR') : '--'}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEditForm(registro)}
-                          className="p-1.5 text-light-text hover:text-primary transition-colors rounded hover:bg-gray-100"
-                          title="Editar"
-                        >
-                          <span className="material-icons text-lg">edit</span>
-                        </button>
+                        {modulo?.tipo === 'arquivo' ? (
+                          <button
+                            onClick={() => handleDownload(registro.id, registro.arquivo_nome)}
+                            className="p-1.5 text-light-text hover:text-primary transition-colors rounded hover:bg-gray-100"
+                            title="Baixar"
+                          >
+                            <span className="material-icons text-lg">download</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => openEditForm(registro)}
+                            className="p-1.5 text-light-text hover:text-primary transition-colors rounded hover:bg-gray-100"
+                            title="Editar"
+                          >
+                            <span className="material-icons text-lg">edit</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDelete(registro.id)}
                           className="p-1.5 text-light-text hover:text-red-500 transition-colors rounded hover:bg-red-50"
@@ -301,7 +358,7 @@ export default function ModuleRecords() {
             {/* Panel Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-divider shrink-0">
               <h2 className="text-lg font-bold">
-                {editingRegistro ? 'Editar Registro' : 'Novo Registro'}
+                {modulo?.tipo === 'arquivo' ? 'Enviar Arquivo' : (editingRegistro ? 'Editar Registro' : 'Novo Registro')}
               </h2>
               <button onClick={closeForm} className="text-light-text hover:text-gray-700 transition">
                 <span className="material-icons">close</span>
@@ -316,27 +373,42 @@ export default function ModuleRecords() {
                 </div>
               )}
               
-              <div className="flex flex-col gap-5">
-                {campos.map(campo => (
-                  <div key={campo.id}>
-                    <label className="block text-sm font-medium mb-1.5 text-gray-700">
-                      {campo.nome}
-                      <span className="text-xs text-light-text ml-2 font-normal">
-                        {campo.tipo === 'texto' && 'Texto'}
-                        {campo.tipo === 'numero' && 'Número'}
-                        {campo.tipo === 'data' && 'Data'}
-                        {campo.tipo === 'selecao' && 'Seleção'}
-                      </span>
-                    </label>
-                    {renderFieldInput(campo)}
+              {modulo?.tipo === 'arquivo' ? (
+                <div className="flex flex-col gap-5">
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5 text-gray-700">Selecione o arquivo</label>
+                    <input 
+                      type="file" 
+                      onChange={(e) => setSelectedFile(e.target.files[0])}
+                      className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
+                    />
                   </div>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-5">
+                    {campos.map(campo => (
+                      <div key={campo.id}>
+                        <label className="block text-sm font-medium mb-1.5 text-gray-700">
+                          {campo.nome}
+                          <span className="text-xs text-light-text ml-2 font-normal">
+                            {campo.tipo === 'texto' && 'Texto'}
+                            {campo.tipo === 'numero' && 'Número'}
+                            {campo.tipo === 'data' && 'Data'}
+                            {campo.tipo === 'selecao' && 'Seleção'}
+                          </span>
+                        </label>
+                        {renderFieldInput(campo)}
+                      </div>
+                    ))}
+                  </div>
 
-              {campos.length === 0 && (
-                <p className="text-sm text-light-text text-center py-8">
-                  Este módulo não possui campos configurados.
-                </p>
+                  {campos.length === 0 && (
+                    <p className="text-sm text-light-text text-center py-8">
+                      Este módulo não possui campos configurados.
+                    </p>
+                  )}
+                </>
               )}
             </div>
 
@@ -362,3 +434,4 @@ export default function ModuleRecords() {
     </Layout>
   );
 }
+

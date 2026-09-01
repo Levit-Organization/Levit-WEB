@@ -19,6 +19,7 @@ class BackblazeStorageService implements StorageServiceInterface
             'region'                  => env('B2_REGION'),
             'endpoint'                => 'https://' . env('B2_ENDPOINT'),
             'use_path_style_endpoint' => true,
+            'http'                    => ['verify' => false],
             'credentials'             => [
                 'key'    => env('B2_KEY_ID'),
                 'secret' => env('B2_APPLICATION_KEY'),
@@ -38,7 +39,7 @@ class BackblazeStorageService implements StorageServiceInterface
                 'SourceFile' => $caminhoTemporario,
             ]);
         } catch (S3Exception $e) {
-            throw new \RuntimeException('Não foi possível salvar o arquivo no armazenamento remoto.');
+            throw new \RuntimeException('Não foi possível salvar o arquivo no armazenamento remoto. Detalhes: ' . $e->getMessage());
         }
 
         return $chave;

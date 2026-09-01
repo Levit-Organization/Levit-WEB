@@ -10,6 +10,7 @@ import Modules from './pages/Modules';
 import ModuleForm from './pages/ModuleForm';
 import ModuleRecords from './pages/ModuleRecords';
 import RecrutamentoKanban from './pages/RecrutamentoKanban';
+import TeamManagement from './pages/TeamManagement';
 
 function App() {
   return (
@@ -52,6 +53,11 @@ function App() {
           <Route path="/modulos/:id/registros" element={
             <ProtectedRoute>
               <ModuleRecords />
+            </ProtectedRoute>
+          } />
+          <Route path="/team" element={
+            <ProtectedRoute>
+              <TeamManagement />
             </ProtectedRoute>
           } />
         </Routes>

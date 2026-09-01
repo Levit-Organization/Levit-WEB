@@ -16,6 +16,7 @@ class ModuloService
     protected CampoModuloModel $campoModuloModel;
     protected FaseRecrutamentoModel $faseRecrutamentoModel;
     protected CandidatoModel $candidatoModel;
+    protected \App\Models\AutomacaoModel $automacaoModel;
 
     public function __construct()
     {
@@ -23,6 +24,7 @@ class ModuloService
         $this->campoModuloModel      = new CampoModuloModel();
         $this->faseRecrutamentoModel = new FaseRecrutamentoModel();
         $this->candidatoModel        = new CandidatoModel();
+        $this->automacaoModel        = new \App\Models\AutomacaoModel();
     }
 
     /**
@@ -45,17 +47,7 @@ class ModuloService
         }
 
         if ($tipo === 'recrutamento' && empty($fases)) {
-            $fases = ['Triagem', 'Entrevista', 'Aprovado'];
-        }
-
-        // Campos obrigatórios para módulos de recrutamento
-        if ($tipo === 'recrutamento') {
-            $camposObrigatorios = [
-                ['nome' => 'Nome completo', 'tipo' => 'texto'],
-                ['nome' => 'Contato',       'tipo' => 'texto'],
-                ['nome' => 'Objetivo',      'tipo' => 'texto'],
-            ];
-            $campos = array_merge($camposObrigatorios, $campos);
+            throw new \DomainException('O módulo de recrutamento precisa de pelo menos uma fase.');
         }
 
         foreach ($campos as $campo) {
@@ -318,6 +310,10 @@ class ModuloService
 
         if ((int) $linha->total > 0) {
             throw new \DomainException('Não é possível excluir um campo que já possui registros preenchidos.');
+        }
+
+        if ($this->automacaoModel->where('campo_condicao_id', $campoId)->first()) {
+            throw new \DomainException('Não é possível excluir um campo usado como condição em uma automação.');
         }
 
         $this->campoModuloModel->delete($campoId);

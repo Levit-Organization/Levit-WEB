@@ -7,6 +7,7 @@ use App\Models\CampoModuloModel;
 use App\Models\FaseRecrutamentoModel;
 use App\Models\ModuloModel;
 use App\Models\RegistroModel;
+use CodeIgniter\Events\Events;
 
 class RegistroService
 {
@@ -23,38 +24,40 @@ class RegistroService
 
     public function listarRegistros(string $moduloId, string $empresaId, ?string $busca = null): array
     {
-        $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
+        $modulo = $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
 
-        if ($busca === null || trim($busca) === '') {
-            return $this->registroModel
+        $db = db_connect();
+        $builder = $db->table('registro r')
+                      ->select('r.*')
+                      ->where('r.modulo_id', $moduloId)
+                      ->orderBy('r.criado_em', 'DESC');
+
+        if ($modulo['tipo'] === 'arquivo') {
+            $builder->select('a.nome_original as arquivo_nome, a.tamanho_bytes as arquivo_tamanho, a.tipo_mime as arquivo_tipo, a.chave_armazenamento as arquivo_chave')
+                    ->join('arquivo a', 'a.registro_id = r.id', 'left');
+        }
+
+        if ($busca !== null && trim($busca) !== '') {
+            $camposTexto = $this->campoModuloModel
                 ->where('modulo_id', $moduloId)
-                ->orderBy('criado_em', 'DESC')
+                ->where('tipo', 'texto')
                 ->findAll();
+
+            if (!empty($camposTexto)) {
+                $condicoes = [];
+                foreach ($camposTexto as $campo) {
+                    $condicoes[] = "r.dados->>'{$campo['id']}' ILIKE " . $db->escape('%' . $busca . '%');
+                }
+                $builder->where('(' . implode(' OR ', $condicoes) . ')');
+            } else if ($modulo['tipo'] === 'arquivo') {
+                $builder->where('a.nome_original ILIKE', '%' . $busca . '%');
+            }
         }
 
-        $camposTexto = $this->campoModuloModel
-            ->where('modulo_id', $moduloId)
-            ->where('tipo', 'texto')
-            ->findAll();
-
-        if (empty($camposTexto)) {
-            return [];
-        }
-
-        $condicoes = [];
-        $bindings  = [$moduloId];
-
-        foreach ($camposTexto as $campo) {
-            $condicoes[] = "dados->>'{$campo['id']}' ILIKE ?";
-            $bindings[]  = '%' . $busca . '%';
-        }
-
-        $sql = 'SELECT * FROM registro WHERE modulo_id = ? AND (' . implode(' OR ', $condicoes) . ') ORDER BY criado_em DESC';
-
-        $registros = db_connect()->query($sql, $bindings)->getResultArray();
+        $registros = $builder->get()->getResultArray();
 
         foreach ($registros as &$registro) {
-            $registro['dados'] = json_decode($registro['dados'], true);
+            $registro['dados'] = is_string($registro['dados']) ? json_decode($registro['dados'], true) : $registro['dados'];
         }
 
         return $registros;
@@ -80,6 +83,12 @@ class RegistroService
             'criado_por' => $usuarioId,
         ]);
 
+        Events::trigger('registro_criado', [
+            'modulo_id'      => $moduloId,
+            'registro_id'    => $registroId,
+            'dados_registro' => $dadosValidados,
+        ]);
+
         return $this->buscarRegistro($registroId, $moduloId, $empresaId);
     }
 
@@ -95,13 +104,25 @@ class RegistroService
             'atualizado_por' => $usuarioId,
         ]);
 
+        Events::trigger('registro_atualizado', [
+            'modulo_id'      => $moduloId,
+            'registro_id'    => $registroId,
+            'dados_registro' => $dadosValidados,
+        ]);
+
         return $this->buscarRegistro($registroId, $moduloId, $empresaId);
     }
 
     public function excluirRegistro(string $registroId, string $moduloId, string $empresaId): void
     {
-        $this->buscarRegistro($registroId, $moduloId, $empresaId);
+        $registro = $this->buscarRegistro($registroId, $moduloId, $empresaId);
         $this->registroModel->delete($registroId);
+
+        Events::trigger('registro_excluido', [
+            'modulo_id'      => $moduloId,
+            'registro_id'    => $registroId,
+            'dados_registro' => $registro['dados'],
+        ]);
     }
 
     /**
@@ -142,7 +163,7 @@ class RegistroService
         }
 
         if (! $comCampos) {
-            return null;
+            return $modulo;
         }
 
         return $this->campoModuloModel->where('modulo_id', $moduloId)->findAll();

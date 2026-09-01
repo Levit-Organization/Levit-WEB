@@ -18,9 +18,9 @@ export default function Layout({ children, noPadding = false }) {
     { name: 'Recrutamento', path: '/recrutamento' },
     { name: 'Módulos', path: '/modulos' },
     { divider: true },
-    { name: 'Equipe', path: '/equipe', disabled: true },
-    { name: 'Configurações', path: '/configuracoes', disabled: true },
-    { name: 'Automações', path: '/automacoes', disabled: true },
+    { name: 'Equipe', path: '/team',},
+    { name: 'Configurações', path: '/configuracoes' },
+    { name: 'Automações', path: '/automacoes'},
   ];
 
   return (

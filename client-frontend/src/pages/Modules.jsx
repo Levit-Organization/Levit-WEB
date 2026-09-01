@@ -86,7 +86,13 @@ export default function Modules() {
           {modulos.map((modulo) => (
             <div 
               key={modulo.id} 
-              onClick={() => navigate(`/modulos/${modulo.id}/registros`)}
+              onClick={() => {
+                if (modulo.tipo === 'recrutamento') {
+                  navigate('/recrutamento');
+                } else {
+                  navigate(`/modulos/${modulo.id}/registros`);
+                }
+              }}
               className="bg-white border border-divider rounded-xl p-5 flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition group cursor-pointer"
             >
               <div className="flex items-center gap-4 mb-4">
