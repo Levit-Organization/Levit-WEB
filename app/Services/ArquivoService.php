@@ -16,19 +16,17 @@ class ArquivoService
     protected ModuloModel $moduloModel;
     protected RegistroModel $registroModel;
     protected ArquivoModel $arquivoModel;
+    protected AutorizacaoModuloService $autorizacaoModuloService;
 
     public function __construct()
     {
-        $this->moduloModel   = new ModuloModel();
-        $this->registroModel = new RegistroModel();
-        $this->arquivoModel  = new ArquivoModel();
+        $this->moduloModel              = new ModuloModel();
+        $this->registroModel            = new RegistroModel();
+        $this->arquivoModel             = new ArquivoModel();
+        $this->autorizacaoModuloService = new AutorizacaoModuloService();
     }
 
-    /**
-     * Faz upload de um arquivo, criando o registro e o arquivo
-     * vinculado numa única transação.
-     */
-    public function enviarArquivo(string $moduloId, string $empresaId, string $usuarioId, UploadedFile $arquivo): array
+    public function enviarArquivo(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $usuarioId, UploadedFile $arquivo): array
     {
         $modulo = $this->moduloModel
             ->where('id', $moduloId)
@@ -39,6 +37,8 @@ class ArquivoService
         if (! $modulo) {
             throw new NaoEncontradoException('Módulo de arquivo não encontrado.');
         }
+
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
 
         if (! $arquivo->isValid()) {
             throw new \DomainException('O arquivo enviado é inválido ou não chegou corretamente.');
@@ -101,13 +101,12 @@ class ArquivoService
         return $arquivo;
     }
 
-    /**
-     * Devolve os bytes do arquivo, já com o metadado necessário pra
-     * montar a resposta HTTP de download.
-     */
-    public function baixarArquivo(string $registroId, string $moduloId, string $empresaId): array
+    public function baixarArquivo(string $registroId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
     {
-        $arquivo  = $this->buscarArquivo($registroId, $moduloId, $empresaId);
+        $arquivo = $this->buscarArquivo($registroId, $moduloId, $empresaId);
+
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
+
         $conteudo = service('storage')->obter($arquivo['chave_armazenamento']);
 
         return [
@@ -117,13 +116,14 @@ class ArquivoService
         ];
     }
 
-    public function excluirArquivo(string $registroId, string $moduloId, string $empresaId): void
+    public function excluirArquivo(string $registroId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
     {
         $arquivo = $this->buscarArquivo($registroId, $moduloId, $empresaId);
 
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
+
         service('storage')->excluir($arquivo['chave_armazenamento']);
 
-        // Excluir o registro apaga o `arquivo` em cascata (constraint do banco)
         $this->registroModel->delete($registroId);
     }
 }

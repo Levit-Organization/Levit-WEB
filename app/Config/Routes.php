@@ -14,7 +14,7 @@ $routes->group('api/v1', function ($routes) {
     $routes->post('auth/login', 'AuthController::login');
     $routes->post('auth/logout', 'AuthController::logout', ['filter' => 'auth']);
 
-        $routes->get('modulos', 'ModuloController::listar', ['filter' => 'auth']);
+    $routes->get('modulos', 'ModuloController::listar', ['filter' => 'auth']);
     $routes->post('modulos', 'ModuloController::criar', ['filter' => 'auth:criar_modulos']);
     $routes->get("modulos/({$uuid})", 'ModuloController::detalhes/$1', ['filter' => 'auth']);
     $routes->put("modulos/({$uuid})", 'ModuloController::atualizar/$1', ['filter' => 'auth']);
@@ -46,11 +46,11 @@ $routes->group('api/v1', function ($routes) {
     $routes->put("modulos/({$uuid})/fases/({$uuid})", 'ModuloController::atualizarFase/$1/$2', ['filter' => 'auth']);
     $routes->delete("modulos/({$uuid})/fases/({$uuid})", 'ModuloController::excluirFase/$1/$2', ['filter' => 'auth']);
 
-    $routes->get('cargos', 'CargoController::listar', ['filter' => 'auth:gerenciar_equipe']);
-    $routes->post('cargos', 'CargoController::criar', ['filter' => 'auth:gerenciar_equipe']);
+    $routes->get('cargos', 'CargoController::listar', ['filter' => 'auth:gerenciar_cargos']);
+    $routes->post('cargos', 'CargoController::criar', ['filter' => 'auth:gerenciar_cargos']);
 
     $routes->post('equipe/convidar', 'EquipeController::convidar', ['filter' => 'auth:gerenciar_equipe']);
-    $routes->get('equipe', 'EquipeController::listarMembros', ['filter' => 'auth:gerenciar_equipe']);
+    $routes->get('equipe', 'EquipeController::listarMembros', ['filter' => 'auth:visualizar_equipe']);
     $routes->delete("equipe/({$uuid})", 'EquipeController::removerMembro/$1', ['filter' => 'auth:gerenciar_equipe']);
     $routes->post('publico/convite/aceitar', 'EquipeController::aceitarConvite', ['filter' => 'ratelimit']);
 
@@ -59,9 +59,9 @@ $routes->group('api/v1', function ($routes) {
     $routes->put("modulos/({$uuid})/automacoes/({$uuid})/ativo", 'AutomacaoController::alternarAtivo/$1/$2', ['filter' => 'auth:gerenciar_automacoes']);
     $routes->delete("modulos/({$uuid})/automacoes/({$uuid})", 'AutomacaoController::excluir/$1/$2', ['filter' => 'auth:gerenciar_automacoes']);
 
-    $routes->get('backup/json', 'BackupController::exportarJson', ['filter' => 'auth:gerenciar_dados']);
-    $routes->get("modulos/({$uuid})/exportar-csv", 'BackupController::exportarCsv/$1', ['filter' => 'auth:gerenciar_dados']);
-    $routes->post('backup/resetar', 'BackupController::resetarFabrica', ['filter' => 'auth:gerenciar_dados']);
+    $routes->get('backup/json', 'BackupController::exportarJson', ['filter' => 'auth:exportar_dados']);
+    $routes->get("modulos/({$uuid})/exportar-csv", 'BackupController::exportarCsv/$1', ['filter' => 'auth:exportar_dados']);
+    $routes->post('backup/resetar', 'BackupController::resetarFabrica', ['filter' => 'auth:resetar_dados']);
 
     $routes->get("cargos/({$uuid})/modulos", 'CargoModuloPermissaoController::listar/$1', ['filter' => 'auth:gerenciar_cargos']);
     $routes->put("cargos/({$uuid})/modulos/({$uuid})", 'CargoModuloPermissaoController::definir/$1/$2', ['filter' => 'auth:gerenciar_cargos']);

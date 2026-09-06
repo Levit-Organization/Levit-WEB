@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\ArquivoService;
 
@@ -24,9 +25,11 @@ class ArquivoController extends BaseApiController
         }
 
         try {
-            $resultado = $this->arquivoService->enviarArquivo($moduloId, $user->empresaId, $user->id, $arquivo);
+            $resultado = $this->arquivoService->enviarArquivo($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $user->id, $arquivo);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
@@ -41,9 +44,11 @@ class ArquivoController extends BaseApiController
         $user = service('authenticatedUser');
 
         try {
-            $arquivo = $this->arquivoService->baixarArquivo($registroId, $moduloId, $user->empresaId);
+            $arquivo = $this->arquivoService->baixarArquivo($registroId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->response
@@ -57,9 +62,11 @@ class ArquivoController extends BaseApiController
         $user = service('authenticatedUser');
 
         try {
-            $this->arquivoService->excluirArquivo($registroId, $moduloId, $user->empresaId);
+            $this->arquivoService->excluirArquivo($registroId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->respondSuccess(null, 200);
