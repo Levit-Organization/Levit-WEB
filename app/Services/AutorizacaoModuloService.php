@@ -141,4 +141,34 @@ class AutorizacaoModuloService
             ->where('modulo_id', $moduloId)
             ->delete();
     }
+
+    /**
+     * Filtra uma lista de IDs de módulo, devolvendo só os que o cargo
+     * tem nível suficiente — usado quando uma operação abrange vários
+     * módulos de uma vez (ex: Kanban global de recrutamento).
+     */
+    public function filtrarModulosComNivel(array $moduloIds, bool $acessoTotal, string $cargoId, string $nivelMinimo): array
+    {
+        if ($acessoTotal) {
+            return $moduloIds;
+        }
+
+        if (empty($moduloIds)) {
+            return [];
+        }
+
+        $niveis = $this->cargoModuloPermissaoModel
+            ->where('cargo_id', $cargoId)
+            ->whereIn('modulo_id', $moduloIds)
+            ->findAll();
+
+        $permitidos = [];
+        foreach ($niveis as $linha) {
+            if (self::NIVEIS[$linha['nivel']] >= self::NIVEIS[$nivelMinimo]) {
+                $permitidos[] = $linha['modulo_id'];
+            }
+        }
+
+        return $permitidos;
+    }
 }

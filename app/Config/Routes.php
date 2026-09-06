@@ -39,7 +39,7 @@ $routes->group('api/v1', function ($routes) {
     $routes->put("modulos/({$uuid})/candidatos/({$uuid})/fase", 'CandidatoController::moverFase/$1/$2', ['filter' => 'auth']);
     $routes->get('recrutamento/kanban', 'CandidatoController::kanbanGlobal', ['filter' => 'auth']);
     $routes->put("recrutamento/candidatos/({$uuid})/fase", 'CandidatoController::moverFaseGlobal/$1', ['filter' => 'auth']);
-    $routes->delete("modulos/({$uuid})/candidatos/({$uuid})", 'CandidatoController::excluir/$1/$2', ['filter' => 'auth:gerenciar_recrutamento']);
+    $routes->delete("modulos/({$uuid})/candidatos/({$uuid})", 'CandidatoController::excluir/$1/$2', ['filter' => 'auth']);
 
     $routes->post("modulos/({$uuid})/fases", 'ModuloController::adicionarFase/$1', ['filter' => 'auth']);
     $routes->put("modulos/({$uuid})/fases/reordenar", 'ModuloController::reordenarFases/$1', ['filter' => 'auth']);
@@ -54,10 +54,10 @@ $routes->group('api/v1', function ($routes) {
     $routes->delete("equipe/({$uuid})", 'EquipeController::removerMembro/$1', ['filter' => 'auth:gerenciar_equipe']);
     $routes->post('publico/convite/aceitar', 'EquipeController::aceitarConvite', ['filter' => 'ratelimit']);
 
-    $routes->post("modulos/({$uuid})/automacoes", 'AutomacaoController::criar/$1', ['filter' => 'auth:gerenciar_automacoes']);
-    $routes->get("modulos/({$uuid})/automacoes", 'AutomacaoController::listar/$1', ['filter' => 'auth:gerenciar_automacoes']);
-    $routes->put("modulos/({$uuid})/automacoes/({$uuid})/ativo", 'AutomacaoController::alternarAtivo/$1/$2', ['filter' => 'auth:gerenciar_automacoes']);
-    $routes->delete("modulos/({$uuid})/automacoes/({$uuid})", 'AutomacaoController::excluir/$1/$2', ['filter' => 'auth:gerenciar_automacoes']);
+    $routes->post("modulos/({$uuid})/automacoes", 'AutomacaoController::criar/$1', ['filter' => 'auth']);
+    $routes->get("modulos/({$uuid})/automacoes", 'AutomacaoController::listar/$1', ['filter' => 'auth']);
+    $routes->put("modulos/({$uuid})/automacoes/({$uuid})/ativo", 'AutomacaoController::alternarAtivo/$1/$2', ['filter' => 'auth']);
+    $routes->delete("modulos/({$uuid})/automacoes/({$uuid})", 'AutomacaoController::excluir/$1/$2', ['filter' => 'auth']);
 
     $routes->get('backup/json', 'BackupController::exportarJson', ['filter' => 'auth:exportar_dados']);
     $routes->get("modulos/({$uuid})/exportar-csv", 'BackupController::exportarCsv/$1', ['filter' => 'auth:exportar_dados']);

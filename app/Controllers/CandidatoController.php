@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\CandidatoService;
 
@@ -45,21 +46,37 @@ class CandidatoController extends BaseApiController
 
     public function kanban($moduloId)
     {
+        $user = service('authenticatedUser');
+
         try {
-            $kanban = $this->candidatoService->listarKanban($moduloId, service('authenticatedUser')->empresaId);
+            $kanban = $this->candidatoService->listarKanban($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
+
+        return $this->respondSuccess($kanban, 200);
+    }
+
+    public function kanbanGlobal()
+    {
+        $user   = service('authenticatedUser');
+        $kanban = $this->candidatoService->listarKanbanGlobal($user->empresaId, $user->cargoId, $user->acessoTotal);
 
         return $this->respondSuccess($kanban, 200);
     }
 
     public function detalhes($moduloId, $candidatoId)
     {
+        $user = service('authenticatedUser');
+
         try {
-            $candidato = $this->candidatoService->buscarCandidato($candidatoId, $moduloId, service('authenticatedUser')->empresaId);
+            $candidato = $this->candidatoService->buscarCandidatoComPermissao($candidatoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->respondSuccess($candidato, 200);
@@ -72,14 +89,32 @@ class CandidatoController extends BaseApiController
 
         try {
             $candidato = $this->candidatoService->moverFase(
-                $candidatoId,
-                $moduloId,
-                $user->empresaId,
-                $dados['fase_id'] ?? '',
-                $user->id
+                $candidatoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['fase_id'] ?? '', $user->id
             );
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 422);
+        }
+
+        return $this->respondSuccess($candidato, 200);
+    }
+
+    public function moverFaseGlobal($candidatoId)
+    {
+        $dados = $this->request->getJSON(true) ?? [];
+        $user  = service('authenticatedUser');
+
+        try {
+            $candidato = $this->candidatoService->moverFaseGlobalPorNome(
+                $candidatoId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['fase'] ?? '', $user->id
+            );
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         }
@@ -89,35 +124,16 @@ class CandidatoController extends BaseApiController
 
     public function excluir($moduloId, $candidatoId)
     {
+        $user = service('authenticatedUser');
+
         try {
-            $this->candidatoService->excluirCandidato($candidatoId, $moduloId, service('authenticatedUser')->empresaId);
+            $this->candidatoService->excluirCandidato($candidatoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->respondSuccess(null, 200);
-    }
-
-    public function kanbanGlobal()
-    {
-        $kanban = $this->candidatoService->listarKanbanGlobal(service('authenticatedUser')->empresaId);
-
-        return $this->respondSuccess($kanban, 200);
-    }
-
-    public function moverFaseGlobal($candidatoId)
-    {
-        $dados = $this->request->getJSON(true) ?? [];
-        $user  = service('authenticatedUser');
-
-        try {
-            $candidato = $this->candidatoService->moverFaseGlobalPorNome($candidatoId, $user->empresaId, $dados['fase'] ?? '', $user->id);
-        } catch (NaoEncontradoException $e) {
-            return $this->respondError($e->getMessage(), 404);
-        } catch (\DomainException $e) {
-            return $this->respondError($e->getMessage(), 422);
-        }
-
-        return $this->respondSuccess($candidato, 200);
     }
 }
