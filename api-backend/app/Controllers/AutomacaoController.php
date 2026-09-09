@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\AutomacaoService;
 
@@ -31,9 +32,11 @@ class AutomacaoController extends BaseApiController
         $user = service('authenticatedUser');
 
         try {
-            $automacao = $this->automacaoService->criarAutomacao($moduloId, $user->empresaId, $user->id, $dados);
+            $automacao = $this->automacaoService->criarAutomacao($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $user->id, $dados);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
@@ -45,10 +48,14 @@ class AutomacaoController extends BaseApiController
 
     public function listar($moduloId)
     {
+        $user = service('authenticatedUser');
+
         try {
-            $automacoes = $this->automacaoService->listarAutomacoes($moduloId, service('authenticatedUser')->empresaId);
+            $automacoes = $this->automacaoService->listarAutomacoes($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->respondSuccess($automacoes, 200);
@@ -60,9 +67,11 @@ class AutomacaoController extends BaseApiController
         $user  = service('authenticatedUser');
 
         try {
-            $automacao = $this->automacaoService->alternarAtivo($automacaoId, $moduloId, $user->empresaId, (bool) ($dados['ativo'] ?? true));
+            $automacao = $this->automacaoService->alternarAtivo($automacaoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, (bool) ($dados['ativo'] ?? true));
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->respondSuccess($automacao, 200);
@@ -70,10 +79,14 @@ class AutomacaoController extends BaseApiController
 
     public function excluir($moduloId, $automacaoId)
     {
+        $user = service('authenticatedUser');
+
         try {
-            $this->automacaoService->excluirAutomacao($automacaoId, $moduloId, service('authenticatedUser')->empresaId);
+            $this->automacaoService->excluirAutomacao($automacaoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->respondSuccess(null, 200);

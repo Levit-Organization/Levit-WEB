@@ -1,0 +1,270 @@
+##### Levit-dev-guilherme-vb/app/Database/Migrations/2026-08-27-195640_AddAcessoTotalToCargoTable.php #####
+<?php
+
+namespace App\Database\Migrations;
+
+use CodeIgniter\Database\Migration;
+
+class AddAcessoTotalToCargoTable extends Migration
+{
+    public function up()
+    {
+        $this->forge->addColumn('cargo', [
+            'acesso_total' => [
+                'type'    => 'BOOLEAN',
+                'default' => false,
+            ],
+        ]);
+
+        // Backfill: todo cargo que já possuía TODAS as permissões existentes
+        // até este momento (ou seja, já era um "Admin" completo antes desta
+        // reformulação) recebe acesso_total automaticamente.
+        $this->db->query(
+            "UPDATE cargo SET acesso_total = true
+             WHERE id IN (
+                 SELECT cargo_id FROM cargo_permissao
+                 GROUP BY cargo_id
+                 HAVING COUNT(DISTINCT permissao_id) = (SELECT COUNT(*) FROM permissao)
+             )"
+        );
+    }
+
+    public function down()
+    {
+        $this->forge->dropColumn('cargo', 'acesso_total');
+    }
+}
+##### Levit-dev-guilherme-vb/app/Database/Migrations/2026-08-27-195654_CreateCargoModuloPermissaoTable.php #####
+<?php
+
+namespace App\Database\Migrations;
+
+use CodeIgniter\Database\Migration;
+use CodeIgniter\Database\RawSql;
+
+class CreateCargoModuloPermissaoTable extends Migration
+{
+    public function up()
+    {
+        $this->forge->addField([
+            'id' => [
+                'type'    => 'UUID',
+                'default' => new RawSql('uuidv7()'),
+            ],
+            'cargo_id' => [
+                'type' => 'UUID',
+            ],
+            'modulo_id' => [
+                'type' => 'UUID',
+            ],
+            'nivel' => [
+                'type'       => 'VARCHAR',
+                'constraint' => 20,
+            ],
+            'criado_em' => [
+                'type'    => 'TIMESTAMP',
+                'default' => new RawSql('CURRENT_TIMESTAMP'),
+            ],
+        ]);
+
+        $this->forge->addPrimaryKey('id');
+        $this->forge->addKey('cargo_id');
+        $this->forge->addKey('modulo_id');
+        $this->forge->addUniqueKey(['cargo_id', 'modulo_id']);
+        $this->forge->addForeignKey('cargo_id', 'cargo', 'id', 'CASCADE', 'CASCADE');
+        $this->forge->addForeignKey('modulo_id', 'modulo', 'id', 'CASCADE', 'CASCADE');
+        $this->forge->createTable('cargo_modulo_permissao');
+    }
+
+    public function down()
+    {
+        $this->forge->dropTable('cargo_modulo_permissao');
+    }
+}
+##### Levit-dev-guilherme-vb/app/Database/Migrations/2026-08-28-004456_ReformularCatalogoPermissoes.php #####
+<?php
+
+namespace App\Database\Migrations;
+
+use CodeIgniter\Database\Migration;
+
+class ReformularCatalogoPermissoes extends Migration
+{
+    private array $renomeacoes = [
+        'gerenciar_modulos' => 'criar_modulos',
+    ];
+
+    private array $novasPermissoes = [
+        ['codigo' => 'visualizar_equipe',      'descricao' => 'Ver a lista de membros da equipe'],
+        ['codigo' => 'gerenciar_cargos',       'descricao' => 'Criar e configurar cargos e suas permissões'],
+        ['codigo' => 'visualizar_automacoes',  'descricao' => 'Ver as automações configuradas'],
+        ['codigo' => 'exportar_dados',         'descricao' => 'Exportar backup e CSV dos módulos'],
+        ['codigo' => 'resetar_dados',          'descricao' => 'Resetar os dados da empresa (exige também ser administrador principal)'],
+    ];
+
+    public function up()
+    {
+        helper('uuid');
+
+        // 1. Renomear códigos que continuam existindo
+        foreach ($this->renomeacoes as $antigo => $novo) {
+            $this->db->query('UPDATE permissao SET codigo = ? WHERE codigo = ?', [$novo, $antigo]);
+        }
+
+        // 2. Criar as permissões novas (idempotente, como já fazemos no Seeder)
+        foreach ($this->novasPermissoes as $permissao) {
+            $existe = $this->db->table('permissao')->where('codigo', $permissao['codigo'])->get()->getRow();
+
+            if (! $existe) {
+                $this->db->table('permissao')->insert([
+                    'id'        => generate_uuid_v7(),
+                    'codigo'    => $permissao['codigo'],
+                    'descricao' => $permissao['descricao'],
+                ]);
+            }
+        }
+
+        // 3. Aposentar gerenciar_recrutamento — mas antes, propagar o acesso:
+        //    todo cargo que tinha essa permissão ganha "gerenciar" em TODOS
+        //    os módulos de recrutamento que já existem hoje, pra ninguém
+        //    perder o acesso que já tinha na hora da troca.
+        $permissaoAntiga = $this->db->table('permissao')->where('codigo', 'gerenciar_recrutamento')->get()->getRow();
+
+        if ($permissaoAntiga) {
+            $cargosComRecrutamento = $this->db->table('cargo_permissao')
+                ->where('permissao_id', $permissaoAntiga->id)
+                ->get()
+                ->getResultArray();
+
+            $modulosRecrutamento = $this->db->table('modulo')
+                ->where('tipo', 'recrutamento')
+                ->get()
+                ->getResultArray();
+
+            foreach ($cargosComRecrutamento as $vinculo) {
+                foreach ($modulosRecrutamento as $modulo) {
+                    $jaTem = $this->db->table('cargo_modulo_permissao')
+                        ->where('cargo_id', $vinculo['cargo_id'])
+                        ->where('modulo_id', $modulo['id'])
+                        ->get()
+                        ->getRow();
+
+                    if (! $jaTem) {
+                        $this->db->table('cargo_modulo_permissao')->insert([
+                            'id'        => generate_uuid_v7(),
+                            'cargo_id'  => $vinculo['cargo_id'],
+                            'modulo_id' => $modulo['id'],
+                            'nivel'     => 'gerenciar',
+                        ]);
+                    }
+                }
+            }
+
+            $this->db->table('cargo_permissao')->where('permissao_id', $permissaoAntiga->id)->delete();
+            $this->db->table('permissao')->where('id', $permissaoAntiga->id)->delete();
+        }
+
+        // 4. gerenciar_dados divide-se em duas — todo cargo que tinha a
+        //    antiga ganha AMBAS as novas, preservando o que já podia fazer.
+        $permissaoDadosAntiga = $this->db->table('permissao')->where('codigo', 'gerenciar_dados')->get()->getRow();
+
+        if ($permissaoDadosAntiga) {
+            $cargosComDados = $this->db->table('cargo_permissao')
+                ->where('permissao_id', $permissaoDadosAntiga->id)
+                ->get()
+                ->getResultArray();
+
+            $novasDados = $this->db->table('permissao')->whereIn('codigo', ['exportar_dados', 'resetar_dados'])->get()->getResultArray();
+
+            foreach ($cargosComDados as $vinculo) {
+                foreach ($novasDados as $novaPermissao) {
+                    $jaTem = $this->db->table('cargo_permissao')
+                        ->where('cargo_id', $vinculo['cargo_id'])
+                        ->where('permissao_id', $novaPermissao['id'])
+                        ->get()
+                        ->getRow();
+
+                    if (! $jaTem) {
+                        $this->db->table('cargo_permissao')->insert([
+                            'id'            => generate_uuid_v7(),
+                            'cargo_id'      => $vinculo['cargo_id'],
+                            'permissao_id'  => $novaPermissao['id'],
+                        ]);
+                    }
+                }
+            }
+
+            $this->db->table('cargo_permissao')->where('permissao_id', $permissaoDadosAntiga->id)->delete();
+            $this->db->table('permissao')->where('id', $permissaoDadosAntiga->id)->delete();
+        }
+    }
+
+    public function down()
+    {
+        // Reversão simplificada: renomeia de volta o que foi renomeado.
+        // A recriação exata dos vínculos antigos de gerenciar_recrutamento
+        // e gerenciar_dados não é reconstruída automaticamente aqui, dado
+        // que a migração de dados nesse sentido é ambígua (informação já
+        // foi convertida em granularidade maior).
+        foreach ($this->renomeacoes as $antigo => $novo) {
+            $this->db->query('UPDATE permissao SET codigo = ? WHERE codigo = ?', [$antigo, $novo]);
+        }
+    }
+}
+##### Levit-dev-guilherme-vb/app/Database/Migrations/2026-09-03-185029_RetirarPermissoesAutomacaoGlobais.php #####
+<?php
+
+namespace App\Database\Migrations;
+
+use CodeIgniter\Database\Migration;
+
+class RetirarPermissoesAutomacaoGlobais extends Migration
+{
+    private array $codigos = ['visualizar_automacoes', 'gerenciar_automacoes'];
+
+    public function up()
+    {
+        foreach ($this->codigos as $codigo) {
+            $permissao = $this->db->table('permissao')->where('codigo', $codigo)->get()->getRow();
+
+            if ($permissao) {
+                $this->db->table('cargo_permissao')->where('permissao_id', $permissao->id)->delete();
+                $this->db->table('permissao')->where('id', $permissao->id)->delete();
+            }
+        }
+    }
+
+    public function down()
+    {
+        // Não recriamos — a decisão de design foi abandonar o modelo
+        // global em favor de níveis por módulo, não uma reversão de dado.
+    }
+}
+##### Levit-dev-guilherme-vb/app/Database/Migrations/2026-09-05-185353_RetirarPermissoesAntigasDefinitivo.php #####
+<?php
+
+namespace App\Database\Migrations;
+
+use CodeIgniter\Database\Migration;
+
+class RetirarPermissoesAntigasDefinitivo extends Migration
+{
+    private array $codigos = ['gerenciar_dados', 'gerenciar_modulos', 'gerenciar_recrutamento'];
+
+    public function up()
+    {
+        foreach ($this->codigos as $codigo) {
+            $permissao = $this->db->table('permissao')->where('codigo', $codigo)->get()->getRow();
+
+            if ($permissao) {
+                $this->db->table('cargo_permissao')->where('permissao_id', $permissao->id)->delete();
+                $this->db->table('permissao')->where('id', $permissao->id)->delete();
+            }
+        }
+    }
+
+    public function down()
+    {
+        // Decisão de design definitiva — sem reversão automática.
+    }
+}

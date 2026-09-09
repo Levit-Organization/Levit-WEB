@@ -11,11 +11,13 @@ class PermissaoSeeder extends Seeder
         helper('uuid');
 
         $permissoes = [
-            ['codigo' => 'gerenciar_modulos',      'descricao' => 'Criar, editar e excluir módulos'],
-            ['codigo' => 'gerenciar_equipe',       'descricao' => 'Convidar, remover membros e gerenciar cargos'],
-            ['codigo' => 'gerenciar_recrutamento', 'descricao' => 'Gerenciar o Kanban de recrutamento e candidatos'],
-            ['codigo' => 'ver_relatorios',         'descricao' => 'Visualizar relatórios e exportações'],
-            ['codigo' => 'gerenciar_automacoes',   'descricao' => 'Criar e editar automações'],
+            ['codigo' => 'criar_modulos',     'descricao' => 'Criar novos módulos'],
+            ['codigo' => 'visualizar_equipe', 'descricao' => 'Ver a lista de membros da equipe'],
+            ['codigo' => 'gerenciar_equipe',  'descricao' => 'Convidar e remover membros da equipe'],
+            ['codigo' => 'gerenciar_cargos',  'descricao' => 'Criar e configurar cargos e suas permissões'],
+            ['codigo' => 'exportar_dados',    'descricao' => 'Exportar backup e CSV dos módulos'],
+            ['codigo' => 'resetar_dados',     'descricao' => 'Resetar os dados da empresa (exige também ser administrador principal)'],
+            ['codigo' => 'ver_relatorios',    'descricao' => 'Visualizar relatórios e exportações'],
         ];
 
         foreach ($permissoes as $permissao) {

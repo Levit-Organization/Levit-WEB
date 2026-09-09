@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { getAvatar } from '../utils/avatarStorage';
 
 export default function Layout({ children, noPadding = false }) {
   const { usuario, empresa, iniciais, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const avatar = getAvatar(usuario?.id);
 
   const handleLogout = async () => {
     await logout();
@@ -18,14 +20,28 @@ export default function Layout({ children, noPadding = false }) {
     { name: 'Recrutamento', path: '/recrutamento' },
     { name: 'Módulos', path: '/modulos' },
     { divider: true },
+    { name: 'Automações', path: '/automacoes'},
     { name: 'Equipe', path: '/team',},
     { name: 'Configurações', path: '/configuracoes' },
-    { name: 'Automações', path: '/automacoes'},
+
   ];
 
   return (
     <div className="h-screen flex bg-background font-sans text-gray-900 overflow-hidden">
       {/* SIDEBAR */}
+      {!sidebarOpen && (
+        <div className="w-14 bg-white border-r border-divider flex flex-col items-center pt-6 shrink-0">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            title="Mostrar menu"
+            className="text-light-text hover:text-gray-700"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        </div>
+      )}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-0 overflow-hidden'} bg-white border-r border-divider flex flex-col justify-between shrink-0 transition-all duration-300 overflow-y-auto`}>
         <div>
           {/* Logo */}
@@ -64,9 +80,9 @@ export default function Layout({ children, noPadding = false }) {
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`flex items-center px-6 py-3 border-l-4 text-sm transition-colors ${
+                  className={`flex items-center px-6 py-3 border-l-4 text-sm transition-colors duration-200 ${
                     isActive
-                      ? 'bg-background border-primary text-black font-semibold'
+                      ? 'bg-background border-primary text-black font-semibold animate-nav-active'
                       : 'border-transparent text-light-text hover:bg-background hover:text-gray-600'
                   }`}
                 >
@@ -80,8 +96,8 @@ export default function Layout({ children, noPadding = false }) {
         {/* Perfil do Usuário Logado (Bottom) */}
         <div className="p-6 border-t border-divider">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm shrink-0">
-              {iniciais}
+            <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm shrink-0 overflow-hidden">
+              {avatar ? <img src={avatar} alt="" className="w-full h-full object-cover" /> : iniciais}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate">{usuario?.nome || 'Carregando...'}</p>
@@ -98,8 +114,10 @@ export default function Layout({ children, noPadding = false }) {
       </aside>
 
       {/* ÁREA PRINCIPAL */}
-      <main className={`flex-1 overflow-y-auto flex flex-col ${noPadding ? '' : 'p-8'}`}>
-        {children}
+      <main className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col">
+        <div key={location.pathname} className={`flex-1 flex flex-col animate-page-in ${noPadding ? '' : 'p-8'}`}>
+          {children}
+        </div>
       </main>
     </div>
   );

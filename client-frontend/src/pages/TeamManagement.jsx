@@ -1,144 +1,113 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useState } from 'react';
 import Layout from '../components/Layout';
-import { equipeService } from '../services/equipeService';
-import { cargoService } from '../services/cargoService';
 
-const availablePermissions = ['Módulos', 'Financeiro', 'Equipe', 'Relatórios'];
-
-function getInitials(name = '') {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return '??';
-  const first = parts[0][0] || '';
-  const last = parts.length > 1 ? parts[parts.length - 1][0] || '' : '';
-  return `${first}${last}`.toUpperCase();
-}
-
-function getAvatarColor(name = '') {
-  const palette = [
-    'bg-violet-600',
-    'bg-sky-600',
-    'bg-amber-600',
-    'bg-emerald-600',
-    'bg-rose-600',
-    'bg-indigo-600',
-    'bg-cyan-600',
-    'bg-fuchsia-600',
-  ];
-  return palette[name.length % palette.length];
-}
-
-function statusClass(status) {
-  switch (status) {
-    case 'Pendente':
-      return 'bg-amber-100 text-amber-700';
-    case 'Inativo':
-      return 'bg-slate-100 text-slate-600';
-    default:
-      return 'bg-emerald-100 text-emerald-700';
-  }
-}
-
-export default function TeamManagement() {
+export default function TeamManagement({
+  members = [],
+  roles = [],
+  modules = [],
+  permissions = [],
+  loading = false,
+  onInviteMember,
+  onUpdateMember,
+  onDeleteMember,
+  onCreateRole,
+  onUpdateRole,
+  onDeleteRole,
+  moduloNiveis = [],
+  moduloNiveisLoading = false,
+  onOpenRoleModules,
+  onSetModuloNivel,
+  onRemoveModuloNivel,
+}) {
   const [activeTab, setActiveTab] = useState('members');
-  const [members, setMembers] = useState([]);
-  const [roles, setRoles] = useState([]);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('Todos');
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const [membersData, rolesData] = await Promise.all([
-        equipeService.listarMembros(),
-        cargoService.listarCargos(),
-      ]);
-      setMembers(membersData.map(m => ({ ...m, cargo: m.cargo_nome, status: m.status || 'Ativo' })));
-      setRoles(rolesData.map(r => ({
-        ...r,
-        permissoes: Array.isArray(r.permissoes) ? r.permissoes : (r.permissoes ? JSON.parse(r.permissoes) : []),
-        color: r.color || 'bg-violet-100 text-violet-700',
-        descricao: r.descricao || 'Cargo da equipe',
-      })));
-    } catch (error) {
-      console.error(error);
-      alert('Erro ao carregar os dados.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
 
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
-  const [editingRole, setEditingRole] = useState(null);
-
   const [memberForm, setMemberForm] = useState({
     nome: '',
     email: '',
-    cargo_id: '',
-    status: 'Pendente',
+    cargo: '',
+    status: '',
   });
 
+  const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const [editingRole, setEditingRole] = useState(null);
   const [roleForm, setRoleForm] = useState({
     nome: '',
-    descricao: '',
     permissoes: [],
-    color: 'bg-violet-100 text-violet-700',
   });
-
-  const roleMap = useMemo(() => {
-    return roles.reduce((acc, role) => {
-      acc[role.nome] = role;
-      return acc;
-    }, {});
-  }, [roles]);
-
-  const filteredMembers = useMemo(() => {
-    return members.filter((member) => {
-      const matchesSearch = [member.nome, member.email, member.cargo]
-        .join(' ')
-        .toLowerCase()
-        .includes(search.toLowerCase());
-
-      const matchesStatus =
-        statusFilter === 'Todos' || member.status === statusFilter;
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [members, search, statusFilter]);
-
-  const membersCount = members.length;
-  const activeCount = members.filter((m) => m.status === 'Ativo').length;
-  const pendingCount = members.filter((m) => m.status === 'Pendente').length;
 
   const openInviteModal = (member = null) => {
     setEditingMember(member);
     setMemberForm(
       member
         ? {
-            nome: member.nome,
-            email: member.email,
-            cargo_id: roles.find(r => r.nome === member.cargo)?.id || '',
-            status: member.status,
+            nome: member.nome || '',
+            email: member.email || '',
+            cargo: member.cargo || '',
+            status: member.status || '',
           }
         : {
             nome: '',
             email: '',
-            cargo_id: roles[0]?.id || '',
-            status: 'Pendente',
+            cargo: '',
+            status: '',
           }
     );
     setInviteOpen(true);
   };
 
+  const [moduleAccessRole, setModuleAccessRole] = useState(null);
+
+  const openModuleAccessModal = (role) => {
+    setModuleAccessRole(role);
+    if (!role.acesso_total) {
+      onOpenRoleModules?.(role.id);
+    }
+  };
+
+  const closeModuleAccessModal = () => {
+    setModuleAccessRole(null);
+  };
+
+  const moduloNivelPorId = moduloNiveis.reduce((acc, item) => {
+    acc[item.modulo_id] = item.nivel;
+    return acc;
+  }, {});
+
+  const handleModuloNivelChange = (moduloId, nivel) => {
+    if (!moduleAccessRole) return;
+
+    if (!nivel) {
+      onRemoveModuloNivel?.(moduleAccessRole.id, moduloId);
+    } else {
+      onSetModuloNivel?.(moduleAccessRole.id, moduloId, nivel);
+    }
+  };
+
   const closeInviteModal = () => {
     setInviteOpen(false);
     setEditingMember(null);
+    setMemberForm({ nome: '', email: '', cargo: '', status: '' });
+  };
+
+  const submitMember = (event) => {
+    event?.preventDefault?.();
+
+    if (!memberForm.email.trim()) return;
+
+    if (editingMember && !onUpdateMember) return;
+    if (!editingMember && !onInviteMember) return;
+
+    if (editingMember) {
+      onUpdateMember?.(editingMember.id, { ...memberForm });
+    } else {
+      onInviteMember?.({ ...memberForm });
+    }
+
+    closeInviteModal();
   };
 
   const openRoleModal = (role = null) => {
@@ -146,16 +115,12 @@ export default function TeamManagement() {
     setRoleForm(
       role
         ? {
-            nome: role.nome,
-            descricao: role.descricao || '',
-            permissoes: role.permissoes || [],
-            color: role.color || 'bg-violet-100 text-violet-700',
+            nome: role.nome || '',
+            permissoes: [...(role.permissoes || [])],
           }
         : {
             nome: '',
-            descricao: '',
-            permissoes: ['Módulos'],
-            color: 'bg-violet-100 text-violet-700',
+            permissoes: [],
           }
     );
     setRoleModalOpen(true);
@@ -164,484 +129,528 @@ export default function TeamManagement() {
   const closeRoleModal = () => {
     setRoleModalOpen(false);
     setEditingRole(null);
+    setRoleForm({ nome: '', permissoes: [] });
   };
 
-  const handleSaveMember = async (e) => {
-    e.preventDefault();
+  const submitRole = (event) => {
+    event.preventDefault();
 
-    if (!memberForm.email.trim()) {
-      alert('E-mail é obrigatório!');
-      return;
-    }
-    
-    if (!memberForm.cargo_id) {
-      alert('Selecione um cargo válido!');
-      return;
+    if (!roleForm.nome.trim()) return;
+
+    if (editingRole && !onUpdateRole) return;
+    if (!editingRole && !onCreateRole) return;
+
+    if (editingRole) {
+      onUpdateRole?.(editingRole.id, {
+        nome: roleForm.nome.trim(),
+        permissoes: roleForm.permissoes,
+      });
+    } else {
+      onCreateRole?.({
+        nome: roleForm.nome.trim(),
+        permissoes: roleForm.permissoes,
+      });
     }
 
-    try {
-      if (editingMember) {
-        alert('Edição de membro ainda não suportada pelo servidor.');
-      } else {
-        await equipeService.convidarMembro(memberForm.email, memberForm.cargo_id);
-        alert('Convite enviado com sucesso!');
-        fetchData();
-      }
-      closeInviteModal();
-    } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.message || 'Erro ao salvar membro.');
-    }
+    closeRoleModal();
   };
 
-  const handleDeleteMember = async (memberId) => {
-    if (!window.confirm('Deseja remover este colaborador da lista?')) return;
-    try {
-      await equipeService.removerMembro(memberId);
-      alert('Colaborador removido com sucesso!');
-      fetchData();
-    } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.message || 'Erro ao remover membro.');
-    }
+  const handleDeleteMember = (member) => {
+    onDeleteMember?.(member.id);
   };
 
-  const handleSaveRole = async (e) => {
-    e.preventDefault();
-    if (!roleForm.nome.trim()) {
-      alert('Nome do cargo é obrigatório!');
-      return;
-    }
-
-    try {
-      if (editingRole) {
-        alert('A edição de cargos ainda não é suportada pelo servidor.');
-      } else {
-        await cargoService.criarCargo(roleForm.nome, roleForm.permissoes);
-        alert('Cargo criado com sucesso!');
-        fetchData();
-      }
-      closeRoleModal();
-    } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.message || 'Erro ao salvar cargo.');
-    }
+  const handleDeleteRole = (role) => {
+    onDeleteRole?.(role.id);
   };
 
-  const handleDeleteRole = (roleId) => {
-    alert('A exclusão de cargos ainda não é suportada pelo servidor.');
-  };
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredMembers = members.filter((member) => {
+    const matchesSearch =
+      !normalizedSearch ||
+      (member.nome || '').toLowerCase().includes(normalizedSearch) ||
+      (member.email || '').toLowerCase().includes(normalizedSearch);
 
-  const roleSummary = roles.map((role) => ({
-    ...role,
-    usuarios: members.filter((member) => member.cargo === role.nome).length,
-  }));
+    const memberRoleId =
+      member.cargoId ??
+      member.cargo_id ??
+      member.cargo?.id ??
+      member.roleId ??
+      member.role_id;
+
+    const memberRoleName =
+      typeof member.cargo === 'string'
+        ? member.cargo
+        : member.cargo?.nome || member.cargo?.name || '';
+
+    const selectedRole = roles.find(
+      (role) => String(role.id) === String(roleFilter)
+    );
+
+    const matchesRole =
+      !roleFilter ||
+      String(memberRoleId || '') === String(roleFilter) ||
+      (selectedRole?.nome || selectedRole?.name || '').toLowerCase() ===
+        memberRoleName.toLowerCase();
+
+    return matchesSearch && matchesRole;
+  });
 
   return (
-    <Layout>
-      <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8 shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold">Administração de Equipe</h1>
-          <p className="text-sm text-light-text mt-1">
-            Convide colaboradores, organize cargos e mantenha o acesso da equipe bem estruturado.
-          </p>
-        </div>
+    <Layout noPadding>
+      <div className="min-h-full bg-white text-[#151515]">
+        <header className="h-20 px-8 flex items-center justify-between border-b border-[#E6E6E6] bg-white">
+          <h1 className="text-[22px] font-bold tracking-[-0.01em]">
+            Administração de Equipe
+          </h1>
 
-        <button
-          onClick={() => openInviteModal()}
-          className="bg-primary text-white text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-primary/90 transition flex items-center gap-2 self-start md:self-auto"
-        >
-          <span className="material-icons text-base">person_add</span>
-          Adicionar Membro
-        </button>
-      </header>
+          <button
+            type="button"
+            onClick={() => openInviteModal()}
+            className="h-12 px-6 rounded-md bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm"
+          >
+            <span className="text-lg leading-none">+</span>
+            Adicionar Membro
+          </button>
+        </header>
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 shrink-0">
-        <div className="bg-white border border-divider rounded-xl p-5">
-          <p className="text-sm text-light-text">Total de colaboradores</p>
-          <h3 className="text-3xl font-bold text-primary mt-1">{membersCount}</h3>
-        </div>
-
-        <div className="bg-white border border-divider rounded-xl p-5">
-          <p className="text-sm text-light-text">Membros ativos</p>
-          <h3 className="text-3xl font-bold text-emerald-600 mt-1">{activeCount}</h3>
-        </div>
-
-        <div className="bg-white border border-divider rounded-xl p-5">
-          <p className="text-sm text-light-text">Convites pendentes</p>
-          <h3 className="text-3xl font-bold text-amber-600 mt-1">{pendingCount}</h3>
-        </div>
-      </section>
-
-      <section className="bg-white border border-divider rounded-2xl overflow-hidden">
-        <div className="px-6 pt-5 border-b border-divider">
-          <div className="flex flex-wrap gap-6">
+        <div className="px-9 pt-7 pb-12">
+          <div className="border-b border-[#DDDDDD] flex gap-7 mb-6">
             <button
+              type="button"
               onClick={() => setActiveTab('members')}
-              className={`pb-3 text-sm font-medium border-b-2 transition ${
+              className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'members'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-light-text hover:text-gray-700'
+                  ? 'text-primary border-primary'
+                  : 'text-[#666666] border-transparent hover:text-[#333333]'
               }`}
             >
               Colaboradores
             </button>
 
             <button
+              type="button"
               onClick={() => setActiveTab('roles')}
-              className={`pb-3 text-sm font-medium border-b-2 transition ${
+              className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'roles'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-light-text hover:text-gray-700'
+                  ? 'text-primary border-primary'
+                  : 'text-[#666666] border-transparent hover:text-[#333333]'
               }`}
             >
               Cargos & Permissões
             </button>
           </div>
-        </div>
 
-        {activeTab === 'members' ? (
-          <div className="p-6">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between mb-5">
-              <div className="flex flex-col sm:flex-row gap-3 sm:items-center w-full xl:max-w-2xl">
-                <div className="relative flex-1">
-                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-light-text text-lg">
-                    search
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Buscar por nome, e-mail ou cargo"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="w-full border border-divider rounded-lg pl-10 pr-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  />
+          {activeTab === 'members' ? (
+            <section>
+              <div className="mb-5 rounded-xl border border-[#DEDEDE] bg-white p-4">
+                <div className="flex flex-col md:flex-row md:items-center gap-3">
+                  <div className="relative flex-1">
+                    <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-[19px] text-[#8A8A8A] pointer-events-none">
+                      search
+                    </span>
+                    <input
+                      type="search"
+                      value={searchTerm}
+                      onChange={(event) => setSearchTerm(event.target.value)}
+                      placeholder="Pesquisar por nome ou e-mail"
+                      className="w-full h-10 rounded-md border border-[#DADADA] bg-white pl-10 pr-3 text-sm text-[#333333] outline-none placeholder:text-[#8A8A8A] focus:border-primary focus:ring-2 focus:ring-primary/10"
+                    />
+                  </div>
+
+                  <div className="relative w-full md:w-[220px]">
+                    <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[#8A8A8A] pointer-events-none">
+                      filter_list
+                    </span>
+                    <select
+                      value={roleFilter}
+                      onChange={(event) => setRoleFilter(event.target.value)}
+                      className="w-full h-10 appearance-none rounded-md border border-[#DADADA] bg-white pl-10 pr-9 text-sm text-[#333333] outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                    >
+                      <option value="">Todos os cargos</option>
+                      {roles.map((role) => (
+                        <option key={role.id} value={role.id}>
+                          {role.nome}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-icons absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-[#777777] pointer-events-none">
+                      expand_more
+                    </span>
+                  </div>
                 </div>
-
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="border border-divider rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary min-w-[160px]"
-                >
-                  <option>Todos</option>
-                  <option>Ativo</option>
-                  <option>Pendente</option>
-                  <option>Inativo</option>
-                </select>
               </div>
 
-              <button
-                onClick={() => openInviteModal()}
-                className="border border-divider bg-white text-sm font-medium px-4 py-2.5 rounded-lg hover:border-primary/30 hover:text-primary transition flex items-center gap-2 self-start"
-              >
-                <span className="material-icons text-base">mail</span>
-                Convidar por e-mail
-              </button>
-            </div>
+              <div className="hidden md:block border border-[#DEDEDE] rounded-xl overflow-hidden bg-white">
+                <table className="w-full border-collapse table-fixed">
+                  <colgroup>
+                    <col className="w-[35%]" />
+                    <col className="w-[27%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[16%]" />
+                  </colgroup>
 
-            <div className="hidden lg:block overflow-x-auto border border-divider rounded-xl">
-              <table className="min-w-full text-sm">
-                <thead className="bg-background text-light-text uppercase text-[11px] tracking-wide">
-                  <tr>
-                    <th className="text-left px-4 py-3 font-semibold">Nome / E-mail</th>
-                    <th className="text-left px-4 py-3 font-semibold">Cargo Atual</th>
-                    <th className="text-left px-4 py-3 font-semibold">Status</th>
-                    <th className="text-right px-4 py-3 font-semibold">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredMembers.length === 0 ? (
-                    <tr>
-                      <td colSpan="4" className="px-4 py-12 text-center text-light-text">
-                        Nenhum colaborador encontrado com os filtros atuais.
-                      </td>
+                  <thead>
+                    <tr className="h-10 bg-white border-b border-[#E2E2E2]">
+                      <th className="px-4 text-left text-[11px] font-bold tracking-[0.03em] text-[#666666] uppercase">
+                        Nome / E-mail
+                      </th>
+                      <th className="px-4 text-left text-[11px] font-bold tracking-[0.03em] text-[#666666] uppercase">
+                        Cargo Atual
+                      </th>
+                      <th className="px-4 text-left text-[11px] font-bold tracking-[0.03em] text-[#666666] uppercase">
+                        Status
+                      </th>
+                      <th className="px-4 text-right text-[11px] font-bold tracking-[0.03em] text-[#666666] uppercase">
+                        Ações
+                      </th>
                     </tr>
-                  ) : (
-                    filteredMembers.map((member) => {
-                      const role = roleMap[member.cargo];
+                  </thead>
 
-                      return (
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td colSpan="4" className="px-4 py-12 text-center text-sm text-[#666666]">
+                          Carregando colaboradores...
+                        </td>
+                      </tr>
+                    ) : filteredMembers.length === 0 ? (
+                      <tr>
+                        <td colSpan="4" className="px-4 py-12 text-center text-sm text-[#666666]">
+                          Nenhum colaborador encontrado.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredMembers.map((member) => (
                         <tr
                           key={member.id}
-                          className="border-t border-divider hover:bg-background/60 transition"
+                          className="h-[56px] border-b last:border-b-0 border-[#E7E7E7] hover:bg-[#FAFAFA] transition-colors"
                         >
-                          <td className="px-4 py-4">
-                            <div className="flex items-center gap-3 min-w-[280px]">
-                              <div
-                                className={`w-10 h-10 rounded-full text-white flex items-center justify-center text-xs font-bold ${getAvatarColor(
-                                  member.nome
-                                )}`}
-                              >
-                                {getInitials(member.nome)}
+                          <td className="px-4">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-8 h-8 rounded-full bg-[#E8E8E8] text-[#666666] text-[11px] font-bold flex items-center justify-center shrink-0">
+                                {(member.nome || '?').trim().charAt(0).toUpperCase()}
                               </div>
-                              <div>
-                                <p className="font-semibold text-gray-900">{member.nome}</p>
-                                <p className="text-xs text-light-text">{member.email}</p>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm truncate">
+                                  {member.nome || '—'}
+                                </p>
+                                <p className="text-[11px] text-[#777777] truncate">
+                                  {member.email || '—'}
+                                </p>
                               </div>
                             </div>
                           </td>
 
-                          <td className="px-4 py-4">
-                            <span
-                              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                                role?.color || 'bg-slate-100 text-slate-700'
-                              }`}
-                            >
-                              {member.cargo}
-                            </span>
+                          <td className="px-4">
+                            {member.cargo ? (
+                              <span className="rounded-full bg-[#DDF3EC] px-3 py-1 text-[10px] font-semibold text-[#14755D]">
+                                {member.cargo}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-[#999999]">—</span>
+                            )}
                           </td>
 
-                          <td className="px-4 py-4">
-                            <span
-                              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${statusClass(
-                                member.status
-                              )}`}
-                            >
-                              {member.status}
-                            </span>
+                          <td className="px-4">
+                            {member.status ? (
+                              <span className="rounded-full bg-[#DDF3EC] px-3 py-1 text-[10px] font-semibold text-[#14755D]">
+                                {member.status}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-[#999999]">—</span>
+                            )}
                           </td>
 
-                          <td className="px-4 py-4">
+                          <td className="px-4">
                             <div className="flex justify-end gap-2">
-                              <button
-                                onClick={() => openInviteModal(member)}
-                                className="w-9 h-9 rounded-lg border border-divider text-gray-500 hover:text-primary hover:border-primary/30 transition inline-flex items-center justify-center"
-                                title="Editar colaborador"
-                              >
-                                <span className="material-icons text-base">edit</span>
-                              </button>
+                              {onUpdateMember && (
+                                <button
+                                  type="button"
+                                  onClick={() => openInviteModal(member)}
+                                  title="Editar colaborador"
+                                  className="w-8 h-8 border border-[#D9D9D9] rounded-md flex items-center justify-center text-[#555555] hover:text-primary hover:border-primary transition-colors"
+                                >
+                                  <span className="material-icons text-[17px]">edit</span>
+                                </button>
+                              )}
 
                               <button
-                                onClick={() => handleDeleteMember(member.id)}
-                                className="w-9 h-9 rounded-lg border border-divider text-red-400 hover:text-red-600 hover:border-red-200 transition inline-flex items-center justify-center"
+                                type="button"
+                                onClick={() => handleDeleteMember(member)}
                                 title="Excluir colaborador"
+                                className="w-8 h-8 border border-[#D9D9D9] rounded-md flex items-center justify-center text-[#E00000] hover:bg-red-50 hover:border-red-200 transition-colors"
                               >
-                                <span className="material-icons text-base">delete</span>
+                                <span className="material-icons text-[17px]">delete_outline</span>
                               </button>
                             </div>
                           </td>
                         </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:hidden">
-              {filteredMembers.length === 0 ? (
-                <div className="col-span-full border border-dashed border-divider rounded-xl p-10 text-center text-light-text text-sm">
-                  Nenhum colaborador encontrado com os filtros atuais.
-                </div>
-              ) : (
-                filteredMembers.map((member) => {
-                  const role = roleMap[member.cargo];
-
-                  return (
-                    <div key={member.id} className="border border-divider rounded-xl p-4 bg-white">
-                      <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="grid grid-cols-1 gap-3 md:hidden">
+                {loading ? (
+                  <div className="border border-dashed border-[#DEDEDE] rounded-xl p-8 text-center text-sm text-[#666666]">
+                    Carregando colaboradores...
+                  </div>
+                ) : filteredMembers.length === 0 ? (
+                  <div className="border border-dashed border-[#DEDEDE] rounded-xl p-8 text-center text-sm text-[#666666]">
+                    Nenhum colaborador encontrado.
+                  </div>
+                ) : (
+                  filteredMembers.map((member) => (
+                    <article
+                      key={member.id}
+                      className="border border-[#DEDEDE] rounded-xl p-4 bg-white"
+                    >
+                      <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div
-                            className={`w-11 h-11 rounded-full text-white flex items-center justify-center text-sm font-bold shrink-0 ${getAvatarColor(
-                              member.nome
-                            )}`}
-                          >
-                            {getInitials(member.nome)}
+                          <div className="w-10 h-10 rounded-full bg-[#E8E8E8] text-[#666666] text-xs font-bold flex items-center justify-center shrink-0">
+                            {(member.nome || '?').trim().charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <p className="font-semibold truncate">{member.nome}</p>
-                            <p className="text-xs text-light-text truncate">{member.email}</p>
+                            <p className="font-semibold text-sm truncate">
+                              {member.nome || '—'}
+                            </p>
+                            <p className="text-xs text-[#666666] truncate">
+                              {member.email || '—'}
+                            </p>
                           </div>
                         </div>
 
-                        <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${statusClass(
-                            member.status
-                          )}`}
-                        >
-                          {member.status}
-                        </span>
+                        {member.status && (
+                          <span className="rounded-full bg-[#DDF3EC] px-2.5 py-1 text-[10px] font-semibold text-[#14755D]">
+                            {member.status}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="flex items-center justify-between gap-3">
-                        <span
-                          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                            role?.color || 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {member.cargo}
-                        </span>
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        {member.cargo ? (
+                          <span className="rounded-full bg-[#DDF3EC] px-3 py-1 text-[10px] font-semibold text-[#14755D]">
+                            {member.cargo}
+                          </span>
+                        ) : (
+                          <span />
+                        )}
 
                         <div className="flex gap-2">
+                          {onUpdateMember && (
+                            <button
+                              type="button"
+                              onClick={() => openInviteModal(member)}
+                              className="w-9 h-9 border border-[#D9D9D9] rounded-md flex items-center justify-center text-[#555555]"
+                            >
+                              <span className="material-icons text-[17px]">edit</span>
+                            </button>
+                          )}
                           <button
-                            onClick={() => openInviteModal(member)}
-                            className="w-9 h-9 rounded-lg border border-divider text-gray-500 hover:text-primary hover:border-primary/30 transition inline-flex items-center justify-center"
+                            type="button"
+                            onClick={() => handleDeleteMember(member)}
+                            className="w-9 h-9 border border-[#D9D9D9] rounded-md flex items-center justify-center text-[#E00000]"
                           >
-                            <span className="material-icons text-base">edit</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteMember(member.id)}
-                            className="w-9 h-9 rounded-lg border border-divider text-red-400 hover:text-red-600 hover:border-red-200 transition inline-flex items-center justify-center"
-                          >
-                            <span className="material-icons text-base">delete</span>
+                            <span className="material-icons text-[17px]">delete_outline</span>
                           </button>
                         </div>
                       </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="p-6">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-5">
-              <p className="text-sm text-light-text">
-                Defina modelos de acesso para vincular à sua equipe.
-              </p>
+                    </article>
+                  ))
+                )}
+              </div>
+            </section>
+          ) : (
+            <section>
+              <div className="flex items-center justify-between mb-5 gap-4">
+                <p className="text-sm text-[#5F5F5F]">
+                  Defina modelos de acesso para vincular à sua equipe.
+                </p>
 
-              <button
-                onClick={() => openRoleModal()}
-                className="border border-divider bg-white text-sm font-medium px-4 py-2.5 rounded-lg hover:border-primary/30 hover:text-primary transition flex items-center gap-2 self-start"
-              >
-                <span className="material-icons text-base">add</span>
-                Criar cargo
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {roleSummary.map((role) => (
-                <div
-                  key={role.id}
-                  className="bg-white border border-divider rounded-xl p-5 hover:shadow-sm transition"
+                <button
+                  type="button"
+                  onClick={() => openRoleModal()}
+                  className="h-8 px-3 rounded-md border border-[#8D8D8D] bg-white text-xs font-medium text-[#444444] hover:border-primary hover:text-primary transition-colors whitespace-nowrap"
                 >
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-lg">{role.nome}</h3>
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${role.color}`}
-                        >
-                          {role.usuarios} usuário{role.usuarios !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      <p className="text-sm text-light-text mt-1 leading-relaxed">
-                        {role.descricao}
-                      </p>
-                    </div>
+                  + Criar Cargo
+                </button>
+              </div>
 
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => openRoleModal(role)}
-                        className="w-8 h-8 rounded-lg hover:bg-background text-gray-500 hover:text-primary transition inline-flex items-center justify-center"
-                        title="Editar cargo"
-                      >
-                        <span className="material-icons text-base">edit</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleDeleteRole(role.id)}
-                        className="w-8 h-8 rounded-lg hover:bg-red-50 text-red-400 hover:text-red-600 transition inline-flex items-center justify-center"
-                        title="Excluir cargo"
-                      >
-                        <span className="material-icons text-base">close</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 mt-4">
-                    {role.permissoes.map((permission) => (
-                      <span
-                        key={permission}
-                        className="bg-background text-light-text text-xs px-2.5 py-1 rounded-full"
-                      >
-                        {permission}
-                      </span>
-                    ))}
-                  </div>
+              {loading ? (
+                <div className="border border-dashed border-[#DEDEDE] rounded-xl p-10 text-center text-sm text-[#666666]">
+                  Carregando cargos...
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </section>
+              ) : roles.length === 0 ? (
+                <div className="border border-dashed border-[#DEDEDE] rounded-xl p-10 text-center text-sm text-[#666666]">
+                  Nenhum cargo cadastrado.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                  {roles.map((role) => (
+                    <article
+                      key={role.id}
+                      className="relative min-h-[92px] border border-[#DEDEDE] rounded-xl bg-white px-5 py-4 hover:border-[#CFCFCF] transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-base font-bold leading-tight truncate">
+                            {role.nome || '—'}
+                          </h3>
+                          {typeof role.usuarios === 'number' && (
+                            <p className="mt-0.5 text-[11px] text-[#555555]">
+                              {role.usuarios} usuário{role.usuarios !== 1 ? '(s)' : ''}
+                            </p>
+                          )}
+                          {role.acesso_total && (
+                            <span className="mt-1 inline-block rounded bg-[#FFF3D6] px-2 py-[2px] text-[9px] font-semibold text-[#8A6100]">
+                              Acesso total
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => openModuleAccessModal(role)}
+                            className="w-7 h-7 rounded-md text-[#555555] hover:bg-[#F5F5F5] hover:text-primary flex items-center justify-center"
+                            title="Acesso por módulo"
+                          >
+                            <span className="material-icons text-[16px]">tune</span>
+                          </button>
+                          {(onUpdateRole || onDeleteRole) && (
+                            <>
+                            {onUpdateRole && (
+                              <button
+                                type="button"
+                                onClick={() => openRoleModal(role)}
+                                className="w-7 h-7 rounded-md text-[#555555] hover:bg-[#F5F5F5] hover:text-primary flex items-center justify-center"
+                                title="Editar cargo"
+                              >
+                                <span className="material-icons text-[16px]">edit</span>
+                              </button>
+                            )}
+                            {onDeleteRole && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteRole(role)}
+                                className="w-7 h-7 rounded-md text-[#E00000] hover:bg-red-50 flex items-center justify-center"
+                                title="Excluir cargo"
+                              >
+                                <span className="material-icons text-[16px]">delete_outline</span>
+                              </button>
+                            )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {role.permissoes?.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {role.permissoes.map((permission) => (
+                            <span
+                              key={permission}
+                              className="rounded bg-[#ECECEC] px-2 py-[2px] text-[9px] font-medium text-[#666666]"
+                            >
+                              {permission}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+        </div>
+      </div>
 
       {inviteOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/40" onClick={closeInviteModal}></div>
+          <button
+            type="button"
+            aria-label="Fechar painel"
+            className="absolute inset-0 bg-black/85"
+            onClick={closeInviteModal}
+          />
 
-          <div className="relative w-full max-w-md h-full bg-white shadow-2xl flex flex-col animate-slide-in">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-divider">
-              <div>
-                <h2 className="text-xl font-semibold">
-                  {editingMember ? 'Editar colaborador' : 'Convidar para a equipe'}
-                </h2>
-                <p className="text-sm text-light-text mt-1">
-                  {editingMember
-                    ? 'Atualize as informações do colaborador.'
-                    : 'Envie um convite e defina o cargo inicial de acesso.'}
-                </p>
-              </div>
-
+          <aside className="relative z-10 w-full max-w-[410px] h-full bg-white flex flex-col shadow-2xl animate-slide-in">
+            <div className="h-16 px-5 border-b border-[#E6E6E6] flex items-center justify-between">
+              <h2 className="text-[16px] font-bold">
+                {editingMember ? 'Editar colaborador' : 'Convidar para a equipe'}
+              </h2>
               <button
+                type="button"
                 onClick={closeInviteModal}
-                className="w-9 h-9 rounded-lg hover:bg-background transition inline-flex items-center justify-center text-gray-500"
+                className="w-8 h-8 rounded-full bg-[#FAFAFA] text-[#777777] hover:bg-[#F1F1F1] flex items-center justify-center"
               >
-                <span className="material-icons">close</span>
+                <span className="material-icons text-[17px]">close</span>
               </button>
             </div>
 
-            <form
-              onSubmit={handleSaveMember}
-              className="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-5"
-            >
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3 text-sm text-blue-700">
-                <span className="material-icons">mail</span>
-                <p>
-                  Um e-mail será enviado com um link exclusivo. O usuário poderá
-                  definir sua própria senha e será vinculado à empresa automaticamente
-                  após o aceite.
-                </p>
-              </div>
+            <form onSubmit={submitMember} className="flex-1 overflow-y-auto px-5 py-5">
+              {!editingMember && (
+                <div className="mb-4 rounded-md border border-[#2675D8] bg-[#EAF4FF] px-4 py-3.5 flex gap-3 text-[#1963B4]">
+                  <span className="material-icons text-[23px] shrink-0">forward_to_inbox</span>
+                  <p className="text-[12px] leading-[1.35]">
+                    Um e-mail será enviado com um link exclusivo. O usuário poderá definir sua própria senha e será vinculado à empresa automaticamente após o aceite.
+                  </p>
+                </div>
+              )}
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Nome do colaborador</label>
-                <input
-                  type="text"
-                  value={memberForm.nome}
-                  onChange={(e) =>
-                    setMemberForm((current) => ({ ...current, nome: e.target.value }))
-                  }
-                  placeholder="Ex.: Camila Moraes"
-                  className="w-full border border-divider rounded-lg px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                />
-              </div>
+              {editingMember && (
+                <div className="mb-4">
+                  <label className="block text-[12px] font-semibold mb-2">
+                    Nome do colaborador
+                  </label>
+                  <input
+                    type="text"
+                    value={memberForm.nome}
+                    onChange={(event) =>
+                      setMemberForm((current) => ({
+                        ...current,
+                        nome: event.target.value,
+                      }))
+                    }
+                    className="w-full h-10 rounded-md border border-[#DADADA] px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                  />
+                </div>
+              )}
 
-              <div>
-                <label className="block text-sm font-medium mb-2">E-mail do colaborador</label>
+              <div className="mb-4">
+                <label className="block text-[12px] font-semibold mb-2">
+                  E-mail do colaborador
+                </label>
                 <input
                   type="email"
                   value={memberForm.email}
-                  onChange={(e) =>
-                    setMemberForm((current) => ({ ...current, email: e.target.value }))
+                  onChange={(event) =>
+                    setMemberForm((current) => ({
+                      ...current,
+                      email: event.target.value,
+                    }))
                   }
                   placeholder="exemplo@empresa.com"
-                  className="w-full border border-divider rounded-lg px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  className="w-full h-10 rounded-md border border-[#DADADA] px-3 text-sm outline-none placeholder:text-[#777777] focus:border-primary focus:ring-2 focus:ring-primary/10"
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Cargo / Permissão de acesso
+              <div className="mb-4">
+                <label className="block text-[12px] font-semibold mb-2">
+                  Cargo / Permissão de Acesso
                 </label>
                 <select
-                  value={memberForm.cargo_id}
-                  onChange={(e) =>
-                    setMemberForm((current) => ({ ...current, cargo_id: e.target.value }))
+                  value={memberForm.cargo}
+                  onChange={(event) =>
+                    setMemberForm((current) => ({
+                      ...current,
+                      cargo: event.target.value,
+                    }))
                   }
-                  className="w-full border border-divider rounded-lg px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  className="w-full h-10 rounded-md border border-[#DADADA] px-3 text-sm outline-none bg-white focus:border-primary focus:ring-2 focus:ring-primary/10"
                 >
-                  <option value="" disabled>Selecione um cargo</option>
+                  <option value="">Selecione um cargo</option>
                   {roles.map((role) => (
                     <option key={role.id} value={role.id}>
                       {role.nome}
@@ -649,157 +658,225 @@ export default function TeamManagement() {
                   ))}
                 </select>
               </div>
+
+              {editingMember && (
+                <div>
+                  <label className="block text-[12px] font-semibold mb-2">Status</label>
+                  <select
+                    value={memberForm.status}
+                    onChange={(event) =>
+                      setMemberForm((current) => ({
+                        ...current,
+                        status: event.target.value,
+                      }))
+                    }
+                    className="w-full h-10 rounded-md border border-[#DADADA] px-3 text-sm outline-none bg-white focus:border-primary focus:ring-2 focus:ring-primary/10"
+                  >
+                    <option value="">Selecione um status</option>
+                    <option value="Ativo">Ativo</option>
+                    <option value="Inativo">Inativo</option>
+                    <option value="Pendente">Pendente</option>
+                  </select>
+                </div>
+              )}
             </form>
 
-            <div className="px-6 py-4 border-t border-divider flex items-center justify-end gap-3">
+            <div className="h-[72px] px-5 border-t border-[#E6E6E6] flex items-center justify-end gap-3 bg-white">
               <button
                 type="button"
                 onClick={closeInviteModal}
-                className="px-4 py-2.5 rounded-lg border border-divider text-sm font-medium text-light-text hover:text-gray-700 hover:border-gray-300 transition"
+                className="h-10 min-w-[100px] px-5 rounded-md border border-[#D8D8D8] bg-white text-[13px] font-medium text-[#555555] hover:bg-[#FAFAFA]"
               >
                 Cancelar
               </button>
-
               <button
                 type="button"
-                onClick={handleSaveMember}
-                className="px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition"
+                onClick={submitMember}
+                disabled={editingMember ? !onUpdateMember : !onInviteMember}
+                className="h-10 min-w-[190px] px-5 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {editingMember ? 'Salvar alterações' : 'Enviar convite'}
+                {editingMember ? 'Salvar Alterações' : 'Enviar Convite'}
               </button>
             </div>
-          </div>
+          </aside>
         </div>
       )}
 
       {roleModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="absolute inset-0 bg-black/40" onClick={closeRoleModal}></div>
+          <button
+            type="button"
+            aria-label="Fechar modal"
+            className="absolute inset-0 bg-black/60"
+            onClick={closeRoleModal}
+          />
 
-          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-divider overflow-hidden">
-            <div className="px-6 py-5 border-b border-divider flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-semibold">
-                  {editingRole ? 'Editar cargo' : 'Criar novo cargo'}
-                </h2>
-                <p className="text-sm text-light-text mt-1">
-                  Configure um nome, uma descrição e as permissões de acesso.
-                </p>
-              </div>
-
+          <div className="relative z-10 w-full max-w-lg rounded-xl bg-white shadow-2xl overflow-hidden">
+            <div className="h-16 px-5 border-b border-[#E6E6E6] flex items-center justify-between">
+              <h2 className="font-bold text-base">
+                {editingRole ? 'Editar Cargo' : 'Criar Cargo'}
+              </h2>
               <button
+                type="button"
                 onClick={closeRoleModal}
-                className="w-9 h-9 rounded-lg hover:bg-background transition inline-flex items-center justify-center text-gray-500"
+                className="w-8 h-8 rounded-full bg-[#FAFAFA] flex items-center justify-center text-[#777777]"
               >
-                <span className="material-icons">close</span>
+                <span className="material-icons text-[17px]">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleSaveRole} className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label className="block text-sm font-medium mb-2">Nome do cargo</label>
+            <form onSubmit={submitRole} className="p-5">
+              <div className="mb-5">
+                <label className="block text-[12px] font-semibold mb-2">
+                  Nome do cargo
+                </label>
                 <input
                   type="text"
                   value={roleForm.nome}
-                  onChange={(e) =>
-                    setRoleForm((current) => ({ ...current, nome: e.target.value }))
+                  onChange={(event) =>
+                    setRoleForm((current) => ({
+                      ...current,
+                      nome: event.target.value,
+                    }))
                   }
-                  placeholder="Ex.: Comercial"
-                  className="w-full border border-divider rounded-lg px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="Digite o nome do cargo"
+                  className="w-full h-10 rounded-md border border-[#DADADA] px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Estilo do badge</label>
-                <select
-                  value={roleForm.color}
-                  onChange={(e) =>
-                    setRoleForm((current) => ({ ...current, color: e.target.value }))
-                  }
-                  className="w-full border border-divider rounded-lg px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                >
-                  <option value="bg-violet-100 text-violet-700">Roxo</option>
-                  <option value="bg-sky-100 text-sky-700">Azul</option>
-                  <option value="bg-emerald-100 text-emerald-700">Verde</option>
-                  <option value="bg-amber-100 text-amber-700">Amarelo</option>
-                  <option value="bg-pink-100 text-pink-700">Rosa</option>
-                  <option value="bg-indigo-100 text-indigo-700">Índigo</option>
-                </select>
-              </div>
+                <p className="text-[12px] font-semibold mb-3">Permissões</p>
+                {permissions.length === 0 ? (
+                  <p className="text-xs text-[#777777] border border-dashed border-[#DDDDDD] rounded-md p-4">
+                    Nenhuma permissão disponível.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {permissions.map((permission) => {
+                      const checked = roleForm.permissoes.includes(permission);
 
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-2">Descrição</label>
-                <textarea
-                  rows="3"
-                  value={roleForm.descricao}
-                  onChange={(e) =>
-                    setRoleForm((current) => ({ ...current, descricao: e.target.value }))
-                  }
-                  placeholder="Explique brevemente a responsabilidade desse cargo."
-                  className="w-full border border-divider rounded-lg px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-3">Permissões</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {availablePermissions.map((permission) => {
-                    const checked = roleForm.permissoes.includes(permission);
-
-                    return (
-                      <label
-                        key={permission}
-                        className={`border rounded-xl p-4 cursor-pointer transition ${
-                          checked
-                            ? 'border-primary bg-primary/5'
-                            : 'border-divider hover:border-primary/30'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
+                      return (
+                        <label
+                          key={permission}
+                          className={`h-10 px-3 rounded-md border flex items-center gap-2 cursor-pointer text-sm transition-colors ${
+                            checked
+                              ? 'border-primary bg-primary/5 text-primary'
+                              : 'border-[#DDDDDD] text-[#555555] hover:border-[#BBBBBB]'
+                          }`}
+                        >
                           <input
                             type="checkbox"
                             checked={checked}
-                            onChange={(e) => {
+                            onChange={(event) => {
                               setRoleForm((current) => ({
                                 ...current,
-                                permissoes: e.target.checked
+                                permissoes: event.target.checked
                                   ? [...current.permissoes, permission]
-                                  : current.permissoes.filter((item) => item !== permission),
+                                  : current.permissoes.filter(
+                                      (item) => item !== permission
+                                    ),
                               }));
                             }}
-                            className="mt-1 accent-[var(--color-primary)]"
+                            className="accent-[var(--color-primary)]"
                           />
-
-                          <div>
-                            <p className="font-medium text-sm">{permission}</p>
-                            <p className="text-xs text-light-text mt-1">
-                              Permite acesso ao módulo de {permission.toLowerCase()}.
-                            </p>
-                          </div>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
+                          {permission}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
-              <div className="md:col-span-2 flex items-center justify-end gap-3 pt-2">
+              <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={closeRoleModal}
-                  className="px-4 py-2.5 rounded-lg border border-divider text-sm font-medium text-light-text hover:text-gray-700 hover:border-gray-300 transition"
+                  className="h-10 px-5 rounded-md border border-[#D8D8D8] text-sm text-[#555555]"
                 >
                   Cancelar
                 </button>
-
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition"
+                  disabled={editingRole ? !onUpdateRole : !onCreateRole}
+                  className="h-10 px-6 rounded-md bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingRole ? 'Salvar cargo' : 'Criar cargo'}
+                  {editingRole ? 'Salvar' : 'Criar Cargo'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {moduleAccessRole && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <button
+            type="button"
+            aria-label="Fechar modal"
+            className="absolute inset-0 bg-black/60"
+            onClick={closeModuleAccessModal}
+          />
+
+          <div className="relative z-10 w-full max-w-lg rounded-xl bg-white shadow-2xl overflow-hidden">
+            <div className="h-16 px-5 border-b border-[#E6E6E6] flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-base">Acesso por módulo</h2>
+                <p className="text-[11px] text-[#777777]">{moduleAccessRole.nome}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeModuleAccessModal}
+                className="w-8 h-8 rounded-full bg-[#FAFAFA] flex items-center justify-center text-[#777777]"
+              >
+                <span className="material-icons text-[17px]">close</span>
+              </button>
+            </div>
+
+            <div className="p-5 max-h-[70vh] overflow-y-auto">
+              {moduleAccessRole.acesso_total ? (
+                <p className="text-sm text-[#555555] border border-dashed border-[#DDDDDD] rounded-md p-4">
+                  Este cargo tem acesso total e já enxerga todos os módulos automaticamente.
+                </p>
+              ) : modules.length === 0 ? (
+                <p className="text-sm text-[#777777] border border-dashed border-[#DDDDDD] rounded-md p-4">
+                  Nenhum módulo cadastrado ainda.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {modules.map((modulo) => (
+                    <div
+                      key={modulo.id}
+                      className="h-12 px-3 rounded-md border border-[#DDDDDD] flex items-center justify-between gap-3"
+                    >
+                      <span className="text-sm text-[#333333] truncate">{modulo.nome}</span>
+                      <select
+                        value={moduloNivelPorId[modulo.id] || ''}
+                        disabled={moduloNiveisLoading}
+                        onChange={(event) =>
+                          handleModuloNivelChange(modulo.id, event.target.value)
+                        }
+                        className="h-9 rounded-md border border-[#DADADA] bg-white px-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:opacity-50"
+                      >
+                        <option value="">Sem acesso</option>
+                        <option value="visualizar">Visualizar</option>
+                        <option value="editar">Editar</option>
+                        <option value="gerenciar">Gerenciar</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="h-[72px] px-5 border-t border-[#E6E6E6] flex items-center justify-end bg-white">
+              <button
+                type="button"
+                onClick={closeModuleAccessModal}
+                className="h-10 min-w-[100px] px-5 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary/90"
+              >
+                Concluído
+              </button>
+            </div>
           </div>
         </div>
       )}

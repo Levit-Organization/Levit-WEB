@@ -2,6 +2,32 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { moduloService } from '../services/moduloService';
+import { MODULO_ICON_OPTIONS } from '../utils/iconOptions';
+
+const TIPO_INFO = {
+  dados: {
+    label: 'Dados',
+    icon: 'table_rows',
+    description: 'Registros com campos personalizados, ideal para catálogos e listas.',
+  },
+  arquivo: {
+    label: 'Arquivos',
+    icon: 'folder_open',
+    description: 'Cada registro é um arquivo enviado, com metadados opcionais.',
+  },
+  recrutamento: {
+    label: 'Recrutamento',
+    icon: 'groups',
+    description: 'Vaga com pipeline de fases e candidatos em formato Kanban.',
+  },
+};
+
+const CAMPO_TIPO_INFO = {
+  texto: { label: 'Texto', icon: 'text_fields' },
+  numero: { label: 'Número', icon: 'tag' },
+  data: { label: 'Data', icon: 'event' },
+  selecao: { label: 'Seleção Única', icon: 'list_alt' },
+};
 
 export default function ModuleForm() {
   const { id } = useParams();
@@ -15,15 +41,11 @@ export default function ModuleForm() {
   });
   const [campos, setCampos] = useState([]);
   const [camposOriginais, setCamposOriginais] = useState([]);
+  const [fases, setFases] = useState(['']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-
-  const iconOptions = [
-    'extension', 'group', 'business', 'work', 'dashboard', 'settings', 
-    'inventory_2', 'account_balance', 'event', 'article', 'description',
-    'folder', 'star', 'shopping_cart', 'person', 'local_shipping'
-  ];
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
 
   useEffect(() => {
     if (isEditing) {
@@ -61,12 +83,12 @@ export default function ModuleForm() {
   };
 
   const handleAddField = () => {
-    setCampos([...campos, { 
-      nome: '', 
-      tipo: 'texto', 
+    setCampos([...campos, {
+      nome: '',
+      tipo: 'texto',
       opcoes: null,
       _isNew: true,
-      _tempId: Date.now() 
+      _tempId: Date.now()
     }]);
   };
 
@@ -78,8 +100,7 @@ export default function ModuleForm() {
 
   const handleRemoveField = async (index) => {
     const campo = campos[index];
-    
-    // If it's a saved campo, delete it from the backend
+
     if (isEditing && campo.id && !campo._isNew) {
       if (!window.confirm(`Excluir o campo "${campo.nome}"? Isso só é possível se não houver registros usando este campo.`)) {
         return;
@@ -93,10 +114,28 @@ export default function ModuleForm() {
         return;
       }
     }
-    
+
     const updated = [...campos];
     updated.splice(index, 1);
     setCampos(updated);
+  };
+
+  const handleMoveField = async (index, direction) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= campos.length) return;
+
+    const reordered = [...campos];
+    [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+    setCampos(reordered);
+
+    const temCamposNovos = reordered.some((c) => c._isNew);
+    if (isEditing && !temCamposNovos) {
+      try {
+        await moduloService.reorderFields(id, reordered.map((c) => c.id));
+      } catch (err) {
+        setError('Erro ao reordenar os campos.');
+      }
+    }
   };
 
   const handleAddOption = (campoIndex) => {
@@ -123,6 +162,18 @@ export default function ModuleForm() {
     setCampos(updated);
   };
 
+  const handleAddFase = () => setFases([...fases, '']);
+  const handleFaseChange = (index, value) => {
+    const updated = [...fases];
+    updated[index] = value;
+    setFases(updated);
+  };
+  const handleRemoveFase = (index) => {
+    const updated = [...fases];
+    updated.splice(index, 1);
+    setFases(updated.length ? updated : ['']);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -131,20 +182,16 @@ export default function ModuleForm() {
 
     try {
       if (isEditing) {
-        // 1. Update module basic info
         await moduloService.update(id, formData);
-        
-        // 2. Handle campo changes
+
         for (const campo of campos) {
           if (campo._isNew) {
-            // Add new campos
             await moduloService.addField(id, {
               nome: campo.nome,
               tipo: campo.tipo,
               ...(campo.opcoes && campo.opcoes.length > 0 ? { opcoes: campo.opcoes } : {}),
             });
           } else if (campo.id) {
-            // Check if campo was modified
             const original = camposOriginais.find(c => c.id === campo.id);
             if (original) {
               const nomeChanged = campo.nome !== original.nome;
@@ -158,16 +205,20 @@ export default function ModuleForm() {
             }
           }
         }
-        
+
         navigate('/modulos');
       } else {
-        // Create mode: send all campos at once
         const camposLimpos = campos.map(({ nome, tipo, opcoes }) => ({
           nome,
           tipo,
           ...(opcoes && opcoes.length > 0 ? { opcoes } : {}),
         }));
         const payload = { ...formData, campos: camposLimpos };
+
+        if (formData.tipo === 'recrutamento') {
+          payload.fases = fases.map((f) => f.trim()).filter(Boolean);
+        }
+
         await moduloService.create(payload);
         navigate('/modulos');
       }
@@ -182,235 +233,351 @@ export default function ModuleForm() {
     }
   };
 
+  const tipoAtual = TIPO_INFO[formData.tipo] ?? TIPO_INFO.dados;
+  const fasesValidas = fases.map((f) => f.trim()).filter(Boolean);
+  const precisaDeFases = !isEditing && formData.tipo === 'recrutamento';
+  const podeSalvar = !loading && (!precisaDeFases || fasesValidas.length > 0);
+
   return (
     <Layout>
       <header className="flex items-center gap-4 mb-8 shrink-0">
-        <Link to="/modulos" className="text-light-text hover:text-primary transition">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+        <Link
+          to="/modulos"
+          className="w-10 h-10 flex items-center justify-center rounded-lg text-light-text hover:text-primary hover:bg-primary/5 transition-colors shrink-0"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
         </Link>
+        <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+          <span className="material-icons text-primary text-[22px]">{formData.icone}</span>
+        </div>
         <div>
-          <h1 className="text-2xl font-bold">{isEditing ? 'Editar Módulo' : 'Novo Módulo'}</h1>
-          <p className="text-sm text-light-text mt-1">{isEditing ? 'Atualize as informações e campos' : 'Crie um novo módulo customizado'}</p>
+          <h1 className="text-2xl font-bold tracking-tight">{isEditing ? 'Editar Módulo' : 'Novo Módulo'}</h1>
+          <p className="text-sm text-light-text mt-0.5">{isEditing ? 'Atualize as informações e campos' : 'Crie um novo módulo customizado'}</p>
         </div>
       </header>
 
       {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 text-sm flex items-center gap-2">
-          <span className="material-icons text-lg">error_outline</span>
+        <div className="bg-red-50 text-red-700 p-4 rounded-xl mb-6 text-sm flex items-center gap-2.5 border border-red-100">
+          <span className="material-icons text-lg shrink-0">error_outline</span>
           {error}
         </div>
       )}
 
       {successMsg && (
-        <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6 text-sm flex items-center gap-2">
-          <span className="material-icons text-lg">check_circle</span>
+        <div className="bg-emerald-50 text-emerald-700 p-4 rounded-xl mb-6 text-sm flex items-center gap-2.5 border border-emerald-100">
+          <span className="material-icons text-lg shrink-0">check_circle</span>
           {successMsg}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-4xl">
-        {/* Basic Info */}
-        <div className="bg-white border border-divider rounded-xl p-6">
-          <h2 className="text-lg font-semibold mb-4 border-b border-divider pb-2">Informações Básicas</h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Nome do Módulo</label>
-              <input 
-                type="text" 
-                name="nome"
-                value={formData.nome}
-                onChange={handleInputChange}
-                required
-                placeholder="Ex: Clientes"
-                className="w-full px-4 py-2 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-              />
-            </div>
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-[380px_minmax(0,1fr)] gap-6 items-start w-full">
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Tipo de Módulo</label>
-              <select 
+        {/* Coluna esquerda: identidade do módulo */}
+        <div className="bg-white border border-divider rounded-2xl p-6 lg:sticky lg:top-8 flex flex-col gap-5">
+          <div>
+            <h2 className="text-base font-semibold">Informações Básicas</h2>
+            <p className="text-xs text-light-text mt-0.5">Nome, tipo e ícone de identificação.</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Nome do Módulo</label>
+            <input
+              type="text"
+              name="nome"
+              value={formData.nome}
+              onChange={handleInputChange}
+              required
+              placeholder="Ex: Clientes"
+              className="w-full h-11 px-4 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm transition-colors"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Tipo de Módulo</label>
+            <div className="relative">
+              <select
                 name="tipo"
                 value={formData.tipo}
                 onChange={handleInputChange}
                 disabled={isEditing}
-                className="w-full px-4 py-2 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm disabled:bg-gray-100"
+                className="w-full h-11 appearance-none pl-4 pr-9 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm bg-white disabled:bg-background disabled:text-light-text transition-colors"
               >
-                <option value="dados">Dados (Padrão)</option>
-                <option value="arquivo">Arquivos</option>
-                <option value="recrutamento">Recrutamento</option>
+                {Object.entries(TIPO_INFO).map(([value, info]) => (
+                  <option key={value} value={value}>{info.label}</option>
+                ))}
               </select>
+              <span className="material-icons absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-light-text pointer-events-none">expand_more</span>
             </div>
-            
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium mb-2">Ícone</label>
-              <div className="flex flex-wrap gap-2">
-                {iconOptions.map(icon => (
+            <p className="text-xs text-light-text mt-1.5 leading-snug">{tipoAtual.description}</p>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-sm font-medium">Ícone</label>
+              <button
+                type="button"
+                onClick={() => setIconPickerOpen((v) => !v)}
+                className="text-xs text-primary font-medium hover:underline"
+              >
+                {iconPickerOpen ? 'Fechar' : 'Alterar'}
+              </button>
+            </div>
+
+            <div className="w-full h-11 px-3.5 border border-divider rounded-lg flex items-center gap-2.5 bg-background/60">
+              <span className="material-icons text-primary text-[20px]">{formData.icone}</span>
+              <span className="text-sm text-light-text">Ícone selecionado</span>
+            </div>
+
+            {iconPickerOpen && (
+              <div className="mt-2.5 grid grid-cols-5 gap-2 p-3 border border-divider rounded-lg bg-background/40">
+                {MODULO_ICON_OPTIONS.map(icon => (
                   <button
                     key={icon}
                     type="button"
-                    onClick={() => setFormData({...formData, icone: icon})}
-                    className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${formData.icone === icon ? 'bg-primary/10 border-2 border-primary' : 'bg-gray-50 border border-divider hover:bg-gray-100'}`}
+                    onClick={() => { setFormData({ ...formData, icone: icon }); setIconPickerOpen(false); }}
+                    title={icon}
+                    className={`aspect-square rounded-lg flex items-center justify-center transition-colors ${
+                      formData.icone === icon
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-white border border-divider text-light-text hover:border-primary hover:text-primary'
+                    }`}
                   >
-                    <span className={`material-icons ${formData.icone === icon ? 'text-primary' : 'text-gray-700'}`}>{icon}</span>
+                    <span className="material-icons text-[19px]">{icon}</span>
                   </button>
                 ))}
               </div>
-            </div>
+            )}
           </div>
         </div>
 
-        {/* Fields Section - Always visible */}
-        <div className="bg-white border border-divider rounded-xl p-6">
-          <div className="flex justify-between items-center mb-4 border-b border-divider pb-2">
-            <div>
-              <h2 className="text-lg font-semibold">Campos do Módulo</h2>
-              <p className="text-xs text-light-text mt-0.5">
-                {isEditing ? 'Adicione, edite ou remova campos' : 'Defina os campos que compõem cada registro'}
+        {/* Coluna direita: estrutura do módulo */}
+        <div className="flex flex-col gap-6 min-w-0">
+
+          {precisaDeFases && (
+            <div className="bg-white border border-divider rounded-2xl p-6">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h2 className="text-base font-semibold">Fases do Pipeline</h2>
+                  <p className="text-xs text-light-text mt-0.5">Defina as etapas pelas quais um candidato passa, em ordem.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddFase}
+                  className="h-9 px-3.5 rounded-lg border border-divider text-sm font-medium text-light-text hover:border-primary hover:text-primary transition-colors flex items-center gap-1.5 shrink-0"
+                >
+                  <span className="material-icons text-base">add</span>
+                  Fase
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {fases.map((fase, index) => (
+                  <div key={index} className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[11px] font-bold flex items-center justify-center shrink-0">
+                      {index + 1}
+                    </span>
+                    <input
+                      type="text"
+                      value={fase}
+                      onChange={(e) => handleFaseChange(index, e.target.value)}
+                      placeholder={`Ex: ${index === 0 ? 'Triagem' : 'Entrevista'}`}
+                      className="flex-1 h-10 px-3.5 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveFase(index)}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
+                      title="Remover fase"
+                    >
+                      <span className="material-icons text-[19px]">close</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {fasesValidas.length === 0 && (
+                <p className="text-xs text-amber-600 mt-3 flex items-center gap-1.5">
+                  <span className="material-icons text-[15px]">info</span>
+                  Adicione pelo menos uma fase para criar a vaga.
+                </p>
+              )}
+            </div>
+          )}
+
+          {isEditing && formData.tipo === 'recrutamento' && (
+            <div className="bg-background/60 border border-divider rounded-2xl p-5 flex items-start gap-3">
+              <span className="material-icons text-light-text text-[20px] mt-0.5">info</span>
+              <p className="text-sm text-light-text">
+                As fases desta vaga são gerenciadas na tela de{' '}
+                <Link to="/recrutamento" className="text-primary font-medium hover:underline">Recrutamento</Link>.
               </p>
             </div>
-            <button 
-              type="button" 
-              onClick={handleAddField}
-              className="text-primary text-sm font-medium hover:underline flex items-center gap-1"
-            >
-              <span className="material-icons text-base">add</span>
-              Adicionar Campo
-            </button>
-          </div>
+          )}
 
-          {campos.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="w-12 h-12 rounded-full bg-background flex items-center justify-center mx-auto mb-3">
-                <span className="material-icons text-xl text-light-text">view_column</span>
+          <div className="bg-white border border-divider rounded-2xl p-6">
+            <div className="flex justify-between items-center mb-5">
+              <div>
+                <h2 className="text-base font-semibold">Campos do Módulo</h2>
+                <p className="text-xs text-light-text mt-0.5">
+                  {isEditing ? 'Adicione, edite ou remova campos' : 'Defina os campos que compõem cada registro'}
+                </p>
               </div>
-              <p className="text-sm text-light-text mb-2">
-                Nenhum campo adicionado.
-              </p>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={handleAddField}
-                className="text-primary text-sm font-medium hover:underline"
+                className="h-9 px-3.5 rounded-lg border border-divider text-sm font-medium text-light-text hover:border-primary hover:text-primary transition-colors flex items-center gap-1.5 shrink-0"
               >
-                + Adicionar primeiro campo
+                <span className="material-icons text-base">add</span>
+                Campo
               </button>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {campos.map((campo, index) => (
-                <div key={campo.id || campo._tempId} className="p-4 bg-gray-50 rounded-lg border border-divider relative group">
-                  <div className="flex gap-4 items-start">
-                    {/* Drag handle placeholder */}
-                    <div className="flex items-center text-light-text mt-2 cursor-grab">
-                      <span className="material-icons text-lg">drag_indicator</span>
-                    </div>
-                    
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs font-medium mb-1">Nome do Campo</label>
-                        <input 
-                          type="text" 
-                          value={campo.nome}
-                          onChange={(e) => handleFieldChange(index, 'nome', e.target.value)}
-                          required
-                          placeholder="Ex: Nome completo"
-                          className="w-full px-3 py-1.5 border border-divider rounded focus:outline-none focus:ring-1 focus:ring-primary text-sm"
-                        />
+
+            {campos.length === 0 ? (
+              <div className="text-center py-12 border border-dashed border-divider rounded-xl">
+                <div className="w-12 h-12 rounded-full bg-background flex items-center justify-center mx-auto mb-3">
+                  <span className="material-icons text-xl text-light-text">view_column</span>
+                </div>
+                <p className="text-sm text-light-text mb-2">
+                  Nenhum campo adicionado.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleAddField}
+                  className="text-primary text-sm font-medium hover:underline"
+                >
+                  + Adicionar primeiro campo
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {campos.map((campo, index) => (
+                  <div key={campo.id || campo._tempId} className="border border-divider rounded-xl overflow-hidden">
+                    <div className="flex items-center gap-3 p-3.5 bg-background/40">
+                      <div className="flex flex-col shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleMoveField(index, -1)}
+                          disabled={index === 0}
+                          className="w-6 h-5 flex items-center justify-center text-light-text hover:text-primary disabled:opacity-25 disabled:hover:text-light-text transition-colors"
+                          title="Mover para cima"
+                        >
+                          <span className="material-icons text-[16px]">expand_less</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveField(index, 1)}
+                          disabled={index === campos.length - 1}
+                          className="w-6 h-5 flex items-center justify-center text-light-text hover:text-primary disabled:opacity-25 disabled:hover:text-light-text transition-colors"
+                          title="Mover para baixo"
+                        >
+                          <span className="material-icons text-[16px]">expand_more</span>
+                        </button>
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium mb-1">Tipo</label>
-                        <select 
+
+                      <span className="w-9 h-9 rounded-lg bg-white border border-divider flex items-center justify-center text-light-text shrink-0">
+                        <span className="material-icons text-[18px]">{CAMPO_TIPO_INFO[campo.tipo]?.icon || 'text_fields'}</span>
+                      </span>
+
+                      <input
+                        type="text"
+                        value={campo.nome}
+                        onChange={(e) => handleFieldChange(index, 'nome', e.target.value)}
+                        required
+                        placeholder="Nome do campo"
+                        className="flex-1 min-w-0 h-10 px-3.5 border border-divider rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                      />
+
+                      <div className="relative shrink-0 w-40">
+                        <select
                           value={campo.tipo}
                           onChange={(e) => handleFieldChange(index, 'tipo', e.target.value)}
                           disabled={isEditing && !campo._isNew}
-                          className="w-full px-3 py-1.5 border border-divider rounded focus:outline-none focus:ring-1 focus:ring-primary text-sm bg-white disabled:bg-gray-100 disabled:text-light-text"
+                          className="w-full h-10 appearance-none pl-3.5 pr-8 border border-divider rounded-lg text-sm bg-white disabled:bg-background disabled:text-light-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                         >
-                          <option value="texto">Texto</option>
-                          <option value="numero">Número</option>
-                          <option value="data">Data</option>
-                          <option value="selecao">Seleção Única</option>
+                          {Object.entries(CAMPO_TIPO_INFO).map(([value, info]) => (
+                            <option key={value} value={value}>{info.label}</option>
+                          ))}
                         </select>
+                        <span className="material-icons absolute right-2 top-1/2 -translate-y-1/2 text-[16px] text-light-text pointer-events-none">expand_more</span>
                       </div>
-                      <div className="flex items-end">
-                        {campo._isNew && (
-                          <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded font-medium">
-                            Novo
-                          </span>
-                        )}
-                      </div>
+
+                      {campo._isNew && (
+                        <span className="text-[10px] uppercase tracking-wide text-primary bg-primary/10 px-2 py-1 rounded-full font-semibold shrink-0">
+                          Novo
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveField(index)}
+                        className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
+                        title="Remover campo"
+                      >
+                        <span className="material-icons text-[19px]">delete_outline</span>
+                      </button>
                     </div>
-                    
-                    <button 
-                      type="button" 
-                      onClick={() => handleRemoveField(index)}
-                      className="text-red-400 hover:text-red-600 mt-2 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-                      title="Remover campo"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
+
+                    {campo.tipo === 'selecao' && (
+                      <div className="p-3.5 border-t border-divider">
+                        <p className="text-xs font-medium text-light-text mb-2">Opções de Seleção</p>
+                        <div className="flex flex-col gap-2">
+                          {(campo.opcoes || []).map((opcao, optIdx) => (
+                            <div key={optIdx} className="flex items-center gap-2">
+                              <span className="w-4 h-4 rounded-full border-2 border-divider shrink-0"></span>
+                              <input
+                                type="text"
+                                value={opcao}
+                                onChange={(e) => handleOptionChange(index, optIdx, e.target.value)}
+                                placeholder={`Opção ${optIdx + 1}`}
+                                className="flex-1 h-9 px-3 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveOption(index, optIdx)}
+                                className="text-light-text hover:text-red-600 transition-colors shrink-0"
+                              >
+                                <span className="material-icons text-base">close</span>
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => handleAddOption(index)}
+                            className="text-xs text-primary hover:underline font-medium self-start mt-0.5"
+                          >
+                            + Adicionar opção
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-
-                  {/* Options for 'selecao' type */}
-                  {campo.tipo === 'selecao' && (
-                    <div className="mt-3 ml-10 border-t border-divider pt-3">
-                      <label className="block text-xs font-medium mb-2">Opções de Seleção</label>
-                      <div className="space-y-2">
-                        {(campo.opcoes || []).map((opcao, optIdx) => (
-                          <div key={optIdx} className="flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full border-2 border-divider shrink-0"></span>
-                            <input
-                              type="text"
-                              value={opcao}
-                              onChange={(e) => handleOptionChange(index, optIdx, e.target.value)}
-                              placeholder={`Opção ${optIdx + 1}`}
-                              className="flex-1 px-3 py-1 border border-divider rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveOption(index, optIdx)}
-                              className="text-red-400 hover:text-red-600 transition-colors"
-                            >
-                              <span className="material-icons text-base">close</span>
-                            </button>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => handleAddOption(index)}
-                          className="text-xs text-primary hover:underline font-medium"
-                        >
-                          + Adicionar opção
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-end gap-3 mt-4">
-          <Link 
-            to="/modulos"
-            className="px-5 py-2 rounded-lg text-sm font-medium border border-divider hover:bg-gray-50 transition"
-          >
-            Cancelar
-          </Link>
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="px-5 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/90 transition disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Salvando...
-              </>
-            ) : (
-              'Salvar Módulo'
+                ))}
+              </div>
             )}
-          </button>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-1 pb-2">
+            <Link
+              to="/modulos"
+              className="h-11 px-5 rounded-lg text-sm font-medium border border-divider hover:bg-background transition-colors flex items-center"
+            >
+              Cancelar
+            </Link>
+            <button
+              type="submit"
+              disabled={!podeSalvar}
+              className="h-11 px-5 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+            >
+              {loading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Salvando...
+                </>
+              ) : (
+                'Salvar Módulo'
+              )}
+            </button>
+          </div>
         </div>
       </form>
     </Layout>

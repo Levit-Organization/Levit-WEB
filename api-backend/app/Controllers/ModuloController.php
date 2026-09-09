@@ -2,8 +2,9 @@
 
 namespace App\Controllers;
 
-use App\Services\ModuloService;
+use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
+use App\Services\ModuloService;
 
 class ModuloController extends BaseApiController
 {
@@ -33,7 +34,7 @@ class ModuloController extends BaseApiController
         $user = service('authenticatedUser');
 
         try {
-            $modulo = $this->moduloService->criarModulo($user->empresaId, $user->id, $dados);
+            $modulo = $this->moduloService->criarModulo($user->empresaId, $user->id, $user->cargoId, $dados);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
         } catch (\DomainException $e) {
@@ -43,6 +44,30 @@ class ModuloController extends BaseApiController
         }
 
         return $this->respondSuccess($modulo, 201);
+    }
+
+    public function listar()
+    {
+        $user = service('authenticatedUser');
+
+        $modulos = $this->moduloService->listarModulos($user->empresaId, $user->cargoId, $user->acessoTotal);
+
+        return $this->respondSuccess($modulos, 200);
+    }
+
+    public function detalhes($moduloId)
+    {
+        $user = service('authenticatedUser');
+
+        try {
+            $modulo = $this->moduloService->buscarModuloComCampos($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
+        }
+
+        return $this->respondSuccess($modulo, 200);
     }
 
     public function atualizar($moduloId)
@@ -61,9 +86,11 @@ class ModuloController extends BaseApiController
         $user = service('authenticatedUser');
 
         try {
-            $modulo = $this->moduloService->atualizarModulo($moduloId, $user->empresaId, $dados);
+            $modulo = $this->moduloService->atualizarModulo($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->respondSuccess($modulo, 200);
@@ -75,9 +102,11 @@ class ModuloController extends BaseApiController
         $user  = service('authenticatedUser');
 
         try {
-            $modulo = $this->moduloService->adicionarCampo($moduloId, $user->empresaId, $campo);
+            $modulo = $this->moduloService->adicionarCampo($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $campo);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         }
@@ -91,9 +120,11 @@ class ModuloController extends BaseApiController
         $user  = service('authenticatedUser');
 
         try {
-            $modulo = $this->moduloService->atualizarCampo($campoId, $moduloId, $user->empresaId, $dados);
+            $modulo = $this->moduloService->atualizarCampo($campoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->respondSuccess($modulo, 200);
@@ -105,9 +136,11 @@ class ModuloController extends BaseApiController
         $user  = service('authenticatedUser');
 
         try {
-            $modulo = $this->moduloService->reordenarCampos($moduloId, $user->empresaId, $dados['ordem'] ?? []);
+            $modulo = $this->moduloService->reordenarCampos($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['ordem'] ?? []);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
@@ -122,9 +155,11 @@ class ModuloController extends BaseApiController
         $user = service('authenticatedUser');
 
         try {
-            $this->moduloService->excluirCampo($campoId, $moduloId, $user->empresaId);
+            $this->moduloService->excluirCampo($campoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 409);
         }
@@ -132,44 +167,32 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess(null, 200);
     }
 
-    public function detalhes($moduloId)
-    {
-        try {
-            $modulo = $this->moduloService->buscarModuloComCampos($moduloId, service('authenticatedUser')->empresaId);
-        } catch (NaoEncontradoException $e) {
-            return $this->respondError($e->getMessage(), 404);
-        }
-
-        return $this->respondSuccess($modulo, 200);
-    }
-
-    public function listar()
-    {
-        $modulos = $this->moduloService->listarModulos(service('authenticatedUser')->empresaId);
-
-        return $this->respondSuccess($modulos, 200);
-    }
-
     public function excluir($moduloId)
     {
+        $user = service('authenticatedUser');
+
         try {
-            $this->moduloService->excluirModulo($moduloId, service('authenticatedUser')->empresaId);
+            $this->moduloService->excluirModulo($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->respondSuccess(null, 200);
     }
 
-        public function adicionarFase($moduloId)
+    public function adicionarFase($moduloId)
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
 
         try {
-            $modulo = $this->moduloService->adicionarFase($moduloId, $user->empresaId, $dados['nome'] ?? '');
+            $modulo = $this->moduloService->adicionarFase($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['nome'] ?? '');
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         }
@@ -183,9 +206,11 @@ class ModuloController extends BaseApiController
         $user  = service('authenticatedUser');
 
         try {
-            $modulo = $this->moduloService->atualizarFase($faseId, $moduloId, $user->empresaId, $dados['nome'] ?? '');
+            $modulo = $this->moduloService->atualizarFase($faseId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['nome'] ?? '');
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         }
@@ -199,9 +224,11 @@ class ModuloController extends BaseApiController
         $user  = service('authenticatedUser');
 
         try {
-            $modulo = $this->moduloService->reordenarFases($moduloId, $user->empresaId, $dados['ordem'] ?? []);
+            $modulo = $this->moduloService->reordenarFases($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['ordem'] ?? []);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
@@ -216,9 +243,11 @@ class ModuloController extends BaseApiController
         $user = service('authenticatedUser');
 
         try {
-            $this->moduloService->excluirFase($faseId, $moduloId, $user->empresaId);
+            $this->moduloService->excluirFase($faseId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 409);
         }

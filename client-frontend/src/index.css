@@ -8,6 +8,8 @@
   --color-divider: #E5E5E5;
 
   --animate-slide-in: slide-in 0.25s ease-out;
+  --animate-page-in: page-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-nav-active: nav-active 0.4s cubic-bezier(0.65, 0, 0.35, 1);
 }
 
 @keyframes slide-in {
@@ -16,5 +18,25 @@
   }
   to {
     transform: translateX(0);
+  }
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes nav-active {
+  from {
+    clip-path: inset(0 0 0 100%);
+  }
+  to {
+    clip-path: inset(0 0 0 0%);
   }
 }

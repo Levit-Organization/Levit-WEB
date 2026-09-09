@@ -2,17 +2,17 @@
 
 namespace App\Models;
 
-class CargoModel extends BaseModel
+class CargoModuloPermissaoModel extends BaseModel
 {
-    protected $table      = 'cargo';
+    protected $table      = 'cargo_modulo_permissao';
     protected $primaryKey = 'id';
 
     protected $returnType = 'array';
 
     protected $allowedFields = [
-        'empresa_id',
-        'nome',
-        'acesso_total',
+        'cargo_id',
+        'modulo_id',
+        'nivel',
     ];
 
     protected $useTimestamps = false;

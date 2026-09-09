@@ -10,28 +10,29 @@ use App\Models\ModuloModel;
 
 class AutomacaoService
 {
-    private const GATILHOS_VALIDOS    = ['criacao', 'atualizacao', 'exclusao'];
-    private const OPERADORES_VALIDOS  = ['igual', 'diferente'];
-    private const TIPOS_ACAO_VALIDOS  = ['enviar_email', 'webhook'];
+    private const GATILHOS_VALIDOS   = ['criacao', 'atualizacao', 'exclusao'];
+    private const OPERADORES_VALIDOS = ['igual', 'diferente'];
+    private const TIPOS_ACAO_VALIDOS = ['enviar_email', 'webhook'];
 
     protected ModuloModel $moduloModel;
     protected CampoModuloModel $campoModuloModel;
     protected AutomacaoModel $automacaoModel;
     protected AutomacaoAcaoModel $automacaoAcaoModel;
+    protected AutorizacaoModuloService $autorizacaoModuloService;
 
     public function __construct()
     {
-        $this->moduloModel        = new ModuloModel();
-        $this->campoModuloModel   = new CampoModuloModel();
-        $this->automacaoModel     = new AutomacaoModel();
-        $this->automacaoAcaoModel = new AutomacaoAcaoModel();
+        $this->moduloModel              = new ModuloModel();
+        $this->campoModuloModel         = new CampoModuloModel();
+        $this->automacaoModel           = new AutomacaoModel();
+        $this->automacaoAcaoModel       = new AutomacaoAcaoModel();
+        $this->autorizacaoModuloService = new AutorizacaoModuloService();
     }
 
-    public function criarAutomacao(string $moduloId, string $empresaId, string $usuarioId, array $dados): array
+    public function criarAutomacao(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $usuarioId, array $dados): array
     {
-        if (! $this->moduloModel->where('id', $moduloId)->where('empresa_id', $empresaId)->first()) {
-            throw new NaoEncontradoException('Módulo não encontrado.');
-        }
+        $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
 
         $gatilho = $dados['gatilho'] ?? '';
         if (! in_array($gatilho, self::GATILHOS_VALIDOS, true)) {
@@ -93,10 +94,6 @@ class AutomacaoService
         return $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
     }
 
-    /**
-     * Valida a configuração de uma ação de acordo com o tipo dela —
-     * cada tipo exige campos diferentes na configuração.
-     */
     private function validarAcao(array $acao): void
     {
         $tipo = $acao['tipo'] ?? null;
@@ -115,11 +112,10 @@ class AutomacaoService
         }
     }
 
-    public function listarAutomacoes(string $moduloId, string $empresaId): array
+    public function listarAutomacoes(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
     {
-        if (! $this->moduloModel->where('id', $moduloId)->where('empresa_id', $empresaId)->first()) {
-            throw new NaoEncontradoException('Módulo não encontrado.');
-        }
+        $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
 
         $automacoes = $this->automacaoModel->where('modulo_id', $moduloId)->findAll();
 
@@ -156,18 +152,28 @@ class AutomacaoService
         return $automacao;
     }
 
-    public function alternarAtivo(string $automacaoId, string $moduloId, string $empresaId, bool $ativo): array
+    public function alternarAtivo(string $automacaoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, bool $ativo): array
     {
         $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
 
         $this->automacaoModel->update($automacaoId, ['ativo' => $ativo]);
 
         return $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
     }
 
-    public function excluirAutomacao(string $automacaoId, string $moduloId, string $empresaId): void
+    public function excluirAutomacao(string $automacaoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
     {
         $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
+
         $this->automacaoModel->delete($automacaoId);
+    }
+
+    private function confirmarModuloDaEmpresa(string $moduloId, string $empresaId): void
+    {
+        if (! $this->moduloModel->where('id', $moduloId)->where('empresa_id', $empresaId)->first()) {
+            throw new NaoEncontradoException('Módulo não encontrado.');
+        }
     }
 }

@@ -122,35 +122,72 @@ class EquipeService
 
     public function listarMembros(string $empresaId): array
     {
-        return $this->usuarioModel
+        $membros = $this->usuarioModel
             ->select('usuario.id, usuario.nome, usuario.email, usuario.criado_em, cargo.nome as cargo_nome')
             ->join('cargo', 'cargo.id = usuario.cargo_id')
             ->where('usuario.empresa_id', $empresaId)
             ->orderBy('usuario.criado_em', 'ASC')
             ->findAll();
+
+        foreach ($membros as &$m) {
+            $m['status'] = 'Ativo';
+        }
+        unset($m);
+
+        $convites = $this->conviteModel
+            ->select('convite.id, convite.email_destinatario as email, convite.criado_em, cargo.nome as cargo_nome')
+            ->join('cargo', 'cargo.id = convite.cargo_id')
+            ->where('convite.empresa_id', $empresaId)
+            ->where('convite.aceito_em', null)
+            ->orderBy('convite.criado_em', 'ASC')
+            ->findAll();
+
+        foreach ($convites as $c) {
+            $membros[] = [
+                'id'         => $c['id'],
+                'nome'       => 'Convite Pendente',
+                'email'      => $c['email'],
+                'criado_em'  => $c['criado_em'],
+                'cargo_nome' => $c['cargo_nome'],
+                'status'     => 'Pendente',
+            ];
+        }
+
+        return $membros;
     }
 
     /**
-     * @throws NaoEncontradoException se o membro não existir/pertencer à empresa
+     * @throws NaoEncontradoException se o membro/convite não existir/pertencer à empresa
      * @throws \DomainException se for o administrador principal
      */
-    public function removerMembro(string $usuarioId, string $empresaId): void
+    public function removerMembro(string $id, string $empresaId): void
     {
         $usuario = $this->usuarioModel
-            ->where('id', $usuarioId)
+            ->where('id', $id)
             ->where('empresa_id', $empresaId)
             ->first();
 
-        if (! $usuario) {
-            throw new NaoEncontradoException('Membro não encontrado.');
+        if ($usuario) {
+            $empresa = $this->empresaModel->find($empresaId);
+
+            if ($empresa['administrador_principal_id'] === $id) {
+                throw new \DomainException('Não é possível remover o administrador principal da empresa.');
+            }
+
+            $this->usuarioModel->delete($id);
+            return;
         }
 
-        $empresa = $this->empresaModel->find($empresaId);
+        $convite = $this->conviteModel
+            ->where('id', $id)
+            ->where('empresa_id', $empresaId)
+            ->first();
 
-        if ($empresa['administrador_principal_id'] === $usuarioId) {
-            throw new \DomainException('Não é possível remover o administrador principal da empresa.');
+        if ($convite) {
+            $this->conviteModel->delete($id);
+            return;
         }
 
-        $this->usuarioModel->delete($usuarioId);
+        throw new NaoEncontradoException('Membro ou convite não encontrado.');
     }
 }

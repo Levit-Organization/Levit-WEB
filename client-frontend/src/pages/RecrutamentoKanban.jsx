@@ -8,12 +8,20 @@ export default function RecrutamentoKanban() {
   const [kanbanData, setKanbanData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState('');
+  const [formError, setFormError] = useState('');
+
+  const showSuccess = (msg) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(''), 3000);
+  };
   const [draggedItem, setDraggedItem] = useState(null);
   const [showNovaEtapa, setShowNovaEtapa] = useState(false);
   const [novaEtapaNome, setNovaEtapaNome] = useState('');
   const [modulos, setModulos] = useState([]);
-  const [filtroModulo, setFiltroModulo] = useState('all');
+  const [novaEtapaModuloId, setNovaEtapaModuloId] = useState('');
   const [selectedCard, setSelectedCard] = useState(null);
+  const [vagaSelecionada, setVagaSelecionada] = useState('all');
 
   const scrollContainerRef = useRef(null);
 
@@ -35,15 +43,21 @@ export default function RecrutamentoKanban() {
   }, []);
 
   useEffect(() => {
-    fetchKanban();
     fetchModulos();
   }, []);
+
+  useEffect(() => {
+    fetchKanban();
+  }, [vagaSelecionada]);
 
   const fetchKanban = async () => {
     try {
       setLoading(true);
-      const data = await recrutamentoService.getKanban();
+      const data = vagaSelecionada === 'all'
+        ? await recrutamentoService.getKanban()
+        : await recrutamentoService.getKanbanDaVaga(vagaSelecionada);
       setKanbanData(data);
+      setError(null);
     } catch (err) {
       setError('Erro ao carregar o Kanban de recrutamento.');
     } finally {
@@ -56,8 +70,9 @@ export default function RecrutamentoKanban() {
       const data = await moduloService.getAll();
       const recrutamento = data.filter(m => m.tipo === 'recrutamento');
       setModulos(recrutamento);
-      if (recrutamento.length > 0 && filtroModulo === 'all') {
-        setFiltroModulo(recrutamento[0].id);
+      if (recrutamento.length > 0) {
+        setNovaEtapaModuloId((current) => current || recrutamento[0].id);
+        setVagaSelecionada((current) => (current === 'all' ? recrutamento[0].id : current));
       }
     } catch (err) {
       console.error('Erro ao carregar módulos:', err);
@@ -65,27 +80,16 @@ export default function RecrutamentoKanban() {
   };
 
   const handleNovaEtapa = async () => {
-    if (!novaEtapaNome.trim()) return;
+    if (!novaEtapaNome.trim() || !novaEtapaModuloId) return;
     try {
-      // Add phase to the first recruitment module (or selected one)
-      const targetModulo = filtroModulo !== 'all' ? filtroModulo : modulos[0]?.id;
-      if (!targetModulo) {
-        alert('Nenhum módulo de recrutamento encontrado.');
-        return;
-      }
-      await api.post(`/modulos/${targetModulo}/fases`, { nome: novaEtapaNome });
+      await api.post(`/modulos/${novaEtapaModuloId}/fases`, { nome: novaEtapaNome });
       setNovaEtapaNome('');
       setShowNovaEtapa(false);
+      showSuccess('Etapa criada com sucesso.');
       fetchKanban();
     } catch (err) {
-      alert('Erro ao criar etapa.');
+      setFormError(err.response?.data?.message || 'Erro ao criar etapa.');
     }
-  };
-
-  const handleRestaurarPadroes = async () => {
-    if (!window.confirm('Isso irá restaurar as etapas padrão (Triagem, Entrevista, Aprovado). Continuar?')) return;
-    // Reload kanban data
-    fetchKanban();
   };
 
   const handleDragStart = (e, item, sourceColumn) => {
@@ -131,10 +135,14 @@ export default function RecrutamentoKanban() {
 
     // Persist API call
     try {
-      await recrutamentoService.moverFase(item.id, targetColumnId);
+      if (vagaSelecionada === 'all') {
+        await recrutamentoService.moverFase(item.id, targetColumnId);
+      } else {
+        await recrutamentoService.moverFaseDaVaga(item.modulo_id, item.id, targetColumnId);
+      }
     } catch (err) {
       // Revert if error
-      alert('Erro ao mover candidato.');
+      setError(err.response?.data?.message || 'Erro ao mover candidato.');
       fetchKanban();
     }
   };
@@ -154,7 +162,7 @@ export default function RecrutamentoKanban() {
 
   const handleNovoCandidatoSubmit = async () => {
     if (!novoCandidatoDados.modulo_id || !novoCandidatoDados.nome || !novoCandidatoDados.email) {
-      alert('Vaga, Nome e E-mail são obrigatórios!');
+      setFormError('Vaga, Nome e E-mail são obrigatórios.');
       return;
     }
     try {
@@ -162,9 +170,10 @@ export default function RecrutamentoKanban() {
       await api.post(`/publico/candidatura/${novoCandidatoDados.modulo_id}`, novoCandidatoDados);
       setShowNovoCandidato(false);
       setNovoCandidatoDados({ modulo_id: '', nome: '', email: '', telefone: '', cargo_desejado: '', mensagem: '' });
+      showSuccess('Candidato adicionado com sucesso.');
       fetchKanban();
     } catch (err) {
-      alert('Erro ao salvar candidato.');
+      setFormError(err.response?.data?.message || 'Erro ao salvar candidato.');
     } finally {
       setSalvandoCandidato(false);
     }
@@ -186,17 +195,32 @@ export default function RecrutamentoKanban() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <div className="relative">
+              <select
+                value={vagaSelecionada}
+                onChange={(e) => setVagaSelecionada(e.target.value)}
+                disabled={modulos.length === 0}
+                className="appearance-none rounded-xl bg-white py-2.5 pl-4 pr-10 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 outline-none transition-all focus:ring-2 focus:ring-indigo-500 disabled:text-slate-400"
+              >
+                {modulos.length === 0 ? (
+                  <option value="all">Nenhuma vaga criada</option>
+                ) : (
+                  modulos.map(m => (
+                    <option key={m.id} value={m.id}>{m.nome}</option>
+                  ))
+                )}
+              </select>
+              <span className="material-icons absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-[20px]">
+                expand_more
+              </span>
+            </div>
             <button
               type="button"
-              onClick={handleRestaurarPadroes}
-              className="group flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 transition-all hover:bg-slate-50 hover:shadow-md"
-            >
-              <span className="material-icons text-[18px] text-slate-400 group-hover:text-slate-600 transition-colors">restart_alt</span>
-              Restaurar Padrões
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowNovaEtapa(true)}
+              onClick={() => {
+                setFormError('');
+                if (vagaSelecionada !== 'all') setNovaEtapaModuloId(vagaSelecionada);
+                setShowNovaEtapa(true);
+              }}
               className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 transition-all hover:bg-slate-50 hover:shadow-md"
             >
               <span className="material-icons text-[18px] text-slate-400">add</span>
@@ -204,7 +228,13 @@ export default function RecrutamentoKanban() {
             </button>
             <button
               type="button"
-              onClick={() => setShowNovoCandidato(true)}
+              onClick={() => {
+                setFormError('');
+                if (vagaSelecionada !== 'all') {
+                  setNovoCandidatoDados((current) => ({ ...current, modulo_id: vagaSelecionada }));
+                }
+                setShowNovoCandidato(true);
+              }}
               className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-indigo-200 transition-all hover:bg-indigo-700 hover:shadow-md hover:-translate-y-0.5"
             >
               <span className="material-icons text-[18px]">person_add</span>
@@ -213,39 +243,17 @@ export default function RecrutamentoKanban() {
           </div>
         </header>
 
-        {/* Barra de Controles Glassmorphism */}
-        <section className="mb-6 flex shrink-0 flex-col gap-4 rounded-2xl bg-white/70 px-5 py-4 backdrop-blur-md shadow-sm ring-1 ring-slate-200/60 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
-              <span className="material-icons text-[18px]">work_outline</span>
-            </div>
-            <span className="text-sm font-bold text-slate-800">
-              Visão Geral das Vagas
-            </span>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <select 
-                value={filtroModulo}
-                onChange={(e) => setFiltroModulo(e.target.value)}
-                className="appearance-none rounded-xl bg-white py-2 pl-4 pr-10 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 outline-none transition-all focus:ring-2 focus:ring-indigo-500"
-              >
-                {modulos.map(m => (
-                  <option key={m.id} value={m.id}>{m.nome}</option>
-                ))}
-              </select>
-              <span className="material-icons absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-[20px]">
-                expand_more
-              </span>
-            </div>
-          </div>
-        </section>
-
         {error && (
-          <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 text-sm flex items-center gap-2">
+          <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 text-sm flex items-center gap-2 shrink-0">
             <span className="material-icons">error</span>
             {error}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="bg-emerald-50 text-emerald-700 p-4 rounded-lg mb-6 text-sm flex items-center gap-2 shrink-0">
+            <span className="material-icons">check_circle</span>
+            {successMsg}
           </div>
         )}
 
@@ -304,7 +312,7 @@ export default function RecrutamentoKanban() {
                         <div className="flex items-center gap-2">
                           <div className="h-2 w-2 rounded-full bg-indigo-500"></div>
                           <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-                            {colId}
+                            {colData.fase || colId}
                           </h3>
                         </div>
                         <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-white px-2 text-xs font-bold text-slate-600 shadow-sm">
@@ -320,7 +328,7 @@ export default function RecrutamentoKanban() {
                             key={item.id}
                             draggable
                             onDragStart={(e) => handleDragStart(e, item, colId)}
-                            onClick={() => setSelectedCard({ ...item, colId })}
+                            onClick={() => setSelectedCard({ ...item, colId, faseNome: colData.fase || colId })}
                             className="group cursor-grab rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-1 hover:shadow-lg active:cursor-grabbing"
                           >
                             {/* 3 campos principais (Candidato tabela real) */}
@@ -370,11 +378,32 @@ export default function RecrutamentoKanban() {
             <div className="absolute inset-0 bg-black/30" onClick={() => setShowNovaEtapa(false)}></div>
             <div className="relative bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
               <h3 className="text-lg font-bold text-slate-900 mb-4">Nova Etapa</h3>
+
+              {formError && (
+                <div className="bg-red-50 text-red-700 border border-red-100 rounded-xl px-4 py-2.5 text-sm mb-4 flex items-center gap-2">
+                  <span className="material-icons text-[18px] shrink-0">error_outline</span>
+                  {formError}
+                </div>
+              )}
+
+              <label className="block text-sm font-bold text-slate-700 mb-1">Vaga *</label>
+              <select
+                value={novaEtapaModuloId}
+                onChange={(e) => setNovaEtapaModuloId(e.target.value)}
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
+              >
+                <option value="">Selecione uma vaga...</option>
+                {modulos.map(m => (
+                  <option key={m.id} value={m.id}>{m.nome}</option>
+                ))}
+              </select>
+
+              <label className="block text-sm font-bold text-slate-700 mb-1">Nome da Etapa *</label>
               <input
                 type="text"
                 value={novaEtapaNome}
                 onChange={(e) => setNovaEtapaNome(e.target.value)}
-                placeholder="Nome da etapa"
+                placeholder="Ex: Entrevista técnica"
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
                 autoFocus
               />
@@ -387,7 +416,8 @@ export default function RecrutamentoKanban() {
                 </button>
                 <button
                   onClick={handleNovaEtapa}
-                  className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+                  disabled={!novaEtapaNome.trim() || !novaEtapaModuloId}
+                  className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Criar Etapa
                 </button>
@@ -421,7 +451,7 @@ export default function RecrutamentoKanban() {
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 mb-4">
                   <span className="material-icons text-[14px]">view_kanban</span>
-                  Fase atual: {selectedCard.colId}
+                  Fase atual: {selectedCard.faseNome}
                 </div>
                 
                 <div className="grid grid-cols-1 gap-4">
@@ -452,65 +482,77 @@ export default function RecrutamentoKanban() {
           </div>
         )}
 
-        {/* Modal Novo Candidato */}
+        {/* Painel lateral: Novo Candidato */}
         {showNovoCandidato && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-md" onClick={() => setShowNovoCandidato(false)}></div>
-            <div className="relative bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-extrabold text-slate-900">Novo Candidato</h3>
-                <button onClick={() => setShowNovoCandidato(false)} className="text-slate-400 hover:text-slate-600">
+          <div className="fixed inset-0 z-50 flex justify-end">
+            <div className="absolute inset-0 bg-black/30" onClick={() => setShowNovoCandidato(false)}></div>
+
+            <div className="relative w-full max-w-lg bg-white h-full shadow-2xl flex flex-col animate-slide-in">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-divider shrink-0">
+                <h2 className="text-lg font-bold">Novo Candidato</h2>
+                <button onClick={() => setShowNovoCandidato(false)} className="text-light-text hover:text-gray-700 transition">
                   <span className="material-icons">close</span>
                 </button>
               </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Vaga (Módulo) *</label>
-                  <select 
-                    value={novoCandidatoDados.modulo_id}
-                    onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, modulo_id: e.target.value})}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">Selecione uma vaga...</option>
-                    {modulos.map(m => (
-                      <option key={m.id} value={m.id}>{m.nome}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Nome *</label>
-                  <input type="text" value={novoCandidatoDados.nome} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, nome: e.target.value})} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">E-mail *</label>
-                  <input type="email" value={novoCandidatoDados.email} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, email: e.target.value})} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Telefone</label>
-                  <input type="text" value={novoCandidatoDados.telefone} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, telefone: e.target.value})} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Cargo Desejado</label>
-                  <input type="text" value={novoCandidatoDados.cargo_desejado} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, cargo_desejado: e.target.value})} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Mensagem (Opcional)</label>
-                  <textarea value={novoCandidatoDados.mensagem} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, mensagem: e.target.value})} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" rows="3"></textarea>
+
+              <div className="flex-1 overflow-y-auto p-6">
+                {formError && (
+                  <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm">
+                    {formError}
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-5">
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5 text-gray-700">Vaga (Módulo)</label>
+                    <select
+                      value={novoCandidatoDados.modulo_id}
+                      onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, modulo_id: e.target.value})}
+                      className="w-full h-11 px-4 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                    >
+                      <option value="">Selecione uma vaga...</option>
+                      {modulos.map(m => (
+                        <option key={m.id} value={m.id}>{m.nome}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5 text-gray-700">Nome</label>
+                    <input type="text" value={novoCandidatoDados.nome} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, nome: e.target.value})} className="w-full h-11 px-4 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5 text-gray-700">E-mail</label>
+                    <input type="email" value={novoCandidatoDados.email} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, email: e.target.value})} className="w-full h-11 px-4 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5 text-gray-700">Telefone</label>
+                    <input type="text" value={novoCandidatoDados.telefone} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, telefone: e.target.value})} className="w-full h-11 px-4 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5 text-gray-700">Cargo Desejado</label>
+                    <input type="text" value={novoCandidatoDados.cargo_desejado} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, cargo_desejado: e.target.value})} className="w-full h-11 px-4 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5 text-gray-700">
+                      Mensagem
+                      <span className="text-xs text-light-text ml-2 font-normal">Opcional</span>
+                    </label>
+                    <textarea value={novoCandidatoDados.mensagem} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, mensagem: e.target.value})} className="w-full px-4 py-2.5 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors resize-none" rows="3"></textarea>
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-8 flex justify-end gap-3">
+              <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-divider shrink-0">
                 <button
                   onClick={() => setShowNovoCandidato(false)}
-                  className="px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                  className="px-4 py-2 text-sm font-medium border border-divider rounded-lg hover:bg-gray-50 transition"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={handleNovoCandidatoSubmit}
                   disabled={salvandoCandidato}
-                  className="px-5 py-2.5 text-sm font-bold bg-indigo-600 text-white rounded-xl shadow-sm hover:bg-indigo-700 hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-50"
+                  className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition disabled:opacity-50"
                 >
                   {salvandoCandidato ? 'Salvando...' : 'Adicionar Candidato'}
                 </button>
