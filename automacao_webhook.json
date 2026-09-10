@@ -1,1 +1,0 @@
-{"nome":"Notificar mudanca","gatilho":"atualizacao","campo_condicao_id":"01a01b73-4bcc-7841-9283-660817812396","condicao_operador":"igual","condicao_valor":"disparar@exemplo.com","acoes":[{"tipo":"webhook","configuracao":{"url":"https://webhook.site/25bf7bcd-e97d-4ac8-8597-16dac8361f3d"}}]}

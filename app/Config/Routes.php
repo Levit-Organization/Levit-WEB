@@ -48,9 +48,12 @@ $routes->group('api/v1', function ($routes) {
 
     $routes->get('cargos', 'CargoController::listar', ['filter' => 'auth:gerenciar_cargos']);
     $routes->post('cargos', 'CargoController::criar', ['filter' => 'auth:gerenciar_cargos']);
+    $routes->put("cargos/({$uuid})", 'CargoController::atualizar/$1', ['filter' => 'auth:gerenciar_cargos']);
+    $routes->delete("cargos/({$uuid})", 'CargoController::excluir/$1', ['filter' => 'auth:gerenciar_cargos']);
 
     $routes->post('equipe/convidar', 'EquipeController::convidar', ['filter' => 'auth:gerenciar_equipe']);
     $routes->get('equipe', 'EquipeController::listarMembros', ['filter' => 'auth:visualizar_equipe']);
+    $routes->put("equipe/({$uuid})", 'EquipeController::atualizarMembro/$1', ['filter' => 'auth:gerenciar_equipe']);
     $routes->delete("equipe/({$uuid})", 'EquipeController::removerMembro/$1', ['filter' => 'auth:gerenciar_equipe']);
     $routes->post('publico/convite/aceitar', 'EquipeController::aceitarConvite', ['filter' => 'ratelimit']);
 

@@ -2,21 +2,25 @@
 
 namespace App\Services;
 
+use App\Exceptions\NaoEncontradoException;
 use App\Models\CargoModel;
 use App\Models\CargoPermissaoModel;
 use App\Models\PermissaoModel;
+use App\Models\UsuarioModel;
 
 class CargoService
 {
     protected CargoModel $cargoModel;
     protected PermissaoModel $permissaoModel;
     protected CargoPermissaoModel $cargoPermissaoModel;
+    protected UsuarioModel $usuarioModel;
 
     public function __construct()
     {
         $this->cargoModel          = new CargoModel();
         $this->permissaoModel      = new PermissaoModel();
         $this->cargoPermissaoModel = new CargoPermissaoModel();
+        $this->usuarioModel        = new UsuarioModel();
     }
 
     /**
@@ -93,5 +97,95 @@ class CargoService
         $cargo['permissoes'] = array_column($permissoesValidas, 'codigo');
 
         return $cargo;
+    }
+
+    /**
+     * Atualização é uma substituição completa (semântica de PUT): o nome
+     * e a lista de permissões enviados passam a ser o estado final do
+     * cargo — não é um merge com o que já existia antes.
+     *
+     * @throws NaoEncontradoException se o cargo não existir/pertencer à empresa
+     * @throws \DomainException se o novo nome colidir com outro cargo da
+     *         empresa, ou algum código de permissão não existir no catálogo
+     */
+    public function atualizarCargo(string $empresaId, string $cargoId, string $nome, array $codigosPermissoes): array
+    {
+        $cargo = $this->cargoModel
+            ->where('id', $cargoId)
+            ->where('empresa_id', $empresaId)
+            ->first();
+
+        if (! $cargo) {
+            throw new NaoEncontradoException('Cargo não encontrado.');
+        }
+
+        $conflito = $this->cargoModel
+            ->where('empresa_id', $empresaId)
+            ->where('nome', $nome)
+            ->where('id !=', $cargoId)
+            ->first();
+
+        if ($conflito) {
+            throw new \DomainException('Já existe um cargo com esse nome nesta empresa.');
+        }
+
+        $permissoesValidas = empty($codigosPermissoes)
+            ? []
+            : $this->permissaoModel->whereIn('codigo', $codigosPermissoes)->findAll();
+
+        if (count($permissoesValidas) !== count(array_unique($codigosPermissoes))) {
+            throw new \DomainException('Uma ou mais permissões informadas não existem.');
+        }
+
+        $db = db_connect();
+        $db->transStart();
+
+        $this->cargoModel->update($cargoId, ['nome' => $nome]);
+
+        $this->cargoPermissaoModel->where('cargo_id', $cargoId)->delete();
+
+        foreach ($permissoesValidas as $permissao) {
+            $this->cargoPermissaoModel->insert([
+                'cargo_id'     => $cargoId,
+                'permissao_id' => $permissao['id'],
+            ]);
+        }
+
+        $db->transComplete();
+
+        if ($db->transStatus() === false) {
+            throw new \RuntimeException('Não foi possível atualizar o cargo. Tente novamente.');
+        }
+
+        $cargoAtualizado = $this->cargoModel->find($cargoId);
+        $cargoAtualizado['permissoes'] = array_column($permissoesValidas, 'codigo');
+
+        return $cargoAtualizado;
+    }
+
+    /**
+     * @throws NaoEncontradoException se o cargo não existir/pertencer à empresa
+     * @throws \DomainException se ainda existirem membros vinculados ao cargo
+     */
+    public function excluirCargo(string $empresaId, string $cargoId): void
+    {
+        $cargo = $this->cargoModel
+            ->where('id', $cargoId)
+            ->where('empresa_id', $empresaId)
+            ->first();
+
+        if (! $cargo) {
+            throw new NaoEncontradoException('Cargo não encontrado.');
+        }
+
+        $totalMembros = $this->usuarioModel->where('cargo_id', $cargoId)->countAllResults();
+
+        if ($totalMembros > 0) {
+            throw new \DomainException('Não é possível excluir um cargo que possui membros vinculados.');
+        }
+
+        // cargo_permissao e cargo_modulo_permissao têm ON DELETE CASCADE
+        // para cargo_id — não precisam de limpeza manual aqui.
+        $this->cargoModel->delete($cargoId);
     }
 }

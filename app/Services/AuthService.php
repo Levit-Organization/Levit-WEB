@@ -180,11 +180,29 @@ class AuthService
             ->where('cargo_permissao.cargo_id', $usuario['cargo_id'])
             ->findAll();
 
-                return [
+        return [
             'cargo_id'     => $usuario['cargo_id'],
-            'acesso_total' => ($cargo['acesso_total'] ?? 'f') === 't',
+            'acesso_total' => $this->paraBooleano($cargo['acesso_total'] ?? false),
             'permissoes'   => array_column($permissoes, 'codigo'),
         ];
+    }
+
+    /**
+     * Normaliza um valor BOOLEAN vindo do banco para bool do PHP.
+     *
+     * Existe porque o driver Postgre pode devolver colunas BOOLEAN como
+     * bool nativo, inteiro (0/1) ou string curta ('t'/'f') dependendo do
+     * modo de fetch — filter_var(FILTER_VALIDATE_BOOLEAN) não cobre o
+     * caso 't'/'f', então tratamos manualmente para não depender de um
+     * formato específico de driver/config.
+     */
+    private function paraBooleano($valor): bool
+    {
+        if (is_bool($valor)) {
+            return $valor;
+        }
+
+        return in_array($valor, [1, '1', 't', 'true'], true);
     }
 
     /**

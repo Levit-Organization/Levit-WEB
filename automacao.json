@@ -1,1 +1,0 @@
-{"nome":"Boas-vindas","gatilho":"criacao","acoes":[{"tipo":"enviar_email","configuracao":{"destinatario_campo_id":"01a01b73-4bcc-7841-9283-660817812396","assunto":"Bem-vindo ao Levit!","corpo":"<p>Obrigado por se cadastrar.</p>"}}]}

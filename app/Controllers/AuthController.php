@@ -43,11 +43,6 @@ class AuthController extends BaseApiController
             return $this->respondError($e->getMessage(), 500);
         }
 
-        $token = $this->jwtService->gerar([
-            'sub'        => $resultado['usuario']['id'],
-            'empresa_id' => $resultado['empresa']['id'],
-        ]);
-
         return $this->respondSuccess(
             $this->authService->montarRespostaAutenticacao($resultado['usuario'], $resultado['empresa']),
             201
