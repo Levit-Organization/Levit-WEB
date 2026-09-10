@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
+import { Button, Card, EmptyState, Skeleton, PageHeader } from '../components/ui';
 import { moduloService } from '../services/moduloService';
 
 export default function Modules() {
@@ -39,53 +40,46 @@ export default function Modules() {
 
   return (
     <Layout>
-      <header className="flex justify-between items-center mb-8 shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold">Módulos</h1>
-          <p className="text-sm text-light-text mt-1">Gerencie os módulos da plataforma</p>
-        </div>
-        <Link 
-          to="/modulos/novo"
-          className="bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/80 transition flex items-center gap-1.5"
-        >
-          <span className="material-icons text-base">add</span>
-          Novo Módulo
-        </Link>
-      </header>
+      <PageHeader
+        title="Módulos"
+        subtitle="Gerencie os módulos da plataforma"
+        actions={<Button to="/modulos/novo" icon="add">Novo Módulo</Button>}
+      />
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[1, 2, 3].map((skeleton) => (
-            <div key={skeleton} className="bg-white border border-divider rounded-xl p-5 animate-pulse">
+            <Card key={skeleton} padding="md">
               <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 bg-gray-200 rounded-lg"></div>
+                <Skeleton className="w-12 h-12 rounded-lg" />
                 <div className="flex-1">
-                  <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
-                  <div className="h-3 bg-gray-100 rounded w-16"></div>
+                  <Skeleton className="h-4 w-24 mb-2" />
+                  <Skeleton className="h-3 w-16" />
                 </div>
               </div>
-              <div className="h-8 bg-gray-50 rounded"></div>
-            </div>
+              <Skeleton className="h-8" />
+            </Card>
           ))}
         </div>
       ) : modulos.length === 0 ? (
-        <div className="bg-white border border-divider rounded-xl p-12 text-center">
-          <div className="w-16 h-16 rounded-full bg-background flex items-center justify-center mx-auto mb-4">
-            <span className="material-icons text-3xl text-light-text">widgets</span>
-          </div>
-          <p className="text-light-text mb-4">Nenhum módulo encontrado.</p>
-          <Link 
-            to="/modulos/novo"
-            className="text-primary font-medium hover:underline"
-          >
-            Crie seu primeiro módulo
-          </Link>
-        </div>
+        <Card padding="lg" className="py-12">
+          <EmptyState
+            icon="widgets"
+            size="lg"
+            title="Nenhum módulo ainda"
+            description="Um módulo guarda um tipo de informação do seu RH — documentos, avaliações, vagas. Você define os campos e ele vira uma tela pronta."
+            actionLabel="Criar primeiro módulo"
+            actionIcon="add"
+            actionTo="/modulos/novo"
+          />
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {modulos.map((modulo) => (
-            <div 
-              key={modulo.id} 
+            <Card
+              key={modulo.id}
+              padding="md"
+              interactive
               onClick={() => {
                 if (modulo.tipo === 'recrutamento') {
                   navigate('/recrutamento');
@@ -93,39 +87,39 @@ export default function Modules() {
                   navigate(`/modulos/${modulo.id}/registros`);
                 }
               }}
-              className="bg-white border border-divider rounded-xl p-5 flex flex-col justify-between hover:shadow-md hover:border-primary/20 transition group cursor-pointer"
+              className="flex flex-col justify-between group"
             >
               <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 rounded-lg flex items-center justify-center text-white bg-primary shrink-0">
+                <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-primary-100 text-primary shrink-0">
                   <span className="material-icons text-xl">{modulo.icone || 'extension'}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-sm truncate" title={modulo.nome}>{modulo.nome}</h4>
+                  <h4 className="font-semibold text-sm text-ink truncate" title={modulo.nome}>{modulo.nome}</h4>
                   <p className="text-xs text-light-text mt-0.5">
                     {modulo.total_registros || 0} registro{(modulo.total_registros || 0) != 1 ? 's' : ''}
                   </p>
                 </div>
-                <span className="material-icons text-lg text-light-text opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="material-icons text-lg text-faint opacity-0 group-hover:opacity-100 transition-opacity">
                   arrow_forward
                 </span>
               </div>
-              
+
               <div className="flex gap-2 justify-end mt-auto border-t border-divider pt-3">
-                <Link 
-                  to={`/modulos/${modulo.id}/editar`} 
+                <Link
+                  to={`/modulos/${modulo.id}/editar`}
                   onClick={(e) => e.stopPropagation()}
-                  className="text-xs font-medium text-gray-500 hover:text-primary transition-colors px-2 py-1"
+                  className="text-xs font-medium text-light-text hover:text-primary transition-colors px-2 py-1"
                 >
                   Editar
                 </Link>
-                <button 
+                <button
                   onClick={(e) => handleDelete(e, modulo.id)}
-                  className="text-xs font-medium text-red-400 hover:text-red-600 transition-colors px-2 py-1"
+                  className="text-xs font-medium text-light-text hover:text-danger transition-colors px-2 py-1"
                 >
                   Excluir
                 </button>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}

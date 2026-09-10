@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Layout from '../components/Layout';
+import { Button, Input, Textarea, Select, Alert, Card, Skeleton, EmptyState } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { moduloService } from '../services/moduloService';
 import { backupService, extrairErroBlob } from '../services/backupService';
@@ -11,18 +12,6 @@ const TABS = [
   { id: 'empresa', label: 'Empresa e Módulos' },
   { id: 'avancado', label: 'Avançado e Dados' },
 ];
-
-function Field({ label, hint, children }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium mb-1.5 text-gray-700">{label}</label>
-      {children}
-      {hint && <p className="text-[11px] text-light-text mt-1.5">{hint}</p>}
-    </div>
-  );
-}
-
-const inputClass = 'w-full h-11 px-4 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm transition-colors';
 
 function ImageUploader({ value, onChange, shape = 'circle', size = 96, fallback, onError }) {
   const inputRef = useRef(null);
@@ -49,7 +38,7 @@ function ImageUploader({ value, onChange, shape = 'circle', size = 96, fallback,
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <div
-        className={`w-full h-full ${shape === 'circle' ? 'rounded-full' : 'rounded-2xl'} overflow-hidden bg-primary/10 flex items-center justify-center border border-divider`}
+        className={`w-full h-full ${shape === 'circle' ? 'rounded-full' : 'rounded-2xl'} overflow-hidden bg-primary-100 flex items-center justify-center border border-divider`}
       >
         {value ? <img src={value} alt="" className="w-full h-full object-cover" /> : fallback}
       </div>
@@ -57,7 +46,7 @@ function ImageUploader({ value, onChange, shape = 'circle', size = 96, fallback,
         type="button"
         onClick={() => inputRef.current?.click()}
         title="Alterar imagem"
-        className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors border-2 border-white"
+        className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:bg-primary-600 transition-colors border-2 border-surface"
       >
         <span className="material-icons text-[16px]">photo_camera</span>
       </button>
@@ -122,7 +111,7 @@ function PerfilTab() {
 
   return (
     <div className="flex flex-col gap-6 w-full">
-      <form onSubmit={salvarPerfil} className="bg-white border border-divider rounded-2xl shadow-sm p-6 flex flex-col gap-6">
+      <Card as="form" onSubmit={salvarPerfil} className="flex flex-col gap-6">
         <div className="flex items-center gap-5">
           <ImageUploader
             value={foto}
@@ -134,91 +123,45 @@ function PerfilTab() {
             <h2 className="text-base font-semibold">Informações do perfil</h2>
             <p className="text-xs text-light-text mt-0.5">Como seu nome, foto e contato aparecem para a equipe.</p>
             {foto && (
-              <button type="button" onClick={handleRemoverFoto} className="text-xs text-red-600 hover:underline mt-2 font-medium">
+              <button type="button" onClick={handleRemoverFoto} className="text-xs text-danger hover:underline mt-2 font-medium">
                 Remover foto
               </button>
             )}
           </div>
         </div>
 
-        {erroImagem && (
-          <div className="bg-red-50 text-red-700 p-3.5 rounded-lg text-xs flex items-center gap-2 border border-red-100 -mt-2">
-            <span className="material-icons text-[16px] shrink-0">error_outline</span>
-            {erroImagem}
-          </div>
-        )}
+        {erroImagem && <Alert variant="error" className="-mt-2">{erroImagem}</Alert>}
 
-        <Field label="Nome completo">
-          <input type="text" value={perfil.nome} onChange={(e) => handlePerfilChange('nome', e.target.value)} className={inputClass} />
-        </Field>
-        <Field label="E-mail">
-          <input type="email" value={perfil.email} onChange={(e) => handlePerfilChange('email', e.target.value)} className={inputClass} />
-        </Field>
-        <Field label="Telefone">
-          <input type="text" value={perfil.telefone} onChange={(e) => handlePerfilChange('telefone', e.target.value)} placeholder="(00) 00000-0000" className={inputClass} />
-        </Field>
-        <Field label="LinkedIn">
-          <input type="text" value={perfil.linkedin} onChange={(e) => handlePerfilChange('linkedin', e.target.value)} placeholder="linkedin.com/in/seu-perfil" className={inputClass} />
-        </Field>
-        <Field label="Bio">
-          <textarea
-            value={perfil.bio}
-            onChange={(e) => handlePerfilChange('bio', e.target.value)}
-            rows={3}
-            placeholder="Uma breve descrição sobre você"
-            className="w-full px-4 py-2.5 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm transition-colors resize-none"
-          />
-        </Field>
+        <Input label="Nome completo" type="text" value={perfil.nome} onChange={(e) => handlePerfilChange('nome', e.target.value)} />
+        <Input label="E-mail" type="email" value={perfil.email} onChange={(e) => handlePerfilChange('email', e.target.value)} />
+        <Input label="Telefone" type="text" value={perfil.telefone} onChange={(e) => handlePerfilChange('telefone', e.target.value)} placeholder="(00) 00000-0000" />
+        <Input label="LinkedIn" type="text" value={perfil.linkedin} onChange={(e) => handlePerfilChange('linkedin', e.target.value)} placeholder="linkedin.com/in/seu-perfil" />
+        <Textarea label="Bio" value={perfil.bio} onChange={(e) => handlePerfilChange('bio', e.target.value)} rows={3} placeholder="Uma breve descrição sobre você" />
 
-        {avisoPerfil && (
-          <div className="bg-amber-50 text-amber-700 p-3.5 rounded-lg text-xs flex items-center gap-2 border border-amber-100">
-            <span className="material-icons text-[16px] shrink-0">info</span>
-            {avisoPerfil}
-          </div>
-        )}
+        {avisoPerfil && <Alert variant="warning">{avisoPerfil}</Alert>}
 
         <div className="flex justify-end">
-          <button type="submit" className="h-11 px-5 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-colors">
-            Salvar alterações
-          </button>
+          <Button type="submit">Salvar alterações</Button>
         </div>
-      </form>
+      </Card>
 
-      <form onSubmit={salvarSenha} className="bg-white border border-divider rounded-2xl shadow-sm p-6 flex flex-col gap-5">
+      <Card as="form" onSubmit={salvarSenha} className="flex flex-col gap-5">
         <div>
           <h2 className="text-base font-semibold">Segurança</h2>
           <p className="text-xs text-light-text mt-0.5">Atualize sua senha de acesso.</p>
         </div>
 
-        <Field label="Senha atual">
-          <input type="password" value={senhas.atual} onChange={(e) => handleSenhaChange('atual', e.target.value)} className={inputClass} />
-        </Field>
-        <Field label="Nova senha" hint="Mínimo de 8 caracteres.">
-          <input type="password" value={senhas.nova} onChange={(e) => handleSenhaChange('nova', e.target.value)} className={inputClass} />
-        </Field>
-        <Field label="Confirmar nova senha">
-          <input type="password" value={senhas.confirmar} onChange={(e) => handleSenhaChange('confirmar', e.target.value)} className={inputClass} />
-        </Field>
+        <Input label="Senha atual" type="password" value={senhas.atual} onChange={(e) => handleSenhaChange('atual', e.target.value)} />
+        <Input label="Nova senha" type="password" hint="Mínimo de 8 caracteres." value={senhas.nova} onChange={(e) => handleSenhaChange('nova', e.target.value)} />
+        <Input label="Confirmar nova senha" type="password" value={senhas.confirmar} onChange={(e) => handleSenhaChange('confirmar', e.target.value)} />
 
-        {erroSenha && (
-          <div className="bg-red-50 text-red-700 p-3.5 rounded-lg text-xs flex items-center gap-2 border border-red-100">
-            <span className="material-icons text-[16px] shrink-0">error_outline</span>
-            {erroSenha}
-          </div>
-        )}
-        {avisoSenha && (
-          <div className="bg-amber-50 text-amber-700 p-3.5 rounded-lg text-xs flex items-center gap-2 border border-amber-100">
-            <span className="material-icons text-[16px] shrink-0">info</span>
-            {avisoSenha}
-          </div>
-        )}
+        {erroSenha && <Alert variant="error">{erroSenha}</Alert>}
+        {avisoSenha && <Alert variant="warning">{avisoSenha}</Alert>}
 
         <div className="flex justify-end">
-          <button type="submit" className="h-11 px-5 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-colors">
-            Atualizar senha
-          </button>
+          <Button type="submit">Atualizar senha</Button>
         </div>
-      </form>
+      </Card>
     </div>
   );
 }
@@ -271,7 +214,7 @@ function EmpresaModulosTab() {
 
   return (
     <div className="flex flex-col gap-6 w-full">
-      <div className="bg-white border border-divider rounded-2xl shadow-sm p-6">
+      <Card>
         <div className="flex items-center gap-5 mb-5">
           <ImageUploader
             value={logo}
@@ -284,52 +227,48 @@ function EmpresaModulosTab() {
             <h2 className="text-base font-semibold">Empresa</h2>
             <p className="text-xs text-light-text mt-0.5">Identidade visual usada por toda a equipe.</p>
             {logo && (
-              <button type="button" onClick={handleRemoverLogo} className="text-xs text-red-600 hover:underline mt-2 font-medium">
+              <button type="button" onClick={handleRemoverLogo} className="text-xs text-danger hover:underline mt-2 font-medium">
                 Remover logo
               </button>
             )}
           </div>
         </div>
 
-        {erroLogo && (
-          <div className="bg-red-50 text-red-700 p-3.5 rounded-lg text-xs mb-4 flex items-center gap-2 border border-red-100">
-            <span className="material-icons text-[16px] shrink-0">error_outline</span>
-            {erroLogo}
-          </div>
-        )}
+        {erroLogo && <Alert variant="error" className="mb-4">{erroLogo}</Alert>}
 
-        <div className="w-full h-11 px-4 border border-divider rounded-lg bg-background/60 flex items-center text-sm text-gray-700">
+        <div className="w-full h-11 px-4 border border-divider rounded-lg bg-background flex items-center text-sm text-ink-soft">
           {empresa?.nome || 'Carregando...'}
         </div>
-        <p className="text-[11px] text-light-text mt-1.5">Edição do nome da empresa ainda não está disponível.</p>
-      </div>
+        <p className="text-2xs text-light-text mt-1.5">Edição do nome da empresa ainda não está disponível.</p>
+      </Card>
 
-      <div className="bg-white border border-divider rounded-2xl shadow-sm p-6">
+      <Card>
         <h2 className="text-base font-semibold mb-0.5">Aparência dos módulos</h2>
         <p className="text-xs text-light-text mb-4">O ícone escolhido aqui aparece para toda a equipe.</p>
 
-        {error && (
-          <div className="bg-red-50 text-red-700 p-3.5 rounded-lg text-xs mb-4 flex items-center gap-2 border border-red-100">
-            <span className="material-icons text-[16px] shrink-0">error_outline</span>
-            {error}
-          </div>
-        )}
+        {error && <Alert variant="error" className="mb-4">{error}</Alert>}
 
         {loading ? (
           <div className="flex flex-col gap-2">
-            {[...Array(3)].map((_, i) => <div key={i} className="h-14 rounded-xl bg-background animate-pulse" />)}
+            {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)}
           </div>
         ) : modulos.length === 0 ? (
-          <p className="text-sm text-light-text text-center py-8">Nenhum módulo criado ainda.</p>
+          <EmptyState
+            size="sm"
+            icon="widgets"
+            title="Nenhum módulo criado ainda"
+            description="Quando você criar um módulo, o ícone dele pode ser personalizado por aqui."
+            className="py-6"
+          />
         ) : (
           <div className="flex flex-col gap-3">
             {modulos.map((modulo) => (
               <div key={modulo.id} className="border border-divider rounded-xl p-3.5">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-lg bg-primary-100 flex items-center justify-center shrink-0">
                     <span className="material-icons text-primary text-[18px]">{modulo.icone || 'extension'}</span>
                   </div>
-                  <span className="flex-1 min-w-0 truncate text-sm font-medium text-gray-900">{modulo.nome}</span>
+                  <span className="flex-1 min-w-0 truncate text-sm font-medium text-ink">{modulo.nome}</span>
                   <button
                     type="button"
                     onClick={() => setPickerAbertoId(pickerAbertoId === modulo.id ? null : modulo.id)}
@@ -341,7 +280,7 @@ function EmpresaModulosTab() {
                 </div>
 
                 {pickerAbertoId === modulo.id && (
-                  <div className="mt-3 grid grid-cols-8 gap-2 p-3 border border-divider rounded-lg bg-background/40">
+                  <div className="mt-3 grid grid-cols-8 gap-2 p-3 border border-divider rounded-lg bg-background">
                     {MODULO_ICON_OPTIONS.map((icon) => (
                       <button
                         key={icon}
@@ -351,7 +290,7 @@ function EmpresaModulosTab() {
                         className={`aspect-square rounded-lg flex items-center justify-center transition-colors ${
                           modulo.icone === icon
                             ? 'bg-primary text-white shadow-sm'
-                            : 'bg-white border border-divider text-light-text hover:border-primary hover:text-primary'
+                            : 'bg-surface border border-divider text-light-text hover:border-primary hover:text-primary'
                         }`}
                       >
                         <span className="material-icons text-[18px]">{icon}</span>
@@ -363,7 +302,7 @@ function EmpresaModulosTab() {
             ))}
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
@@ -412,82 +351,62 @@ function AvancadoDadosTab() {
 
   return (
     <div className="flex flex-col gap-6 w-full">
-      <div className="bg-white border border-divider rounded-2xl shadow-sm p-6">
+      <Card>
         <h2 className="text-base font-semibold mb-0.5">Exportar dados</h2>
         <p className="text-xs text-light-text mb-4">Baixe uma cópia dos dados da sua empresa.</p>
 
-        {erro && (
-          <div className="bg-red-50 text-red-700 p-3.5 rounded-lg text-xs mb-4 flex items-center gap-2 border border-red-100">
-            <span className="material-icons text-[16px] shrink-0">error_outline</span>
-            {erro}
-          </div>
-        )}
-        {sucesso && (
-          <div className="bg-emerald-50 text-emerald-700 p-3.5 rounded-lg text-xs mb-4 flex items-center gap-2 border border-emerald-100">
-            <span className="material-icons text-[16px] shrink-0">check_circle</span>
-            {sucesso}
-          </div>
-        )}
+        {erro && <Alert variant="error" className="mb-4">{erro}</Alert>}
+        {sucesso && <Alert variant="success" className="mb-4">{sucesso}</Alert>}
 
         <div className="flex flex-col gap-5">
           <div className="flex items-center justify-between gap-4 p-4 border border-divider rounded-xl">
             <div className="flex items-center gap-3.5 min-w-0">
-              <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
-                <span className="material-icons text-amber-600 text-[22px]">data_object</span>
+              <div className="w-11 h-11 rounded-xl bg-warning-bg flex items-center justify-center shrink-0">
+                <span className="material-icons text-warning text-[22px]">data_object</span>
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-900">Backup completo (JSON)</p>
+                <p className="text-sm font-medium text-ink">Backup completo (JSON)</p>
                 <p className="text-xs text-light-text mt-0.5">Todos os módulos, registros e configurações da empresa.</p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={handleExportarJson}
-              disabled={exportandoJson}
-              className="h-10 px-4 rounded-lg text-sm font-medium border border-divider hover:bg-background transition-colors flex items-center gap-1.5 shrink-0 disabled:opacity-50"
-            >
-              <span className="material-icons text-[17px]">download</span>
+            <Button variant="secondary" size="sm" icon="download" onClick={handleExportarJson} loading={exportandoJson}>
               {exportandoJson ? 'Exportando...' : 'Exportar JSON'}
-            </button>
+            </Button>
           </div>
 
           <div className="p-4 border border-divider rounded-xl">
             <div className="flex items-center gap-3.5 mb-3">
-              <div className="w-11 h-11 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
-                <span className="material-icons text-emerald-600 text-[22px]">table_view</span>
+              <div className="w-11 h-11 rounded-xl bg-success-bg flex items-center justify-center shrink-0">
+                <span className="material-icons text-success text-[22px]">table_view</span>
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-900">Registros de um módulo (CSV)</p>
+                <p className="text-sm font-medium text-ink">Registros de um módulo (CSV)</p>
                 <p className="text-xs text-light-text mt-0.5">Compatível com Excel e Google Sheets.</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="relative flex-1">
-                <select
+              <div className="flex-1">
+                <Select
                   value={moduloSelecionado}
                   onChange={(e) => setModuloSelecionado(e.target.value)}
-                  className="w-full h-10 appearance-none pl-3.5 pr-8 border border-divider rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                >
-                  <option value="">Selecione um módulo</option>
-                  {modulos.map((m) => (
-                    <option key={m.id} value={m.id}>{m.nome}</option>
-                  ))}
-                </select>
-                <span className="material-icons absolute right-2 top-1/2 -translate-y-1/2 text-[16px] text-light-text pointer-events-none">expand_more</span>
+                  placeholder="Selecione um módulo"
+                  options={modulos.map((m) => ({ value: m.id, label: m.nome }))}
+                />
               </div>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="download"
                 onClick={handleExportarCsv}
                 disabled={!moduloSelecionado || exportandoCsv}
-                className="h-10 px-4 rounded-lg text-sm font-medium border border-divider hover:bg-background transition-colors flex items-center gap-1.5 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                loading={exportandoCsv}
               >
-                <span className="material-icons text-[17px]">download</span>
                 {exportandoCsv ? 'Exportando...' : 'Exportar CSV'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -512,7 +431,7 @@ export default function Configuracoes() {
               className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
                 tab === t.id
                   ? 'text-primary border-primary'
-                  : 'text-light-text border-transparent hover:text-gray-700'
+                  : 'text-light-text border-transparent hover:text-ink-soft'
               }`}
             >
               {t.label}

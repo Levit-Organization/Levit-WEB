@@ -1,14 +1,134 @@
 @import "tailwindcss";
 
 @theme {
-  /* ========== Paleta Levit (Figma) ========== */
-  --color-primary: #534BAF;
-  --color-light-text: #666666;
-  --color-background: #F3F3F3;
-  --color-divider: #E5E5E5;
+  /* ==========================================================================
+     Tipografia
+     Archivo já vem do index.html. Escala fixa em rem (produto, não landing):
+     razão ~1.2 entre passos, sem clamp — o usuário lê em DPI constante.
+     ========================================================================== */
+  --font-sans: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
-  --animate-slide-in: slide-in 0.25s ease-out;
-  --animate-page-in: page-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --text-2xs: 0.6875rem;   /* 11px — metadado, timestamp */
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;      /* 12px — label, badge */
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.875rem;     /* 14px — corpo padrão do app */
+  --text-sm--line-height: 1.375rem;
+  --text-base: 1rem;       /* 16px */
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;     /* 18px — título de card/seção */
+  --text-lg--line-height: 1.625rem;
+  --text-xl: 1.375rem;     /* 22px */
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.625rem;    /* 26px — título de página */
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 2rem;        /* 32px — número de destaque */
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl: 2.5rem;      /* 40px */
+  --text-4xl--line-height: 2.75rem;
+
+  /* ==========================================================================
+     Cor — âncora da marca: #534BAF = oklch(47.63% 0.154 282.4)
+     Neutros levemente puxados pro roxo da marca (chroma 0.004–0.014), nunca
+     cinza puro: é o que tira a cara de CRUD genérico sem gritar cor.
+     Contraste conferido: todo texto abaixo passa AA (≥4.5:1) nas superfícies
+     canvas, sidebar e primary-100.
+     ========================================================================== */
+
+  /* Marca */
+  --color-primary-50:  oklch(97% 0.014 282.4);
+  --color-primary-100: oklch(94% 0.030 282.4);
+  --color-primary-200: oklch(88% 0.055 282.4);
+  --color-primary-300: oklch(79% 0.090 282.4);
+  --color-primary-400: oklch(63% 0.140 282.4);
+  --color-primary:     oklch(47.63% 0.154 282.4); /* #534BAF — cor travada da marca */
+  --color-primary-600: oklch(42% 0.145 282.4);
+  --color-primary-700: oklch(36% 0.125 282.4);
+  --color-primary-900: oklch(24% 0.080 282.4);
+
+  /* Superfícies — três camadas: chrome (sidebar) → canvas → card */
+  --color-sidebar: oklch(96% 0.008 282);
+  --color-background: oklch(98.4% 0.004 282);
+  --color-surface: oklch(100% 0 0);
+  --color-divider: oklch(92% 0.006 282);
+  --color-divider-strong: oklch(86% 0.008 282);
+
+  /* Texto */
+  --color-ink: oklch(22% 0.015 282);        /* títulos */
+  --color-ink-soft: oklch(38% 0.012 282);   /* corpo */
+  --color-light-text: oklch(52% 0.012 282); /* secundário — AA em todas as superfícies */
+  --color-faint: oklch(64% 0.010 282);      /* só decorativo/desabilitado, nunca conteúdo */
+
+  /* Semântica de estado */
+  --color-success: oklch(50% 0.105 168);
+  --color-success-bg: oklch(95% 0.030 168);
+  --color-warning: oklch(52% 0.115 75);
+  --color-warning-bg: oklch(95.5% 0.045 85);
+  --color-danger: oklch(50.5% 0.19 27.5);
+  --color-danger-bg: oklch(96% 0.020 20);
+  --color-info: oklch(50% 0.12 245);
+  --color-info-bg: oklch(95.5% 0.030 245);
+
+  /* Funil de contratação — a cor cresce em intensidade conforme o candidato
+     avança, e a etapa final vira verde (contratado). Não é decoração: comunica
+     progresso. Aplicado por posição da fase, não pelo nome (as fases são
+     livres, definidas por cada empresa). */
+  --color-stage-1: oklch(54% 0.045 255);
+  --color-stage-1-bg: oklch(95.5% 0.020 255);
+  --color-stage-2: oklch(52% 0.095 270);
+  --color-stage-2-bg: oklch(95% 0.032 270);
+  --color-stage-3: oklch(47.63% 0.154 282.4);
+  --color-stage-3-bg: oklch(94% 0.045 282.4);
+  --color-stage-4: oklch(50% 0.13 305);
+  --color-stage-4-bg: oklch(95% 0.040 305);
+  --color-stage-5: oklch(50% 0.105 168);
+  --color-stage-5-bg: oklch(95% 0.030 168);
+
+  /* Avatares — cor estável por pessoa (hash do nome). Gente tem identidade
+     visual própria; linha de tabela cinza não. */
+  --color-people-1: oklch(48% 0.13 25);
+  --color-people-1-bg: oklch(95% 0.030 25);
+  --color-people-2: oklch(48% 0.11 70);
+  --color-people-2-bg: oklch(95% 0.035 70);
+  --color-people-3: oklch(46% 0.10 150);
+  --color-people-3-bg: oklch(95% 0.030 150);
+  --color-people-4: oklch(47% 0.10 200);
+  --color-people-4-bg: oklch(95% 0.030 200);
+  --color-people-5: oklch(47% 0.13 268);
+  --color-people-5-bg: oklch(95% 0.035 268);
+  --color-people-6: oklch(47% 0.13 320);
+  --color-people-6-bg: oklch(95% 0.035 320);
+
+  /* ==========================================================================
+     Forma — raios generosos (a "temperatura" do produto vem daqui e do
+     espaçamento, não de fonte arredondada).
+     ========================================================================== */
+  --radius-md: 0.625rem;   /* 10px — controles */
+  --radius-lg: 0.875rem;   /* 14px — cards, campos */
+  --radius-xl: 1.125rem;   /* 18px — painéis, modais */
+  --radius-2xl: 1.5rem;    /* 24px */
+
+  /* Sombras tintadas no roxo da marca — preto puro fica sujo sobre superfície
+     tintada. */
+  --shadow-xs: 0 1px 2px oklch(30% 0.04 282 / 0.06);
+  --shadow-sm: 0 1px 3px oklch(30% 0.04 282 / 0.07), 0 1px 2px oklch(30% 0.04 282 / 0.04);
+  --shadow-md: 0 4px 12px oklch(30% 0.04 282 / 0.08), 0 1px 3px oklch(30% 0.04 282 / 0.05);
+  --shadow-lg: 0 12px 28px oklch(30% 0.04 282 / 0.10), 0 2px 6px oklch(30% 0.04 282 / 0.05);
+  --shadow-drawer: -12px 0 32px oklch(30% 0.04 282 / 0.12);
+
+  /* ==========================================================================
+     Movimento — 150–250ms, ease-out. O usuário está numa tarefa, não assistindo.
+     ========================================================================== */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-slide-in: slide-in 0.25s var(--ease-out-expo);
+  --animate-page-in: page-in 0.2s var(--ease-out-quart);
+  --animate-rise: rise 0.2s var(--ease-out-quart) both;
+
+  /* Faixa do item ativo da navegação: varre da direita para a esquerda por
+     baixo do rótulo. Mantida no tempo e na curva originais — é assinatura da
+     navegação, não transição funcional. */
   --animate-nav-active: nav-active 0.4s cubic-bezier(0.65, 0, 0.35, 1);
 }
 
@@ -24,19 +144,84 @@
 @keyframes page-in {
   from {
     opacity: 0;
-    transform: translateX(18px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateY(0);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 @keyframes nav-active {
   from {
-    clip-path: inset(0 0 0 100%);
+    clip-path: inset(0 0 0 100% round var(--radius-lg));
   }
   to {
-    clip-path: inset(0 0 0 0%);
+    clip-path: inset(0 0 0 0% round var(--radius-lg));
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-ink-soft);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4 {
+    color: var(--color-ink);
+    text-wrap: balance;
+    letter-spacing: -0.011em;
+  }
+
+  h1 {
+    letter-spacing: -0.018em;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Foco visível único em todo o app: anel do roxo da marca, sem outline
+     dobrado do browser. */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-md);
+  }
+
+  /* Números em tabela/kanban alinham em coluna. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

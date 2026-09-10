@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Input, Button, Alert } from '../components/ui';
 import AuthLayout from './AuthLayout';
 
 function calcularForcaSenha(senha) {
@@ -13,8 +14,8 @@ function calcularForcaSenha(senha) {
 }
 
 const FORCA_LABELS = ['', 'Fraca', 'Razoável', 'Boa', 'Forte'];
-const FORCA_COLORS = ['bg-gray-200', 'bg-red-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-600'];
-const FORCA_TEXT_COLORS = ['text-gray-400', 'text-red-600', 'text-yellow-600', 'text-blue-600', 'text-green-700'];
+const FORCA_COLORS = ['bg-divider', 'bg-danger', 'bg-warning', 'bg-info', 'bg-success'];
+const FORCA_TEXT_COLORS = ['text-light-text', 'text-danger', 'text-warning', 'text-info', 'text-success'];
 
 export default function Register() {
   const navigate = useNavigate();
@@ -74,72 +75,56 @@ export default function Register() {
 
   return (
     <AuthLayout bgImage="/Criar conta.png">
-      <h2 className="text-xl font-bold text-gray-900 mt-2">Criar a sua conta</h2>
+      <h2 className="text-xl font-bold text-ink mt-2">Criar a sua conta</h2>
       <p className="text-sm text-light-text mb-6 text-center mt-1">Comece a organizar a sua empresa hoje.</p>
 
       <form onSubmit={handleSubmit} className="w-full space-y-4">
-        {erro && (
-          <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-lg text-xs">
-            {erro}
-          </div>
-        )}
+        {erro && <Alert variant="error">{erro}</Alert>}
+
+        <Input
+          label="Nome completo"
+          type="text"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          placeholder="Camila Moraes"
+          required
+        />
+
+        <Input
+          label="E-mail corporativo"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="camila@empresa.com"
+          required
+        />
+
+        <Input
+          label="CPF ou CNPJ"
+          type="text"
+          value={cnpjCpf}
+          onChange={(e) => setCnpjCpf(e.target.value)}
+          placeholder="XXX.XXX.XXX-XX | XX.XXX.XXX/XXXX-XX"
+          required
+        />
+
+        <Input
+          label="Nome da empresa"
+          type="text"
+          value={nomeEmpresa}
+          onChange={(e) => setNomeEmpresa(e.target.value)}
+          placeholder="Empresa XYZ Ltda"
+          required
+        />
 
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Nome completo</label>
-          <input
-            type="text"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            placeholder="Camila Moraes"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 text-sm"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">E-mail corporativo</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="camila@empresa.com"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 text-sm"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">CPF ou CNPJ</label>
-          <input
-            type="text"
-            value={cnpjCpf}
-            onChange={(e) => setCnpjCpf(e.target.value)}
-            placeholder="XXX.XXX.XXX-XX | XX.XXX.XXX/XXXX-XX"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 text-sm"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Nome da empresa</label>
-          <input
-            type="text"
-            value={nomeEmpresa}
-            onChange={(e) => setNomeEmpresa(e.target.value)}
-            placeholder="Empresa XYZ Ltda"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 text-sm"
-            required
-          />
-        </div>
-        
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Palavra-passe</label>
-          <input
+          <Input
+            label="Palavra-passe"
             type="password"
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
             placeholder="Crie uma palavra-passe forte"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 text-sm mb-2"
+            className="mb-2"
             required
           />
           {/* Indicador de força da senha dinâmico */}
@@ -150,41 +135,34 @@ export default function Register() {
                 className={`flex-1 rounded-full transition-colors duration-300 ${
                   senha.length > 0 && forcaSenha >= level
                     ? FORCA_COLORS[forcaSenha]
-                    : 'bg-gray-200'
+                    : 'bg-divider'
                 }`}
               />
             ))}
           </div>
           {senha.length > 0 && (
-            <p className={`text-[10px] ${FORCA_TEXT_COLORS[forcaSenha]}`}>
+            <p className={`text-2xs font-medium ${FORCA_TEXT_COLORS[forcaSenha]}`}>
               {FORCA_LABELS[forcaSenha] || 'Muito fraca'}
             </p>
           )}
         </div>
 
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Confirmar palavra-passe</label>
-          <input
-            type="password"
-            value={confirmarSenha}
-            onChange={(e) => setConfirmarSenha(e.target.value)}
-            placeholder="Repita a palavra-passe"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 text-sm"
-            required
-          />
-        </div>
+        <Input
+          label="Confirmar palavra-passe"
+          type="password"
+          value={confirmarSenha}
+          onChange={(e) => setConfirmarSenha(e.target.value)}
+          placeholder="Repita a palavra-passe"
+          required
+        />
 
-        <button
-          type="submit"
-          disabled={carregando}
-          className="w-full bg-primary text-white py-2.5 rounded-lg hover:bg-primary/80 transition duration-200 text-sm font-medium mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        <Button type="submit" loading={carregando} className="w-full justify-center mt-4">
           {carregando ? 'Criando conta...' : 'Criar conta gratuita'}
-        </button>
+        </Button>
       </form>
 
-      <p className="mt-6 text-xs text-gray-600">
-        Já tem conta? <Link to="/login" className="text-indigo-600 font-medium hover:underline">Faça login</Link>
+      <p className="mt-6 text-xs text-ink-soft">
+        Já tem conta? <Link to="/login" className="text-primary font-medium hover:underline">Faça login</Link>
       </p>
     </AuthLayout>
   );

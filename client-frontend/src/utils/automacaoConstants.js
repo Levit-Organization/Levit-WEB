@@ -9,7 +9,6 @@ export const ACAO_INFO = {
   enviar_email: { label: 'Enviar e-mail', icon: 'mail' },
   webhook: { label: 'Webhook', icon: 'bolt' },
   notificacao: { label: 'Notificação', icon: 'notifications', disabled: true },
-  criar_tarefa: { label: 'Criar tarefa', icon: 'task_alt', disabled: true },
 };
 
 export const OPERADOR_INFO = {

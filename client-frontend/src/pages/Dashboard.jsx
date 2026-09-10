@@ -2,20 +2,33 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Layout from '../components/Layout';
+import {
+  Button,
+  Card,
+  EmptyState,
+  Avatar,
+  Skeleton,
+  StatCard,
+  Badge,
+  coresDaFase,
+  tempoRelativo,
+  estaParado,
+} from '../components/ui';
 import { moduloService } from '../services/moduloService';
 import { equipeService } from '../services/equipeService';
 import { recrutamentoService } from '../services/recrutamentoService';
 
-function getInitials(nome = '') {
-  const parts = nome.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return '?';
-  const first = parts[0][0] || '';
-  const last = parts.length > 1 ? parts[parts.length - 1][0] || '' : '';
-  return `${first}${last}`.toUpperCase();
+function SecaoTitulo({ children, acao }) {
+  return (
+    <div className="flex items-center justify-between gap-4 mb-3.5">
+      <h2 className="text-base font-bold text-ink">{children}</h2>
+      {acao}
+    </div>
+  );
 }
 
 export default function Dashboard() {
-  const { primeiroNome, iniciais, empresa } = useAuth();
+  const { primeiroNome, empresa } = useAuth();
   const [modulos, setModulos] = useState([]);
   const [loadingModulos, setLoadingModulos] = useState(true);
 
@@ -93,269 +106,311 @@ export default function Dashboard() {
     }
   };
 
-  // Calculate KPIs from real data
-  const totalModulos = modulos.length;
-  const totalRegistros = modulos.reduce((acc, m) => acc + (parseInt(m.total_registros) || 0), 0);
-
-  const kpis = [
-    { value: totalModulos, label: 'Módulos Ativos', colorClass: 'text-primary' },
-    { value: totalRegistros, label: 'Total de Registros', colorClass: 'text-emerald-600' },
-  ];
-
-  // Show up to 6 recent modules
-  const recentModules = modulos.slice(0, 6);
+  const vagas = modulos.filter((m) => m.tipo === 'recrutamento');
+  const outrosModulos = modulos.filter((m) => m.tipo !== 'recrutamento');
 
   const fasesDaVaga = vagaKanban ? Object.entries(vagaKanban) : [];
-  const totalCandidatosVaga = fasesDaVaga.reduce((acc, [, fase]) => acc + (fase.candidatos?.length || 0), 0);
+  const candidatosDaVaga = fasesDaVaga.flatMap(([, fase]) => fase.candidatos || []);
+  const totalCandidatosVaga = candidatosDaVaga.length;
+  const paradosVaga = candidatosDaVaga.filter((c) => estaParado(c.atualizado_em || c.criado_em)).length;
+  const membrosAtivos = equipe.filter((m) => m.status !== 'Pendente').length;
+  const convitesPendentes = equipe.length - membrosAtivos;
+
+  const saudacao = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Bom dia';
+    if (h < 18) return 'Boa tarde';
+    return 'Boa noite';
+  })();
 
   return (
     <Layout>
-      {/* CABEÇALHO */}
-      <header className="flex justify-between items-end mb-8 shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold">
-            Olá, {primeiroNome}!
-          </h1>
-          <p className="text-sm text-light-text mt-1">
-            {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-          </p>
-        </div>
-        <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm">
-          {iniciais}
-        </div>
+      <header className="mb-7 shrink-0">
+        <h1 className="text-2xl font-bold text-ink">
+          {saudacao}, {primeiroNome}
+        </h1>
+        <p className="text-sm text-light-text mt-1 first-letter:uppercase">
+          {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+          {empresa?.nome ? ` · ${empresa.nome}` : ''}
+        </p>
       </header>
 
-      {/* KPIS (INDICADORES) */}
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 shrink-0">
-        {loadingModulos ? (
-          [1, 2].map((skeleton) => (
-            <div key={skeleton} className="bg-white border border-divider rounded-xl p-6 h-28 animate-pulse flex flex-col justify-center">
-              <div className="h-8 bg-gray-200 rounded w-16 mb-2"></div>
-              <div className="h-4 bg-gray-100 rounded w-24"></div>
-            </div>
+      {/* INDICADORES */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8 shrink-0">
+        {loadingModulos || loadingVaga ? (
+          [1, 2, 3, 4].map((s) => (
+            <Card key={s} padding="md" className="flex items-start gap-3.5">
+              <Skeleton className="w-10 h-10 rounded-lg shrink-0" />
+              <div className="flex-1">
+                <Skeleton className="h-7 w-14 mb-2" />
+                <Skeleton className="h-3.5 w-24" />
+              </div>
+            </Card>
           ))
         ) : (
-          kpis.map((kpi, index) => (
-            <div key={index} className="bg-white border border-divider rounded-xl p-6">
-              <h3 className={`text-3xl font-bold mb-1 ${kpi.colorClass}`}>{kpi.value}</h3>
-              <p className="text-sm text-light-text">{kpi.label}</p>
-            </div>
-          ))
+          <>
+            <StatCard
+              icon="work_outline"
+              value={vagas.length}
+              label={vagas.length === 1 ? 'Vaga aberta' : 'Vagas abertas'}
+              variant="primary"
+            />
+            <StatCard
+              icon="person_search"
+              value={totalCandidatosVaga}
+              label="Candidatos no funil"
+              hint={vagaDestaque?.nome}
+              variant="info"
+            />
+            <StatCard
+              icon="groups"
+              value={membrosAtivos}
+              label={membrosAtivos === 1 ? 'Pessoa na equipe' : 'Pessoas na equipe'}
+              variant="success"
+              badge={
+                convitesPendentes > 0 ? (
+                  <Badge variant="warning" size="sm">
+                    +{convitesPendentes} convite{convitesPendentes > 1 ? 's' : ''}
+                  </Badge>
+                ) : null
+              }
+            />
+            <StatCard
+              icon="schedule"
+              value={paradosVaga}
+              label="Parados há mais de 14 dias"
+              hint={paradosVaga > 0 ? 'Precisam de uma resposta' : 'Funil em dia'}
+              variant={paradosVaga > 0 ? 'warning' : 'default'}
+            />
+          </>
         )}
       </section>
 
-      {/* MÓDULOS */}
-      <section className="mb-8 shrink-0">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">Módulos</h2>
-          <Link 
-            to="/modulos/novo"
-            className="bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/80 transition flex items-center gap-1.5"
+      {/* FUNIL + EQUIPE */}
+      <section className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-8 shrink-0">
+        {/* Funil da vaga em destaque */}
+        <Card className="lg:col-span-3 min-w-0">
+          <SecaoTitulo
+            acao={
+              vagaDestaque && (
+                <Link to="/recrutamento" className="text-sm text-primary font-semibold hover:underline shrink-0">
+                  Abrir funil
+                </Link>
+              )
+            }
           >
-            <span className="material-icons text-base">add</span>
-            Novo Módulo
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {loadingModulos ? (
-             [1, 2, 3].map((skeleton) => (
-              <div key={skeleton} className="bg-white border border-divider rounded-xl p-4 flex items-center gap-4 animate-pulse">
-                <div className="w-12 h-12 bg-gray-200 rounded-lg"></div>
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-200 rounded w-20 mb-1"></div>
-                  <div className="h-3 bg-gray-100 rounded w-16"></div>
-                </div>
-              </div>
-            ))
-          ) : recentModules.length === 0 ? (
-            <div className="col-span-full bg-white border border-divider rounded-xl p-8 text-center">
-              <div className="w-14 h-14 rounded-full bg-background flex items-center justify-center mx-auto mb-3">
-                <span className="material-icons text-2xl text-light-text">widgets</span>
-              </div>
-              <p className="text-light-text mb-3 text-sm">Nenhum módulo criado ainda.</p>
-              <Link to="/modulos/novo" className="text-primary font-medium hover:underline text-sm">
-                Crie seu primeiro módulo
-              </Link>
-            </div>
-          ) : (
-            recentModules.map((modulo) => (
-              <Link
-                key={modulo.id} 
-                to={`/modulos/${modulo.id}/registros`}
-                className="bg-white border border-divider rounded-xl p-4 flex items-center gap-4 cursor-pointer hover:shadow-md hover:border-primary/20 transition group"
-              >
-                <div className="w-12 h-12 rounded-lg flex items-center justify-center text-white bg-primary shrink-0">
-                  <span className="material-icons text-xl">{modulo.icone || 'extension'}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-sm truncate">{modulo.nome}</h4>
-                  <p className="text-xs text-light-text">
-                    {modulo.total_registros || 0} registro{(modulo.total_registros || 0) != 1 ? 's' : ''}
-                  </p>
-                </div>
-                <span className="material-icons text-lg text-light-text opacity-0 group-hover:opacity-100 transition-opacity">
-                  arrow_forward
-                </span>
-              </Link>
-            ))
-          )}
-        </div>
-
-        {modulos.length > 6 && (
-          <div className="text-center mt-4">
-            <Link to="/modulos" className="text-sm text-primary font-medium hover:underline">
-              Ver todos os {modulos.length} módulos
-            </Link>
-          </div>
-        )}
-      </section>
-
-      {/* VAGA EM DESTAQUE + EQUIPE */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8 shrink-0">
-
-        {/* Vaga em destaque — mini kanban */}
-        <div className="bg-white border border-divider rounded-xl p-6 min-w-0">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h2 className="text-lg font-semibold">Vaga em Destaque</h2>
-              {vagaDestaque && (
-                <p className="text-xs text-light-text mt-0.5">{vagaDestaque.nome}</p>
-              )}
-            </div>
-            {vagaDestaque && (
-              <Link to="/recrutamento" className="text-primary text-sm font-medium hover:underline shrink-0">
-                Ver Kanban
-              </Link>
-            )}
-          </div>
+            {vagaDestaque ? vagaDestaque.nome : 'Funil de recrutamento'}
+          </SecaoTitulo>
 
           {loadingModulos || loadingVaga ? (
-            <div className="flex gap-3 overflow-hidden">
-              {[1, 2, 3].map((skeleton) => (
-                <div key={skeleton} className="w-32 shrink-0 rounded-lg bg-background p-2 animate-pulse">
-                  <div className="h-3 bg-gray-200 rounded w-16 mb-3"></div>
-                  <div className="h-6 bg-white rounded mb-1.5"></div>
-                  <div className="h-6 bg-white rounded"></div>
+            <div className="flex gap-2.5">
+              {[1, 2, 3, 4].map((s) => (
+                <div key={s} className="flex-1">
+                  <Skeleton className="h-3 w-16 mb-2" />
+                  <Skeleton className="h-16 w-full rounded-lg" />
                 </div>
               ))}
             </div>
           ) : !vagaDestaque ? (
-            <div className="text-center py-6">
-              <p className="text-sm text-light-text mb-2">Nenhuma vaga de recrutamento criada ainda.</p>
-              <Link to="/modulos/novo" className="text-primary font-medium hover:underline text-sm">
-                Criar vaga
-              </Link>
-            </div>
+            <EmptyState
+              size="sm"
+              icon="work_outline"
+              title="Nenhuma vaga aberta"
+              description="Crie uma vaga para montar o funil de etapas e começar a receber candidaturas."
+              actionLabel="Criar vaga"
+              actionIcon="add"
+              actionTo="/modulos/novo"
+              className="py-4"
+            />
           ) : vagaIndisponivel ? (
-            <div className="text-center py-6">
-              <span className="material-icons text-2xl text-light-text mb-2 block">lock</span>
-              <p className="text-sm text-light-text">Você não tem acesso a esta vaga.</p>
-            </div>
+            <EmptyState size="sm" icon="lock" title="Sem acesso" description="Seu cargo não tem permissão para ver esta vaga." className="py-4" />
           ) : vagaErro ? (
-            <div className="text-center py-6">
-              <span className="material-icons text-2xl text-red-400 mb-2 block">error_outline</span>
-              <p className="text-sm text-light-text">{vagaErro}</p>
-            </div>
+            <EmptyState size="sm" icon="error_outline" title="Não foi possível carregar" description={vagaErro} className="py-4" />
           ) : totalCandidatosVaga === 0 ? (
-            <div className="text-center py-6">
-              <p className="text-sm text-light-text">Nenhum candidato ainda.</p>
-            </div>
+            <EmptyState
+              size="sm"
+              icon="person_search"
+              title="Nenhum candidato ainda"
+              description="Assim que alguém se candidatar, o funil aparece aqui com o avanço por etapa."
+              className="py-4"
+            />
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {fasesDaVaga.map(([faseId, fase]) => (
-                <div key={faseId} className="w-36 shrink-0 rounded-lg bg-background p-2.5">
-                  <div className="flex items-center justify-between mb-2 px-0.5">
-                    <span className="text-[11px] font-bold uppercase tracking-wide text-light-text truncate">
-                      {fase.fase}
-                    </span>
-                    <span className="text-[10px] font-bold text-light-text shrink-0 ml-1">
-                      {fase.total ?? fase.candidatos.length}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    {fase.candidatos.slice(0, 4).map((candidato) => (
-                      <div
-                        key={candidato.id}
-                        title={candidato.nome}
-                        className="bg-white border border-divider rounded-md px-2 py-1.5 text-xs font-medium truncate"
-                      >
-                        {candidato.nome || 'Sem nome'}
+            <>
+              {/* Barra do funil: largura proporcional ao volume por etapa */}
+              <div className="flex gap-1 mb-4">
+                {fasesDaVaga.map(([faseId, fase], indice) => {
+                  const qtd = fase.candidatos?.length || 0;
+                  const cor = coresDaFase(indice, fasesDaVaga.length);
+                  return (
+                    <div
+                      key={faseId}
+                      className={`h-1.5 rounded-full ${qtd ? cor.dot : 'bg-divider'}`}
+                      style={{ flex: Math.max(qtd, 0.35) }}
+                      title={`${fase.fase}: ${qtd}`}
+                    />
+                  );
+                })}
+              </div>
+
+              <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${Math.min(fasesDaVaga.length, 5)}, minmax(0, 1fr))` }}>
+                {fasesDaVaga.slice(0, 5).map(([faseId, fase], indice) => {
+                  const cor = coresDaFase(indice, fasesDaVaga.length);
+                  const qtd = fase.candidatos?.length || 0;
+
+                  return (
+                    <div key={faseId} className="min-w-0">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${cor.dot}`} />
+                        <span className="text-2xs font-semibold uppercase tracking-wide text-light-text truncate">
+                          {fase.fase}
+                        </span>
                       </div>
-                    ))}
-                    {fase.candidatos.length === 0 && (
-                      <div className="text-[11px] text-light-text/70 px-0.5 py-1">Vazio</div>
-                    )}
-                    {fase.candidatos.length > 4 && (
-                      <p className="text-[11px] text-primary font-medium px-0.5">
-                        +{fase.candidatos.length - 4} mais
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+                      <p className={`text-xl font-bold tabular ${qtd ? cor.text : 'text-faint'}`}>{qtd}</p>
+                      <div className="mt-2 flex -space-x-1.5">
+                        {(fase.candidatos || []).slice(0, 4).map((c) => (
+                          <Avatar key={c.id} name={c.nome} size="xs" ring />
+                        ))}
+                        {qtd > 4 && (
+                          <span className="w-6 h-6 rounded-full bg-background ring-2 ring-surface flex items-center justify-center text-[9px] font-bold text-light-text">
+                            +{qtd - 4}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
-        </div>
+        </Card>
 
         {/* Equipe */}
-        <div className="bg-white border border-divider rounded-xl p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold">Equipe</h2>
-            <Link to="/team" className="text-primary text-sm font-medium hover:underline">
-              Ver todos
-            </Link>
-          </div>
+        <Card className="lg:col-span-2 min-w-0">
+          <SecaoTitulo
+            acao={
+              <Link to="/team" className="text-sm text-primary font-semibold hover:underline shrink-0">
+                Ver equipe
+              </Link>
+            }
+          >
+            Equipe
+          </SecaoTitulo>
 
           {loadingEquipe ? (
-            <div className="flex flex-col gap-3">
-              {[1, 2, 3].map((skeleton) => (
-                <div key={skeleton} className="flex items-center gap-3 animate-pulse">
-                  <div className="w-9 h-9 rounded-full bg-gray-200 shrink-0"></div>
+            <div className="flex flex-col gap-3.5">
+              {[1, 2, 3].map((s) => (
+                <div key={s} className="flex items-center gap-3">
+                  <Skeleton className="w-9 h-9 rounded-full shrink-0" />
                   <div className="flex-1">
-                    <div className="h-3.5 bg-gray-200 rounded w-28 mb-1.5"></div>
-                    <div className="h-3 bg-gray-100 rounded w-20"></div>
+                    <Skeleton className="h-3.5 w-28 mb-1.5" />
+                    <Skeleton className="h-3 w-20" />
                   </div>
                 </div>
               ))}
             </div>
           ) : equipeIndisponivel ? (
-            <div className="text-center py-6">
-              <span className="material-icons text-2xl text-light-text mb-2 block">lock</span>
-              <p className="text-sm text-light-text">Você não tem permissão para ver a equipe.</p>
-            </div>
+            <EmptyState size="sm" icon="lock" title="Sem acesso" description="Seu cargo não tem permissão para ver a equipe." className="py-4" />
           ) : equipeErro ? (
-            <div className="text-center py-6">
-              <span className="material-icons text-2xl text-red-400 mb-2 block">error_outline</span>
-              <p className="text-sm text-light-text">{equipeErro}</p>
-            </div>
+            <EmptyState size="sm" icon="error_outline" title="Não foi possível carregar" description={equipeErro} className="py-4" />
           ) : equipe.length === 0 ? (
-            <div className="text-center py-6">
-              <p className="text-sm text-light-text">Nenhum membro na equipe ainda.</p>
-            </div>
+            <EmptyState
+              size="sm"
+              icon="group_add"
+              title="Só você por aqui"
+              description="Convide quem participa das contratações para dividir o acompanhamento das vagas."
+              actionLabel="Convidar pessoa"
+              actionIcon="person_add"
+              actionTo="/team"
+              className="py-4"
+            />
           ) : (
-            <div className="flex flex-col gap-1">
-              {equipe.slice(0, 6).map((membro) => (
+            <div className="flex flex-col">
+              {equipe.slice(0, 5).map((membro) => (
                 <div key={membro.id} className="flex items-center gap-3 py-2">
-                  <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                    {getInitials(membro.nome)}
-                  </div>
+                  <Avatar name={membro.nome} size="md" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{membro.nome}</p>
-                    <p className="text-xs text-light-text truncate">{membro.cargo_nome || '—'}</p>
+                    <p className="text-sm font-medium text-ink truncate">{membro.nome}</p>
+                    <p className="text-2xs text-light-text truncate">{membro.cargo_nome || 'Sem cargo'}</p>
                   </div>
-                  {membro.status && (
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
-                      membro.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-                    }`}>
-                      {membro.status}
-                    </span>
+                  {membro.status === 'Pendente' && (
+                    <Badge variant="warning" size="sm">Convite pendente</Badge>
                   )}
                 </div>
               ))}
+              {equipe.length > 5 && (
+                <p className="text-2xs text-light-text pt-2">
+                  e mais {equipe.length - 5} {equipe.length - 5 === 1 ? 'pessoa' : 'pessoas'}
+                </p>
+              )}
             </div>
           )}
+        </Card>
+      </section>
+
+      {/* MÓDULOS */}
+      <section className="mb-4 shrink-0">
+        <SecaoTitulo
+          acao={<Button to="/modulos/novo" size="sm" variant="secondary" icon="add">Novo módulo</Button>}
+        >
+          Seus módulos
+        </SecaoTitulo>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {loadingModulos ? (
+            [1, 2, 3].map((s) => (
+              <Card key={s} padding="sm" className="flex items-center gap-3.5">
+                <Skeleton className="w-11 h-11 rounded-lg" />
+                <div className="flex-1">
+                  <Skeleton className="h-4 w-24 mb-1.5" />
+                  <Skeleton className="h-3 w-16" />
+                </div>
+              </Card>
+            ))
+          ) : outrosModulos.length === 0 ? (
+            <Card className="col-span-full">
+              <EmptyState
+                icon="widgets"
+                title="Nenhum módulo além das vagas"
+                description="Módulos guardam o resto do RH: documentos, avaliações, controle de ponto. Você define os campos."
+                actionLabel="Criar módulo"
+                actionIcon="add"
+                actionTo="/modulos/novo"
+              />
+            </Card>
+          ) : (
+            outrosModulos.slice(0, 6).map((modulo) => (
+              <Card
+                key={modulo.id}
+                as={Link}
+                to={`/modulos/${modulo.id}/registros`}
+                padding="sm"
+                interactive
+                className="flex items-center gap-3.5 group no-underline"
+              >
+                <div className="w-11 h-11 rounded-lg flex items-center justify-center bg-primary-100 text-primary shrink-0">
+                  <span className="material-icons text-[21px]">{modulo.icone || 'extension'}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-sm text-ink truncate">{modulo.nome}</h3>
+                  <p className="text-xs text-light-text">
+                    {modulo.total_registros || 0} registro{(modulo.total_registros || 0) != 1 ? 's' : ''}
+                  </p>
+                </div>
+                <span className="material-icons text-[20px] text-faint opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                  arrow_forward
+                </span>
+              </Card>
+            ))
+          )}
         </div>
+
+        {outrosModulos.length > 6 && (
+          <div className="mt-4">
+            <Link to="/modulos" className="text-sm text-primary font-semibold hover:underline">
+              Ver todos os {outrosModulos.length} módulos
+            </Link>
+          </div>
+        )}
       </section>
     </Layout>
   );

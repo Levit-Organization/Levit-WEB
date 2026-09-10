@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
+import { Button, Input, Select, Alert, Badge, Card, EmptyState, PageHeader } from '../components/ui';
 import { moduloService } from '../services/moduloService';
 import { MODULO_ICON_OPTIONS } from '../utils/iconOptions';
 
@@ -240,76 +241,53 @@ export default function ModuleForm() {
 
   return (
     <Layout>
-      <header className="flex items-center gap-4 mb-8 shrink-0">
-        <Link
-          to="/modulos"
-          className="w-10 h-10 flex items-center justify-center rounded-lg text-light-text hover:text-primary hover:bg-primary/5 transition-colors shrink-0"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-        </Link>
-        <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-          <span className="material-icons text-primary text-[22px]">{formData.icone}</span>
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{isEditing ? 'Editar Módulo' : 'Novo Módulo'}</h1>
-          <p className="text-sm text-light-text mt-0.5">{isEditing ? 'Atualize as informações e campos' : 'Crie um novo módulo customizado'}</p>
-        </div>
-      </header>
+      <PageHeader
+        backTo="/modulos"
+        icon={formData.icone}
+        title={isEditing ? 'Editar Módulo' : 'Novo Módulo'}
+        subtitle={isEditing ? 'Atualize as informações e campos' : 'Crie um novo módulo customizado'}
+      />
 
       {error && (
-        <div className="bg-red-50 text-red-700 p-4 rounded-xl mb-6 text-sm flex items-center gap-2.5 border border-red-100">
-          <span className="material-icons text-lg shrink-0">error_outline</span>
-          {error}
+        <div className="mb-6">
+          <Alert variant="error">{error}</Alert>
         </div>
       )}
 
       {successMsg && (
-        <div className="bg-emerald-50 text-emerald-700 p-4 rounded-xl mb-6 text-sm flex items-center gap-2.5 border border-emerald-100">
-          <span className="material-icons text-lg shrink-0">check_circle</span>
-          {successMsg}
+        <div className="mb-6">
+          <Alert variant="success">{successMsg}</Alert>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-[380px_minmax(0,1fr)] gap-6 items-start w-full">
 
         {/* Coluna esquerda: identidade do módulo */}
-        <div className="bg-white border border-divider rounded-2xl p-6 lg:sticky lg:top-8 flex flex-col gap-5">
+        <Card className="lg:sticky lg:top-8 flex flex-col gap-5">
           <div>
             <h2 className="text-base font-semibold">Informações Básicas</h2>
             <p className="text-xs text-light-text mt-0.5">Nome, tipo e ícone de identificação.</p>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Nome do Módulo</label>
-            <input
-              type="text"
-              name="nome"
-              value={formData.nome}
-              onChange={handleInputChange}
-              required
-              placeholder="Ex: Clientes"
-              className="w-full h-11 px-4 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm transition-colors"
-            />
-          </div>
+          <Input
+            label="Nome do Módulo"
+            type="text"
+            name="nome"
+            value={formData.nome}
+            onChange={handleInputChange}
+            required
+            placeholder="Ex: Clientes"
+          />
 
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Tipo de Módulo</label>
-            <div className="relative">
-              <select
-                name="tipo"
-                value={formData.tipo}
-                onChange={handleInputChange}
-                disabled={isEditing}
-                className="w-full h-11 appearance-none pl-4 pr-9 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm bg-white disabled:bg-background disabled:text-light-text transition-colors"
-              >
-                {Object.entries(TIPO_INFO).map(([value, info]) => (
-                  <option key={value} value={value}>{info.label}</option>
-                ))}
-              </select>
-              <span className="material-icons absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-light-text pointer-events-none">expand_more</span>
-            </div>
-            <p className="text-xs text-light-text mt-1.5 leading-snug">{tipoAtual.description}</p>
-          </div>
+          <Select
+            label="Tipo de Módulo"
+            name="tipo"
+            value={formData.tipo}
+            onChange={handleInputChange}
+            disabled={isEditing}
+            hint={tipoAtual.description}
+            options={Object.entries(TIPO_INFO).map(([value, info]) => ({ value, label: info.label }))}
+          />
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -338,8 +316,8 @@ export default function ModuleForm() {
                     title={icon}
                     className={`aspect-square rounded-lg flex items-center justify-center transition-colors ${
                       formData.icone === icon
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'bg-white border border-divider text-light-text hover:border-primary hover:text-primary'
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'bg-surface border border-divider-strong text-light-text hover:border-primary-300 hover:bg-primary-50 hover:text-primary'
                     }`}
                   >
                     <span className="material-icons text-[19px]">{icon}</span>
@@ -348,13 +326,13 @@ export default function ModuleForm() {
               </div>
             )}
           </div>
-        </div>
+        </Card>
 
         {/* Coluna direita: estrutura do módulo */}
         <div className="flex flex-col gap-6 min-w-0">
 
           {precisaDeFases && (
-            <div className="bg-white border border-divider rounded-2xl p-6">
+            <Card>
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h2 className="text-base font-semibold">Fases do Pipeline</h2>
@@ -373,7 +351,7 @@ export default function ModuleForm() {
               <div className="flex flex-col gap-2">
                 {fases.map((fase, index) => (
                   <div key={index} className="flex items-center gap-2.5">
-                    <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[11px] font-bold flex items-center justify-center shrink-0">
+                    <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-2xs font-bold flex items-center justify-center shrink-0 tabular">
                       {index + 1}
                     </span>
                     <input
@@ -381,12 +359,12 @@ export default function ModuleForm() {
                       value={fase}
                       onChange={(e) => handleFaseChange(index, e.target.value)}
                       placeholder={`Ex: ${index === 0 ? 'Triagem' : 'Entrevista'}`}
-                      className="flex-1 h-10 px-3.5 border border-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                      className="flex-1 h-10 px-3.5 bg-surface text-ink border border-divider-strong rounded-lg text-sm placeholder:text-light-text transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100"
                     />
                     <button
                       type="button"
                       onClick={() => handleRemoveFase(index)}
-                      className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-danger hover:bg-danger-bg transition-colors shrink-0"
                       title="Remover fase"
                     >
                       <span className="material-icons text-[19px]">close</span>
@@ -396,12 +374,11 @@ export default function ModuleForm() {
               </div>
 
               {fasesValidas.length === 0 && (
-                <p className="text-xs text-amber-600 mt-3 flex items-center gap-1.5">
-                  <span className="material-icons text-[15px]">info</span>
-                  Adicione pelo menos uma fase para criar a vaga.
-                </p>
+                <div className="mt-3">
+                  <Alert variant="warning">Adicione pelo menos uma fase para criar a vaga.</Alert>
+                </div>
               )}
-            </div>
+            </Card>
           )}
 
           {isEditing && formData.tipo === 'recrutamento' && (
@@ -414,7 +391,7 @@ export default function ModuleForm() {
             </div>
           )}
 
-          <div className="bg-white border border-divider rounded-2xl p-6">
+          <Card>
             <div className="flex justify-between items-center mb-5">
               <div>
                 <h2 className="text-base font-semibold">Campos do Módulo</h2>
@@ -433,20 +410,16 @@ export default function ModuleForm() {
             </div>
 
             {campos.length === 0 ? (
-              <div className="text-center py-12 border border-dashed border-divider rounded-xl">
-                <div className="w-12 h-12 rounded-full bg-background flex items-center justify-center mx-auto mb-3">
-                  <span className="material-icons text-xl text-light-text">view_column</span>
-                </div>
-                <p className="text-sm text-light-text mb-2">
-                  Nenhum campo adicionado.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleAddField}
-                  className="text-primary text-sm font-medium hover:underline"
-                >
-                  + Adicionar primeiro campo
-                </button>
+              <div className="py-12 border border-dashed border-divider rounded-xl">
+                <EmptyState
+                  icon="view_column"
+                  size="sm"
+                  title="Nenhum campo ainda"
+                  description="Os campos definem o que cada registro guarda — nome, data de admissão, documento. Eles viram as colunas da tabela e os campos do formulário."
+                  actionLabel="Adicionar primeiro campo"
+                  actionIcon="add"
+                  onAction={handleAddField}
+                />
               </div>
             ) : (
               <div className="flex flex-col gap-3">
@@ -474,7 +447,7 @@ export default function ModuleForm() {
                         </button>
                       </div>
 
-                      <span className="w-9 h-9 rounded-lg bg-white border border-divider flex items-center justify-center text-light-text shrink-0">
+                      <span className="w-9 h-9 rounded-lg bg-primary-100 text-primary flex items-center justify-center shrink-0">
                         <span className="material-icons text-[18px]">{CAMPO_TIPO_INFO[campo.tipo]?.icon || 'text_fields'}</span>
                       </span>
 
@@ -484,7 +457,7 @@ export default function ModuleForm() {
                         onChange={(e) => handleFieldChange(index, 'nome', e.target.value)}
                         required
                         placeholder="Nome do campo"
-                        className="flex-1 min-w-0 h-10 px-3.5 border border-divider rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                        className="flex-1 min-w-0 h-10 px-3.5 bg-surface text-ink border border-divider-strong rounded-lg text-sm placeholder:text-light-text transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100"
                       />
 
                       <div className="relative shrink-0 w-40">
@@ -492,7 +465,7 @@ export default function ModuleForm() {
                           value={campo.tipo}
                           onChange={(e) => handleFieldChange(index, 'tipo', e.target.value)}
                           disabled={isEditing && !campo._isNew}
-                          className="w-full h-10 appearance-none pl-3.5 pr-8 border border-divider rounded-lg text-sm bg-white disabled:bg-background disabled:text-light-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          className="w-full h-10 appearance-none pl-3.5 pr-8 bg-surface text-ink border border-divider-strong rounded-lg text-sm cursor-pointer transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100 disabled:bg-background disabled:text-faint disabled:border-divider disabled:cursor-not-allowed"
                         >
                           {Object.entries(CAMPO_TIPO_INFO).map(([value, info]) => (
                             <option key={value} value={value}>{info.label}</option>
@@ -502,15 +475,15 @@ export default function ModuleForm() {
                       </div>
 
                       {campo._isNew && (
-                        <span className="text-[10px] uppercase tracking-wide text-primary bg-primary/10 px-2 py-1 rounded-full font-semibold shrink-0">
+                        <Badge variant="primary" size="sm" className="uppercase tracking-wide shrink-0">
                           Novo
-                        </span>
+                        </Badge>
                       )}
 
                       <button
                         type="button"
                         onClick={() => handleRemoveField(index)}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
+                        className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-danger hover:bg-danger-bg transition-colors shrink-0"
                         title="Remover campo"
                       >
                         <span className="material-icons text-[19px]">delete_outline</span>
@@ -523,18 +496,18 @@ export default function ModuleForm() {
                         <div className="flex flex-col gap-2">
                           {(campo.opcoes || []).map((opcao, optIdx) => (
                             <div key={optIdx} className="flex items-center gap-2">
-                              <span className="w-4 h-4 rounded-full border-2 border-divider shrink-0"></span>
+                              <span className="w-4 h-4 rounded-full border-2 border-divider-strong shrink-0"></span>
                               <input
                                 type="text"
                                 value={opcao}
                                 onChange={(e) => handleOptionChange(index, optIdx, e.target.value)}
                                 placeholder={`Opção ${optIdx + 1}`}
-                                className="flex-1 h-9 px-3 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                className="flex-1 h-9 px-3 bg-surface text-ink border border-divider-strong rounded-lg text-sm placeholder:text-light-text transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100"
                               />
                               <button
                                 type="button"
                                 onClick={() => handleRemoveOption(index, optIdx)}
-                                className="text-light-text hover:text-red-600 transition-colors shrink-0"
+                                className="text-light-text hover:text-danger transition-colors shrink-0"
                               >
                                 <span className="material-icons text-base">close</span>
                               </button>
@@ -554,29 +527,13 @@ export default function ModuleForm() {
                 ))}
               </div>
             )}
-          </div>
+          </Card>
 
           <div className="flex justify-end gap-3 pt-1 pb-2">
-            <Link
-              to="/modulos"
-              className="h-11 px-5 rounded-lg text-sm font-medium border border-divider hover:bg-background transition-colors flex items-center"
-            >
-              Cancelar
-            </Link>
-            <button
-              type="submit"
-              disabled={!podeSalvar}
-              className="h-11 px-5 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-            >
-              {loading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Salvando...
-                </>
-              ) : (
-                'Salvar Módulo'
-              )}
-            </button>
+            <Button variant="secondary" to="/modulos">Cancelar</Button>
+            <Button type="submit" disabled={!podeSalvar} loading={loading}>
+              {loading ? 'Salvando...' : 'Salvar Módulo'}
+            </Button>
           </div>
         </div>
       </form>

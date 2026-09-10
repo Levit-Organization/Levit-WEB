@@ -1,5 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Layout from '../components/Layout';
+import {
+  Button,
+  Select,
+  Input,
+  Textarea,
+  Modal,
+  Drawer,
+  Alert,
+  Badge,
+  Avatar,
+  Skeleton,
+  PageHeader,
+  EmptyState,
+  coresDaFase,
+  tempoRelativo,
+  estaParado,
+} from '../components/ui';
 import { recrutamentoService } from '../services/recrutamentoService';
 import { moduloService } from '../services/moduloService';
 import api from '../services/api';
@@ -16,6 +33,7 @@ export default function RecrutamentoKanban() {
     setTimeout(() => setSuccessMsg(''), 3000);
   };
   const [draggedItem, setDraggedItem] = useState(null);
+  const [dragOverColumn, setDragOverColumn] = useState(null);
   const [showNovaEtapa, setShowNovaEtapa] = useState(false);
   const [novaEtapaNome, setNovaEtapaNome] = useState('');
   const [modulos, setModulos] = useState([]);
@@ -104,14 +122,15 @@ export default function RecrutamentoKanban() {
 
   const handleDrop = async (e, targetColumnId) => {
     e.preventDefault();
+    setDragOverColumn(null);
     if (!draggedItem) return;
-    
+
     const { item, sourceColumn } = draggedItem;
     if (sourceColumn === targetColumnId) {
       setDraggedItem(null);
       return;
     }
-    
+
     // Optimistic update (deep copy to avoid state mutation)
     const newKanban = {};
     for (const [key, value] of Object.entries(kanbanData)) {
@@ -120,16 +139,16 @@ export default function RecrutamentoKanban() {
         candidatos: [...value.candidatos],
       };
     }
-    
+
     // Remove from source
     newKanban[sourceColumn].candidatos = newKanban[sourceColumn].candidatos.filter(c => c.id !== item.id);
     newKanban[sourceColumn].total--;
-    
+
     // Add to target
     const updatedItem = { ...item, fase_atual_id: targetColumnId };
     newKanban[targetColumnId].candidatos = [...newKanban[targetColumnId].candidatos, updatedItem];
     newKanban[targetColumnId].total++;
-    
+
     setKanbanData(newKanban);
     setDraggedItem(null);
 
@@ -179,113 +198,94 @@ export default function RecrutamentoKanban() {
     }
   };
 
+  const colunas = kanbanData ? Object.entries(kanbanData) : [];
+  const totalCandidatos = colunas.reduce((acc, [, col]) => acc + (col.candidatos?.length || 0), 0);
+  const contratados = colunas.length ? colunas[colunas.length - 1][1].candidatos?.length || 0 : 0;
+
   return (
     <Layout noPadding>
-      <div className="flex min-h-0 flex-1 flex-col bg-slate-50/50 p-6 font-sans h-full overflow-hidden">
-        
-        {/* Cabeçalho Premium */}
-        <header className="mb-8 flex shrink-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
-              Recrutamento
-            </h1>
-            <p className="text-sm font-medium text-slate-500">
-              Gerencie talentos e acompanhe o funil de contratações com fluidez.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
-              <select
-                value={vagaSelecionada}
-                onChange={(e) => setVagaSelecionada(e.target.value)}
-                disabled={modulos.length === 0}
-                className="appearance-none rounded-xl bg-white py-2.5 pl-4 pr-10 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 outline-none transition-all focus:ring-2 focus:ring-indigo-500 disabled:text-slate-400"
+      <div className="flex min-h-0 flex-1 flex-col p-8 pb-0 h-full overflow-hidden">
+        <PageHeader
+          title="Recrutamento"
+          subtitle={
+            loading
+              ? 'Carregando funil...'
+              : `${totalCandidatos} ${totalCandidatos === 1 ? 'candidato' : 'candidatos'} no funil · ${contratados} na etapa final`
+          }
+          actions={
+            <>
+              <div className="w-52">
+                <Select
+                  value={vagaSelecionada}
+                  onChange={(e) => setVagaSelecionada(e.target.value)}
+                  disabled={modulos.length === 0}
+                  icon="work_outline"
+                  aria-label="Vaga"
+                  options={
+                    modulos.length === 0
+                      ? [{ value: 'all', label: 'Nenhuma vaga criada' }]
+                      : modulos.map((m) => ({ value: m.id, label: m.nome }))
+                  }
+                />
+              </div>
+              <Button
+                variant="secondary"
+                icon="add"
+                onClick={() => {
+                  setFormError('');
+                  if (vagaSelecionada !== 'all') setNovaEtapaModuloId(vagaSelecionada);
+                  setShowNovaEtapa(true);
+                }}
               >
-                {modulos.length === 0 ? (
-                  <option value="all">Nenhuma vaga criada</option>
-                ) : (
-                  modulos.map(m => (
-                    <option key={m.id} value={m.id}>{m.nome}</option>
-                  ))
-                )}
-              </select>
-              <span className="material-icons absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-[20px]">
-                expand_more
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setFormError('');
-                if (vagaSelecionada !== 'all') setNovaEtapaModuloId(vagaSelecionada);
-                setShowNovaEtapa(true);
-              }}
-              className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 transition-all hover:bg-slate-50 hover:shadow-md"
-            >
-              <span className="material-icons text-[18px] text-slate-400">add</span>
-              Nova Etapa
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setFormError('');
-                if (vagaSelecionada !== 'all') {
-                  setNovoCandidatoDados((current) => ({ ...current, modulo_id: vagaSelecionada }));
-                }
-                setShowNovoCandidato(true);
-              }}
-              className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-indigo-200 transition-all hover:bg-indigo-700 hover:shadow-md hover:-translate-y-0.5"
-            >
-              <span className="material-icons text-[18px]">person_add</span>
-              Novo Candidato
-            </button>
-          </div>
-        </header>
+                Nova etapa
+              </Button>
+              <Button
+                icon="person_add"
+                onClick={() => {
+                  setFormError('');
+                  if (vagaSelecionada !== 'all') {
+                    setNovoCandidatoDados((current) => ({ ...current, modulo_id: vagaSelecionada }));
+                  }
+                  setShowNovoCandidato(true);
+                }}
+              >
+                Novo candidato
+              </Button>
+            </>
+          }
+        />
 
         {error && (
-          <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 text-sm flex items-center gap-2 shrink-0">
-            <span className="material-icons">error</span>
-            {error}
+          <div className="mb-5 shrink-0">
+            <Alert variant="error">{error}</Alert>
           </div>
         )}
 
         {successMsg && (
-          <div className="bg-emerald-50 text-emerald-700 p-4 rounded-lg mb-6 text-sm flex items-center gap-2 shrink-0">
-            <span className="material-icons">check_circle</span>
-            {successMsg}
+          <div className="mb-5 shrink-0">
+            <Alert variant="success">{successMsg}</Alert>
           </div>
         )}
 
-        {/* Área do Kanban */}
+        {/* Funil */}
         <section className="min-h-0 flex-1 overflow-hidden">
           {loading ? (
-            <div className="h-full overflow-x-auto pb-4">
-              <div className="flex h-full min-w-max gap-6 px-1 items-start">
-                {[1, 2, 3].map((skeleton) => (
-                  <div key={skeleton} className="flex w-[320px] flex-col rounded-2xl bg-slate-200/70 p-3 ring-1 ring-slate-300 shadow-md animate-pulse">
-                    {/* Skeleton header */}
-                    <div className="mb-3 flex items-center justify-between px-3 pt-2">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-slate-300"></div>
-                        <div className="h-4 w-20 bg-slate-300 rounded"></div>
-                      </div>
-                      <div className="h-6 w-6 bg-white rounded-full"></div>
+            <div className="h-full overflow-x-auto pb-6">
+              <div className="flex h-full min-w-max gap-5 items-start">
+                {[1, 2, 3, 4].map((coluna) => (
+                  <div key={coluna} className="flex w-[300px] flex-col gap-3">
+                    <div className="flex items-center justify-between px-1">
+                      <Skeleton className="h-3.5 w-24" />
+                      <Skeleton className="h-5 w-6 rounded-full" />
                     </div>
-                    {/* Skeleton cards */}
                     {[1, 2, 3].map((card) => (
-                      <div key={card} className="mb-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-                        <div className="flex items-start justify-between gap-2 mb-3">
+                      <div key={card} className="rounded-xl bg-surface border border-divider p-3.5">
+                        <div className="flex items-center gap-3">
+                          <Skeleton className="w-9 h-9 rounded-full shrink-0" />
                           <div className="flex-1">
-                            <div className="h-4 w-32 bg-slate-200 rounded mb-2"></div>
-                            <div className="h-3 w-24 bg-slate-100 rounded mb-1"></div>
-                            <div className="h-3 w-28 bg-slate-100 rounded"></div>
+                            <Skeleton className="h-3.5 w-28 mb-1.5" />
+                            <Skeleton className="h-3 w-20" />
                           </div>
-                          <div className="h-8 w-8 bg-slate-100 rounded-full"></div>
-                        </div>
-                        <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
-                          <div className="h-5 w-20 bg-slate-100 rounded-lg"></div>
-                          <div className="h-3 w-16 bg-slate-100 rounded"></div>
                         </div>
                       </div>
                     ))}
@@ -293,273 +293,301 @@ export default function RecrutamentoKanban() {
                 ))}
               </div>
             </div>
+          ) : colunas.length === 0 ? (
+            <div className="h-full flex items-center justify-center pb-16">
+              <EmptyState
+                icon="person_search"
+                title="Nenhuma etapa configurada"
+                description="Um funil de recrutamento é uma sequência de etapas — triagem, entrevista, proposta. Crie a primeira para começar a receber candidatos."
+                actionLabel="Criar primeira etapa"
+                actionIcon="add"
+                onAction={() => {
+                  setFormError('');
+                  if (vagaSelecionada !== 'all') setNovaEtapaModuloId(vagaSelecionada);
+                  setShowNovaEtapa(true);
+                }}
+              />
+            </div>
           ) : (
-            <div ref={scrollContainerRef} className="h-full overflow-x-auto pb-4 scrollbar-hide" onDragOver={handleDragOver}>
-              <div className="flex h-full min-w-max gap-6 px-1 items-start">
-                
-                {kanbanData && Object.entries(kanbanData).map(([colId, colData]) => (
-                  <div 
-                    key={colId}
-                    className="h-full w-[320px] shrink-0"
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(e, colId)}
-                  >
-                    {/* Coluna visual — tamanho dos cards */}
-                    <div className="flex max-h-full flex-col rounded-2xl bg-slate-200/70 p-3 ring-1 ring-slate-300 shadow-md">
-                    
-                      {/* Header da Coluna */}
-                      <div className="mb-3 flex items-center justify-between px-3 pt-2">
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-2 rounded-full bg-indigo-500"></div>
-                          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+            <div
+              ref={scrollContainerRef}
+              className="h-full overflow-x-auto overflow-y-hidden pb-6"
+              onDragOver={handleDragOver}
+            >
+              <div className="flex h-full min-w-max gap-5 items-start">
+                {colunas.map(([colId, colData], indice) => {
+                  const cor = coresDaFase(indice, colunas.length);
+                  const ativa = dragOverColumn === colId;
+
+                  return (
+                    <div
+                      key={colId}
+                      className="flex h-full max-h-full w-[300px] shrink-0 flex-col"
+                      onDragOver={(e) => {
+                        handleDragOver(e);
+                        if (dragOverColumn !== colId) setDragOverColumn(colId);
+                      }}
+                      onDragLeave={() => setDragOverColumn((c) => (c === colId ? null : c))}
+                      onDrop={(e) => handleDrop(e, colId)}
+                    >
+                      {/* Cabeçalho da etapa */}
+                      <div className="flex items-center justify-between gap-2 px-1 pb-3 shrink-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`h-2 w-2 rounded-full shrink-0 ${cor.dot}`} />
+                          <h2 className="text-xs font-bold uppercase tracking-wide text-ink-soft truncate">
                             {colData.fase || colId}
-                          </h3>
+                          </h2>
                         </div>
-                        <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-white px-2 text-xs font-bold text-slate-600 shadow-sm">
-                          {colData.total || 0}
+                        <span
+                          className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-2xs font-bold tabular ${cor.bg} ${cor.text}`}
+                        >
+                          {colData.total ?? colData.candidatos.length}
                         </span>
                       </div>
 
-                      {/* Área de Cards */}
-                      <div className="flex-1 space-y-3 overflow-y-auto px-1 pb-2">
-                        
-                        {colData.candidatos.map(item => (
-                          <article 
-                            key={item.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, item, colId)}
-                            onClick={() => setSelectedCard({ ...item, colId, faseNome: colData.fase || colId })}
-                            className="group cursor-grab rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-1 hover:shadow-lg active:cursor-grabbing"
-                          >
-                            {/* 3 campos principais (Candidato tabela real) */}
-                            <h4 className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
-                              {item.nome || 'Sem nome'}
-                            </h4>
-                            <div className="mt-2 space-y-1">
-                              <div className="text-xs text-slate-500 truncate flex items-center gap-1">
-                                <span className="material-icons text-[13px] text-slate-400">call</span>
-                                {item.telefone || item.email || '—'}
+                      {/* Cartões */}
+                      <div
+                        className={`flex-1 min-h-0 space-y-2.5 overflow-y-auto rounded-xl p-2 transition-colors duration-150 ${
+                          ativa ? 'bg-primary-100 ring-2 ring-primary-200' : 'bg-sidebar/60'
+                        }`}
+                      >
+                        {colData.candidatos.map((item) => {
+                          const desde = tempoRelativo(item.atualizado_em || item.criado_em);
+                          const parado = estaParado(item.atualizado_em || item.criado_em);
+
+                          return (
+                            <article
+                              key={item.id}
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, item, colId)}
+                              onClick={() => setSelectedCard({ ...item, colId, faseNome: colData.fase || colId, cor })}
+                              className="group cursor-grab rounded-lg bg-surface border border-divider p-3.5 shadow-xs transition-[box-shadow,border-color,transform] duration-150 ease-out-quart hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-md active:cursor-grabbing"
+                            >
+                              <div className="flex items-center gap-3">
+                                <Avatar name={item.nome} size="lg" />
+                                <div className="min-w-0 flex-1">
+                                  <h3 className="text-sm font-semibold text-ink truncate group-hover:text-primary transition-colors">
+                                    {item.nome || 'Sem nome'}
+                                  </h3>
+                                  <p className="text-xs text-light-text truncate">
+                                    {item.cargo_desejado || item.vaga || 'Sem cargo informado'}
+                                  </p>
+                                </div>
                               </div>
-                              <div className="text-xs text-slate-500 truncate flex items-center gap-1">
-                                <span className="material-icons text-[13px] text-slate-400">flag</span>
-                                {item.cargo_desejado || '—'}
-                              </div>
-                            </div>
-                            
-                            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
-                              <div className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 truncate max-w-[150px]">
-                                <span className="material-icons text-[14px]">work</span>
-                                {item.vaga || '—'}
-                              </div>
-                              <div className="text-[10px] text-slate-400 font-medium">
-                                {new Date(item.atualizado_em || item.criado_em).toLocaleDateString()}
-                              </div>
-                            </div>
-                          </article>
-                        ))}
+
+                              {(desde || parado) && (
+                                <div className="mt-3 flex items-center justify-between gap-2 border-t border-divider pt-2.5">
+                                  <span className="text-2xs text-light-text truncate">
+                                    {desde ? `Nesta etapa ${desde}` : ''}
+                                  </span>
+                                  {parado && (
+                                    <Badge variant="warning" size="sm" dot>
+                                      Parado
+                                    </Badge>
+                                  )}
+                                </div>
+                              )}
+                            </article>
+                          );
+                        })}
 
                         {colData.candidatos.length === 0 && (
-                          <div className="text-center p-6 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-sm font-medium">
-                            Nenhum registro
+                          <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-divider-strong px-4 text-center text-xs text-light-text">
+                            Arraste um candidato para cá
                           </div>
                         )}
                       </div>
                     </div>
-                  </div>
-                ))}
-                
+                  );
+                })}
               </div>
             </div>
           )}
         </section>
 
-        {showNovaEtapa && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/30" onClick={() => setShowNovaEtapa(false)}></div>
-            <div className="relative bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
-              <h3 className="text-lg font-bold text-slate-900 mb-4">Nova Etapa</h3>
+        <Modal
+          open={showNovaEtapa}
+          onClose={() => setShowNovaEtapa(false)}
+          title="Nova etapa"
+          subtitle="Ela entra no fim do funil desta vaga"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowNovaEtapa(false)}>Cancelar</Button>
+              <Button onClick={handleNovaEtapa} disabled={!novaEtapaNome.trim() || !novaEtapaModuloId}>
+                Criar etapa
+              </Button>
+            </>
+          }
+        >
+          {formError && (
+            <div className="mb-4">
+              <Alert variant="error">{formError}</Alert>
+            </div>
+          )}
 
-              {formError && (
-                <div className="bg-red-50 text-red-700 border border-red-100 rounded-xl px-4 py-2.5 text-sm mb-4 flex items-center gap-2">
-                  <span className="material-icons text-[18px] shrink-0">error_outline</span>
-                  {formError}
+          <div className="flex flex-col gap-4">
+            <Select
+              label="Vaga"
+              value={novaEtapaModuloId}
+              onChange={(e) => setNovaEtapaModuloId(e.target.value)}
+              placeholder="Selecione uma vaga..."
+              options={modulos.map((m) => ({ value: m.id, label: m.nome }))}
+            />
+
+            <Input
+              label="Nome da etapa"
+              value={novaEtapaNome}
+              onChange={(e) => setNovaEtapaNome(e.target.value)}
+              placeholder="Ex: Entrevista técnica"
+              autoFocus
+            />
+          </div>
+        </Modal>
+
+        {/* Perfil do candidato */}
+        <Modal
+          open={!!selectedCard}
+          onClose={() => setSelectedCard(null)}
+          title={selectedCard?.nome || 'Candidato'}
+          subtitle={selectedCard?.cargo_desejado || selectedCard?.vaga || undefined}
+          maxWidth="lg"
+          footer={
+            selectedCard?.email ? (
+              <>
+                <Button variant="secondary" onClick={() => setSelectedCard(null)}>Fechar</Button>
+                <Button
+                  icon="mail"
+                  onClick={() => { window.location.href = `mailto:${selectedCard.email}`; }}
+                >
+                  Enviar e-mail
+                </Button>
+              </>
+            ) : (
+              <Button variant="secondary" onClick={() => setSelectedCard(null)}>Fechar</Button>
+            )
+          }
+        >
+          {selectedCard && (
+            <>
+              <div className="flex items-center gap-4 pb-5 border-b border-divider">
+                <Avatar name={selectedCard.nome} size="xl" />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-semibold ${selectedCard.cor?.bg || 'bg-primary-100'} ${selectedCard.cor?.text || 'text-primary'}`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${selectedCard.cor?.dot || 'bg-primary'}`} />
+                      {selectedCard.faseNome}
+                    </span>
+                    {estaParado(selectedCard.atualizado_em || selectedCard.criado_em) && (
+                      <Badge variant="warning" size="sm" dot>Parado há mais de 14 dias</Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-light-text mt-1.5">
+                    Candidatou-se {tempoRelativo(selectedCard.criado_em) || '—'}
+                    {selectedCard.vaga ? ` · ${selectedCard.vaga}` : ''}
+                  </p>
+                </div>
+              </div>
+
+              <dl className="divide-y divide-divider">
+                {[
+                  { label: 'E-mail', value: selectedCard.email, icon: 'mail_outline', href: selectedCard.email ? `mailto:${selectedCard.email}` : null },
+                  { label: 'Telefone', value: selectedCard.telefone, icon: 'call', href: selectedCard.telefone ? `tel:${selectedCard.telefone}` : null },
+                  { label: 'Cargo desejado', value: selectedCard.cargo_desejado, icon: 'work_outline' },
+                ].map((campo) => (
+                  <div key={campo.label} className="flex items-center gap-3 py-3">
+                    <span className="material-icons text-[18px] text-light-text shrink-0">{campo.icon}</span>
+                    <dt className="text-xs text-light-text w-32 shrink-0">{campo.label}</dt>
+                    <dd className="text-sm text-ink truncate min-w-0 flex-1">
+                      {campo.value ? (
+                        campo.href ? (
+                          <a href={campo.href} className="hover:text-primary hover:underline">{campo.value}</a>
+                        ) : (
+                          campo.value
+                        )
+                      ) : (
+                        <span className="text-light-text">Não informado</span>
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+
+              {selectedCard.mensagem && (
+                <div className="mt-2 pt-4 border-t border-divider">
+                  <p className="text-xs font-semibold text-ink mb-2">Mensagem do candidato</p>
+                  <p className="text-sm text-ink-soft whitespace-pre-wrap break-words leading-relaxed">
+                    {selectedCard.mensagem}
+                  </p>
                 </div>
               )}
+            </>
+          )}
+        </Modal>
 
-              <label className="block text-sm font-bold text-slate-700 mb-1">Vaga *</label>
-              <select
-                value={novaEtapaModuloId}
-                onChange={(e) => setNovaEtapaModuloId(e.target.value)}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
-              >
-                <option value="">Selecione uma vaga...</option>
-                {modulos.map(m => (
-                  <option key={m.id} value={m.id}>{m.nome}</option>
-                ))}
-              </select>
-
-              <label className="block text-sm font-bold text-slate-700 mb-1">Nome da Etapa *</label>
-              <input
-                type="text"
-                value={novaEtapaNome}
-                onChange={(e) => setNovaEtapaNome(e.target.value)}
-                placeholder="Ex: Entrevista técnica"
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
-                autoFocus
-              />
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setShowNovaEtapa(false)}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleNovaEtapa}
-                  disabled={!novaEtapaNome.trim() || !novaEtapaModuloId}
-                  className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Criar Etapa
-                </button>
-              </div>
+        {/* Novo candidato */}
+        <Drawer
+          open={showNovoCandidato}
+          onClose={() => setShowNovoCandidato(false)}
+          title="Novo candidato"
+          subtitle="Entra na primeira etapa do funil da vaga"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowNovoCandidato(false)}>Cancelar</Button>
+              <Button onClick={handleNovoCandidatoSubmit} loading={salvandoCandidato}>
+                {salvandoCandidato ? 'Salvando...' : 'Adicionar candidato'}
+              </Button>
+            </>
+          }
+        >
+          {formError && (
+            <div className="mb-4">
+              <Alert variant="error">{formError}</Alert>
             </div>
+          )}
+
+          <div className="flex flex-col gap-4">
+            <Select
+              label="Vaga"
+              value={novoCandidatoDados.modulo_id}
+              onChange={(e) => setNovoCandidatoDados({ ...novoCandidatoDados, modulo_id: e.target.value })}
+              placeholder="Selecione uma vaga..."
+              options={modulos.map((m) => ({ value: m.id, label: m.nome }))}
+            />
+            <Input
+              label="Nome"
+              value={novoCandidatoDados.nome}
+              onChange={(e) => setNovoCandidatoDados({ ...novoCandidatoDados, nome: e.target.value })}
+              placeholder="Nome completo"
+            />
+            <Input
+              label="E-mail"
+              type="email"
+              value={novoCandidatoDados.email}
+              onChange={(e) => setNovoCandidatoDados({ ...novoCandidatoDados, email: e.target.value })}
+              placeholder="candidato@email.com"
+            />
+            <Input
+              label="Telefone"
+              value={novoCandidatoDados.telefone}
+              onChange={(e) => setNovoCandidatoDados({ ...novoCandidatoDados, telefone: e.target.value })}
+              placeholder="(11) 90000-0000"
+            />
+            <Input
+              label="Cargo desejado"
+              value={novoCandidatoDados.cargo_desejado}
+              onChange={(e) => setNovoCandidatoDados({ ...novoCandidatoDados, cargo_desejado: e.target.value })}
+              placeholder="Ex: Pessoa Desenvolvedora Back-end"
+            />
+            <Textarea
+              label="Mensagem"
+              hint="Opcional"
+              value={novoCandidatoDados.mensagem}
+              onChange={(e) => setNovoCandidatoDados({ ...novoCandidatoDados, mensagem: e.target.value })}
+            />
           </div>
-        )}
-
-        {/* Modal Detalhes do Card */}
-        {selectedCard && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* Backdrop com blur */}
-            <div 
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-md transition-opacity" 
-              onClick={() => setSelectedCard(null)}
-            ></div>
-            
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-                <h3 className="text-lg font-bold text-slate-900 truncate pr-4">
-                  {selectedCard.nome || 'Detalhes do Registro'}
-                </h3>
-                <button
-                  onClick={() => setSelectedCard(null)}
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-colors"
-                >
-                  <span className="material-icons text-[20px]">close</span>
-                </button>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                <div className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 mb-4">
-                  <span className="material-icons text-[14px]">view_kanban</span>
-                  Fase atual: {selectedCard.faseNome}
-                </div>
-                
-                <div className="grid grid-cols-1 gap-4">
-                  {[
-                    { key: 'Nome', value: selectedCard.nome },
-                    { key: 'Email', value: selectedCard.email },
-                    { key: 'Telefone', value: selectedCard.telefone },
-                    { key: 'Cargo Desejado', value: selectedCard.cargo_desejado },
-                    { key: 'Mensagem', value: selectedCard.mensagem }
-                  ].map((field) => (
-                    <div key={field.key} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                      <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                        {field.key}
-                      </span>
-                      <span className="block text-sm font-medium text-slate-900 whitespace-pre-wrap break-words">
-                        {field.value || '—'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs font-medium text-slate-500">
-                <span className="truncate max-w-[60%]">Vaga: <strong className="text-slate-700">{selectedCard.vaga || '—'}</strong></span>
-                <span className="shrink-0">Atualizado: {new Date(selectedCard.atualizado_em || selectedCard.criado_em).toLocaleDateString()}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Painel lateral: Novo Candidato */}
-        {showNovoCandidato && (
-          <div className="fixed inset-0 z-50 flex justify-end">
-            <div className="absolute inset-0 bg-black/30" onClick={() => setShowNovoCandidato(false)}></div>
-
-            <div className="relative w-full max-w-lg bg-white h-full shadow-2xl flex flex-col animate-slide-in">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-divider shrink-0">
-                <h2 className="text-lg font-bold">Novo Candidato</h2>
-                <button onClick={() => setShowNovoCandidato(false)} className="text-light-text hover:text-gray-700 transition">
-                  <span className="material-icons">close</span>
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-6">
-                {formError && (
-                  <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm">
-                    {formError}
-                  </div>
-                )}
-
-                <div className="flex flex-col gap-5">
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5 text-gray-700">Vaga (Módulo)</label>
-                    <select
-                      value={novoCandidatoDados.modulo_id}
-                      onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, modulo_id: e.target.value})}
-                      className="w-full h-11 px-4 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                    >
-                      <option value="">Selecione uma vaga...</option>
-                      {modulos.map(m => (
-                        <option key={m.id} value={m.id}>{m.nome}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5 text-gray-700">Nome</label>
-                    <input type="text" value={novoCandidatoDados.nome} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, nome: e.target.value})} className="w-full h-11 px-4 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5 text-gray-700">E-mail</label>
-                    <input type="email" value={novoCandidatoDados.email} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, email: e.target.value})} className="w-full h-11 px-4 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5 text-gray-700">Telefone</label>
-                    <input type="text" value={novoCandidatoDados.telefone} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, telefone: e.target.value})} className="w-full h-11 px-4 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5 text-gray-700">Cargo Desejado</label>
-                    <input type="text" value={novoCandidatoDados.cargo_desejado} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, cargo_desejado: e.target.value})} className="w-full h-11 px-4 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5 text-gray-700">
-                      Mensagem
-                      <span className="text-xs text-light-text ml-2 font-normal">Opcional</span>
-                    </label>
-                    <textarea value={novoCandidatoDados.mensagem} onChange={(e) => setNovoCandidatoDados({...novoCandidatoDados, mensagem: e.target.value})} className="w-full px-4 py-2.5 border border-divider rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors resize-none" rows="3"></textarea>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-divider shrink-0">
-                <button
-                  onClick={() => setShowNovoCandidato(false)}
-                  className="px-4 py-2 text-sm font-medium border border-divider rounded-lg hover:bg-gray-50 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleNovoCandidatoSubmit}
-                  disabled={salvandoCandidato}
-                  className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition disabled:opacity-50"
-                >
-                  {salvandoCandidato ? 'Salvando...' : 'Adicionar Candidato'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        </Drawer>
       </div>
     </Layout>
   );
