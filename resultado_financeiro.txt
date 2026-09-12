@@ -1,0 +1,78 @@
+Resultado dos testes - Modulo Financeiro - 12/09/2026  8:34:42,05 
+ 
+{"status":"success","data":{"token":"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIwMWEwOTU2Ni0wNmVmLTc2MDYtOTA0MS1mNjEyODZkNWQ5NTIiLCJlbXByZXNhX2lkIjoiMDFhMDk1NjUtZmY5Yy03YjA4LWE1YTctMjE0MzNjZjE1MjAyIiwiaWF0IjoxNzg5MjEyODg3LCJleHAiOjE3ODkyNDE2ODcsImp0aSI6IjAxYTA5NTY2LTBhOTktNzViZS04N2EyLTQ1MzA4NzRlNjRlMSJ9.1WUBIWzdmkAHtmrzgpgWduNygHT9ZKtVPcDll0P8Vqs","usuario":{"id":"01a09566-06ef-7606-9041-f61286d5d952","nome":"Admin Financeiro","email":"admin.financeiro192@levit.app"},"empresa":{"id":"01a09565-ff9c-7b08-a5a7-21433cf15202","nome":"Empresa Financeiro Teste"}}}
+HTTP Status: 201
+
+---------------------------------------------- 
+{"status":"success","data":{"id":"01a09566-2d94-74dd-a5aa-b8e593ca3122","empresa_id":"01a09565-ff9c-7b08-a5a7-21433cf15202","nome":"Fluxo de Caixa","icone":"dinheiro","criado_por":"01a09566-06ef-7606-9041-f61286d5d952","criado_em":"2026-09-12 11:34:56","atualizado_em":"2026-09-12 11:34:56","tipo":"financeiro","campos":[]}}
+HTTP Status: 201
+
+---------------------------------------------- 
+{"status":"success","data":{"id":"01a09566-502a-7f80-8ffc-6182832dda85","empresa_id":"01a09565-ff9c-7b08-a5a7-21433cf15202","nome":"Fixo","criado_em":"2026-09-12 11:34:22.469678"}}
+HTTP Status: 201
+
+---------------------------------------------- 
+{"status":"success","data":{"id":"01a09566-6f18-715f-9fd5-0bca1fa6589a","empresa_id":"01a09565-ff9c-7b08-a5a7-21433cf15202","nome":"Receita","criado_em":"2026-09-12 11:34:30.388418"}}
+HTTP Status: 201
+
+---------------------------------------------- 
+{"status":"error","message":"Já existe uma categoria com esse nome nesta empresa."}
+HTTP Status: 422
+
+---------------------------------------------- 
+{"status":"success","data":{"id":"01a09566-2d94-74dd-a5aa-b8e593ca3122","empresa_id":"01a09565-ff9c-7b08-a5a7-21433cf15202","nome":"Fluxo de Caixa","icone":"dinheiro","criado_por":"01a09566-06ef-7606-9041-f61286d5d952","criado_em":"2026-09-12 11:34:56","atualizado_em":"2026-09-12 11:34:56","tipo":"financeiro","campos":[{"id":"01a09566-af0a-7886-9940-cb6a4eca9596","modulo_id":"01a09566-2d94-74dd-a5aa-b8e593ca3122","nome":"Forma de Pagamento","tipo":"texto","opcoes":null,"ordem":"0","criado_em":"2026-09-12 11:35:29","atualizado_em":"2026-09-12 11:35:29"}]}}
+HTTP Status: 201
+
+---------------------------------------------- 
+{"status":"success","data":{"id":"01a09566-f478-7150-a108-14aa0f8f0845","modulo_id":"01a09566-2d94-74dd-a5aa-b8e593ca3122","registro_id":"01a09566-f056-7aad-8749-231faa4837d4","descricao":"Recebimento Consultoria","data_lancamento":"2026-04-19","tipo":"entrada","categoria_id":"01a09566-6f18-715f-9fd5-0bca1fa6589a","valor":"5800.00","conciliado":"f","criado_em":"2026-09-12 11:35:47","atualizado_em":"2026-09-12 11:35:47","categoria_nome":"Receita","campos_extras":{"01a09566-af0a-7886-9940-cb6a4eca9596":"Pix"}}}
+HTTP Status: 201
+
+---------------------------------------------- 
+{"status":"success","data":{"id":"01a09567-2eee-73b3-ad10-f978f2cba218","modulo_id":"01a09566-2d94-74dd-a5aa-b8e593ca3122","registro_id":"01a09567-2bf4-7ea5-a961-a4c644222570","descricao":"Tarifa Conectividade","data_lancamento":"2026-04-20","tipo":"saida","categoria_id":"01a09566-502a-7f80-8ffc-6182832dda85","valor":"1900.00","conciliado":"f","criado_em":"2026-09-12 11:36:02","atualizado_em":"2026-09-12 11:36:02","categoria_nome":"Fixo","campos_extras":[]}}
+HTTP Status: 201
+
+---------------------------------------------- 
+{"status":"error","message":"O valor precisa ser um número maior que zero."}
+HTTP Status: 422
+
+---------------------------------------------- 
+{"status":"error","message":"Tipo de lançamento inválido: 'transferencia'. Use 'entrada' ou 'saida'."}
+HTTP Status: 422
+
+---------------------------------------------- 
+{"status":"success","data":{"lancamentos":[{"id":"01a09566-f478-7150-a108-14aa0f8f0845","modulo_id":"01a09566-2d94-74dd-a5aa-b8e593ca3122","registro_id":"01a09566-f056-7aad-8749-231faa4837d4","descricao":"Recebimento Consultoria","data_lancamento":"2026-04-19","tipo":"entrada","categoria_id":"01a09566-6f18-715f-9fd5-0bca1fa6589a","valor":"5800.00","conciliado":"f","criado_em":"2026-09-12 11:35:47","atualizado_em":"2026-09-12 11:35:47","categoria_nome":"Receita","saldo_acumulado":5800},{"id":"01a09567-2eee-73b3-ad10-f978f2cba218","modulo_id":"01a09566-2d94-74dd-a5aa-b8e593ca3122","registro_id":"01a09567-2bf4-7ea5-a961-a4c644222570","descricao":"Tarifa Conectividade","data_lancamento":"2026-04-20","tipo":"saida","categoria_id":"01a09566-502a-7f80-8ffc-6182832dda85","valor":"1900.00","conciliado":"f","criado_em":"2026-09-12 11:36:02","atualizado_em":"2026-09-12 11:36:02","categoria_nome":"Fixo","saldo_acumulado":3900}],"resumo":{"total_entradas":5800,"total_saidas":1900,"saldo_periodo":3900}}}
+HTTP Status: 200
+
+---------------------------------------------- 
+{"status":"success","data":{"lancamentos":[{"id":"01a09567-2eee-73b3-ad10-f978f2cba218","modulo_id":"01a09566-2d94-74dd-a5aa-b8e593ca3122","registro_id":"01a09567-2bf4-7ea5-a961-a4c644222570","descricao":"Tarifa Conectividade","data_lancamento":"2026-04-20","tipo":"saida","categoria_id":"01a09566-502a-7f80-8ffc-6182832dda85","valor":"1900.00","conciliado":"f","criado_em":"2026-09-12 11:36:02","atualizado_em":"2026-09-12 11:36:02","categoria_nome":"Fixo","saldo_acumulado":-1900}],"resumo":{"total_entradas":0,"total_saidas":1900,"saldo_periodo":-1900}}}
+HTTP Status: 200
+
+---------------------------------------------- 
+{"status":"success","data":{"id":"01a09567-2eee-73b3-ad10-f978f2cba218","modulo_id":"01a09566-2d94-74dd-a5aa-b8e593ca3122","registro_id":"01a09567-2bf4-7ea5-a961-a4c644222570","descricao":"Tarifa Conectividade","data_lancamento":"2026-04-20","tipo":"saida","categoria_id":"01a09566-502a-7f80-8ffc-6182832dda85","valor":"1900.00","conciliado":"t","criado_em":"2026-09-12 11:36:02","atualizado_em":"2026-09-12 11:36:29","categoria_nome":"Fixo","campos_extras":[]}}
+HTTP Status: 200
+
+---------------------------------------------- 
+{"status":"success","data":null}
+HTTP Status: 200
+
+---------------------------------------------- 
+{"status":"success","data":{"lancamentos":[{"id":"01a09566-f478-7150-a108-14aa0f8f0845","modulo_id":"01a09566-2d94-74dd-a5aa-b8e593ca3122","registro_id":"01a09566-f056-7aad-8749-231faa4837d4","descricao":"Recebimento Consultoria","data_lancamento":"2026-04-19","tipo":"entrada","categoria_id":null,"valor":"5800.00","conciliado":"f","criado_em":"2026-09-12 11:35:47","atualizado_em":"2026-09-12 11:35:47","categoria_nome":null,"saldo_acumulado":5800},{"id":"01a09567-2eee-73b3-ad10-f978f2cba218","modulo_id":"01a09566-2d94-74dd-a5aa-b8e593ca3122","registro_id":"01a09567-2bf4-7ea5-a961-a4c644222570","descricao":"Tarifa Conectividade","data_lancamento":"2026-04-20","tipo":"saida","categoria_id":"01a09566-502a-7f80-8ffc-6182832dda85","valor":"1900.00","conciliado":"t","criado_em":"2026-09-12 11:36:02","atualizado_em":"2026-09-12 11:36:29","categoria_nome":"Fixo","saldo_acumulado":3900}],"resumo":{"total_entradas":5800,"total_saidas":1900,"saldo_periodo":3900}}}
+HTTP Status: 200
+
+---------------------------------------------- 
+{"status":"success","data":null}
+HTTP Status: 200
+
+---------------------------------------------- 
+{"status":"success","data":{"token":"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIwMWEwOTU2Ny1mMzE3LTdiOTUtYjJjNi1lYzExOTE4NmFlYjciLCJlbXByZXNhX2lkIjoiMDFhMDk1NjctZWI5NC03NzFlLWFhYTYtNTJlYjg3MWM0N2IxIiwiaWF0IjoxNzg5MjEzMDEzLCJleHAiOjE3ODkyNDE4MTMsImp0aSI6IjAxYTA5NTY3LWY2YmUtN2YzOS1iYzI5LTUwYjlmZmM5OGI2NCJ9.RhMzAC0j7I-adUtJfpUhmOPoUiaHXZoZbhFrlt71yvc","usuario":{"id":"01a09567-f317-7b95-b2c6-ec119186aeb7","nome":"Admin B","email":"admin.financeirob983@levit.app"},"empresa":{"id":"01a09567-eb94-771e-aaa6-52eb871c47b1","nome":"Empresa Financeiro B"}}}
+HTTP Status: 201
+
+---------------------------------------------- 
+{"status":"error","message":"Módulo financeiro não encontrado."}
+HTTP Status: 404
+
+---------------------------------------------- 
+{"status":"success","data":[]}
+HTTP Status: 200
+
+---------------------------------------------- 
