@@ -43,8 +43,6 @@ class AuthController extends BaseApiController
             return $this->respondError($e->getMessage(), 500);
         }
 
-
-
         return $this->respondSuccess(
             $this->authService->montarRespostaAutenticacao($resultado['usuario'], $resultado['empresa']),
             201

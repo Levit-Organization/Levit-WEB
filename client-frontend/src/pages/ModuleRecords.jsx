@@ -37,6 +37,11 @@ export default function ModuleRecords() {
         return;
       }
 
+      if (moduloData.tipo === 'financeiro') {
+        navigate(`/modulos/${id}/financeiro`, { replace: true });
+        return;
+      }
+
       setModulo(moduloData);
       setRegistros(registrosData);
     } catch (err) {

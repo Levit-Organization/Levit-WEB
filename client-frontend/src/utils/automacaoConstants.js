@@ -2,13 +2,12 @@ export const GATILHO_INFO = {
   criacao: { label: 'Novo registro', icon: 'add_circle' },
   atualizacao: { label: 'Atualização', icon: 'edit' },
   exclusao: { label: 'Exclusão', icon: 'delete' },
-  agendado: { label: 'Agendado', icon: 'schedule', disabled: true },
 };
 
 export const ACAO_INFO = {
   enviar_email: { label: 'Enviar e-mail', icon: 'mail' },
   webhook: { label: 'Webhook', icon: 'bolt' },
-  notificacao: { label: 'Notificação', icon: 'notifications', disabled: true },
+  notificacao: { label: 'Notificação', icon: 'notifications' },
 };
 
 export const OPERADOR_INFO = {

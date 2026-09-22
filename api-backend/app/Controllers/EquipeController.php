@@ -82,6 +82,30 @@ class EquipeController extends BaseApiController
         return $this->respondSuccess($membros, 200);
     }
 
+    public function atualizarMembro($usuarioId)
+    {
+        $dados = $this->request->getJSON(true) ?? [];
+
+        $rules = [
+            'nome'     => ['permit_empty', 'min_length[3]', 'max_length[150]'],
+            'cargo_id' => ['permit_empty'],
+        ];
+
+        if (! $this->validateData($dados, $rules)) {
+            return $this->respondError('Dados inválidos.', 422, $this->validator->getErrors());
+        }
+
+        try {
+            $membro = $this->equipeService->atualizarMembro(service('authenticatedUser')->empresaId, $usuarioId, $dados);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 422);
+        }
+
+        return $this->respondSuccess($membro, 200);
+    }
+
     public function removerMembro($usuarioId)
     {
         try {

@@ -46,11 +46,23 @@ $routes->group('api/v1', function ($routes) {
     $routes->put("modulos/({$uuid})/fases/({$uuid})", 'ModuloController::atualizarFase/$1/$2', ['filter' => 'auth']);
     $routes->delete("modulos/({$uuid})/fases/({$uuid})", 'ModuloController::excluirFase/$1/$2', ['filter' => 'auth']);
 
+    $routes->get("modulos/({$uuid})/lancamentos", 'FinanceiroController::listarLancamentos/$1', ['filter' => 'auth']);
+    $routes->post("modulos/({$uuid})/lancamentos", 'FinanceiroController::criarLancamento/$1', ['filter' => 'auth']);
+    $routes->put("modulos/({$uuid})/lancamentos/({$uuid})", 'FinanceiroController::atualizarLancamento/$1/$2', ['filter' => 'auth']);
+    $routes->delete("modulos/({$uuid})/lancamentos/({$uuid})", 'FinanceiroController::excluirLancamento/$1/$2', ['filter' => 'auth']);
+
+    $routes->get('financeiro/categorias', 'FinanceiroController::listarCategorias', ['filter' => 'auth']);
+    $routes->post('financeiro/categorias', 'FinanceiroController::criarCategoria', ['filter' => 'auth']);
+    $routes->delete("financeiro/categorias/({$uuid})", 'FinanceiroController::excluirCategoria/$1', ['filter' => 'auth']);
+
     $routes->get('cargos', 'CargoController::listar', ['filter' => 'auth:gerenciar_cargos']);
     $routes->post('cargos', 'CargoController::criar', ['filter' => 'auth:gerenciar_cargos']);
+    $routes->put("cargos/({$uuid})", 'CargoController::atualizar/$1', ['filter' => 'auth:gerenciar_cargos']);
+    $routes->delete("cargos/({$uuid})", 'CargoController::excluir/$1', ['filter' => 'auth:gerenciar_cargos']);
 
     $routes->post('equipe/convidar', 'EquipeController::convidar', ['filter' => 'auth:gerenciar_equipe']);
     $routes->get('equipe', 'EquipeController::listarMembros', ['filter' => 'auth:visualizar_equipe']);
+    $routes->put("equipe/({$uuid})", 'EquipeController::atualizarMembro/$1', ['filter' => 'auth:gerenciar_equipe']);
     $routes->delete("equipe/({$uuid})", 'EquipeController::removerMembro/$1', ['filter' => 'auth:gerenciar_equipe']);
     $routes->post('publico/convite/aceitar', 'EquipeController::aceitarConvite', ['filter' => 'ratelimit']);
 
@@ -67,3 +79,5 @@ $routes->group('api/v1', function ($routes) {
     $routes->put("cargos/({$uuid})/modulos/({$uuid})", 'CargoModuloPermissaoController::definir/$1/$2', ['filter' => 'auth:gerenciar_cargos']);
     $routes->delete("cargos/({$uuid})/modulos/({$uuid})", 'CargoModuloPermissaoController::remover/$1/$2', ['filter' => 'auth:gerenciar_cargos']);
 });
+
+$routes->get('api/v1/seed/categorias', 'SeedController::seedCategorias');

@@ -15,4 +15,9 @@ export const equipeService = {
     const response = await api.delete(`/equipe/${id}`);
     return response.data?.data || response.data;
   },
+
+  atualizarMembro: async (id, dados) => {
+    const response = await api.put(`/equipe/${id}`, dados);
+    return response.data?.data || response.data;
+  },
 };

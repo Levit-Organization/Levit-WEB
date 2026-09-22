@@ -11,6 +11,11 @@ export const cargoService = {
     return response.data?.data || response.data;
   },
 
+  atualizarCargo: async (id, dados) => {
+    const response = await api.put(`/cargos/${id}`, dados);
+    return response.data?.data || response.data;
+  },
+
   listarNiveisModulo: async (cargoId) => {
     const response = await api.get(`/cargos/${cargoId}/modulos`);
     return response.data?.data || response.data;

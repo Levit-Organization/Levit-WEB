@@ -57,25 +57,13 @@ Events::on('pre_system', static function (): void {
 });
 
 Events::on('registro_criado', static function (array $payload) {
-    try {
-        service('queue')->push('automacoes', 'processar-automacoes', array_merge($payload, ['gatilho' => 'criacao']));
-    } catch (\Throwable $e) {
-        log_message('error', 'Falha ao enfileirar automação (criacao): ' . $e->getMessage());
-    }
+    service('queue')->push('automacoes', 'processar-automacoes', array_merge($payload, ['gatilho' => 'criacao']));
 });
 
 Events::on('registro_atualizado', static function (array $payload) {
-    try {
-        service('queue')->push('automacoes', 'processar-automacoes', array_merge($payload, ['gatilho' => 'atualizacao']));
-    } catch (\Throwable $e) {
-        log_message('error', 'Falha ao enfileirar automação (atualizacao): ' . $e->getMessage());
-    }
+    service('queue')->push('automacoes', 'processar-automacoes', array_merge($payload, ['gatilho' => 'atualizacao']));
 });
 
 Events::on('registro_excluido', static function (array $payload) {
-    try {
-        service('queue')->push('automacoes', 'processar-automacoes', array_merge($payload, ['gatilho' => 'exclusao']));
-    } catch (\Throwable $e) {
-        log_message('error', 'Falha ao enfileirar automação (exclusao): ' . $e->getMessage());
-    }
+    service('queue')->push('automacoes', 'processar-automacoes', array_merge($payload, ['gatilho' => 'exclusao']));
 });

@@ -106,7 +106,13 @@ export default function TeamManagementContainer() {
       await fetchData();
     } catch (error) {
       console.error(error);
-      alert('Erro ao convidar o colaborador.');
+      const msg = error.response?.data?.message || 'Erro ao convidar o colaborador.';
+      const errors = error.response?.data?.errors;
+      if (errors) {
+        alert(`${msg}\n${Object.values(errors).join('\n')}`);
+      } else {
+        alert(msg);
+      }
     }
   };
 
@@ -130,6 +136,26 @@ export default function TeamManagementContainer() {
     }
   };
 
+  const handleUpdateMember = async (id, dados) => {
+    try {
+      await equipeService.atualizarMembro(id, dados);
+      await fetchData();
+    } catch (error) {
+      console.error(error);
+      alert(error.response?.data?.message || 'Erro ao atualizar o colaborador.');
+    }
+  };
+
+  const handleUpdateRole = async (id, dados) => {
+    try {
+      await cargoService.atualizarCargo(id, dados);
+      await fetchData();
+    } catch (error) {
+      console.error(error);
+      alert(error.response?.data?.message || 'Erro ao atualizar o cargo.');
+    }
+  };
+
   return (
     <TeamManagement
       members={members}
@@ -138,8 +164,10 @@ export default function TeamManagementContainer() {
       permissions={GLOBAL_PERMISSIONS}
       loading={loading}
       onInviteMember={handleInviteMember}
+      onUpdateMember={handleUpdateMember}
       onDeleteMember={handleDeleteMember}
       onCreateRole={handleCreateRole}
+      onUpdateRole={handleUpdateRole}
       moduloNiveis={moduloNiveis}
       moduloNiveisLoading={moduloNiveisLoading}
       onOpenRoleModules={handleOpenRoleModules}

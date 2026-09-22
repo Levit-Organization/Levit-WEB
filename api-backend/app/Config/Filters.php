@@ -52,14 +52,16 @@ class Filters extends BaseFilters
      * @var array{before: list<string>, after: list<string>}
      */
     public array $required = [
-        'before' => ['cors',
-            // 'forcehttps', // Force Global Secure Requests
+        'before' => [
+            'forcehttps', // Force Global Secure Requests
             'pagecache',  // Web Page Caching
+            'cors',       // CORS Preflight
         ],
-        'after' => ['cors',
+        'after' => [
             'pagecache',   // Web Page Caching
             'performance', // Performance Metrics
             'toolbar',     // Debug Toolbar
+            'cors',
         ],
     ];
 
@@ -73,12 +75,12 @@ class Filters extends BaseFilters
      * }
      */
     public array $globals = [
-        'before' => ['cors',
+        'before' => [
             // 'honeypot',
             // 'csrf',
             // 'invalidchars',
         ],
-        'after' => ['cors',
+        'after' => [
             // 'honeypot',
             // 'secureheaders',
         ],
@@ -104,7 +106,7 @@ class Filters extends BaseFilters
      * before or after URI patterns.
      *
      * Example:
-     * 'isLoggedIn' => ['before' => ['cors','account/*', 'profiles/*']]
+     * 'isLoggedIn' => ['before' => ['account/*', 'profiles/*']]
      *
      * @var array<string, array<string, list<string>>>
      */

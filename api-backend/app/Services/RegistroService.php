@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Exceptions\NaoEncontradoException;
 use App\Models\CampoModuloModel;
-use App\Models\FaseRecrutamentoModel;
 use App\Models\ModuloModel;
 use App\Models\RegistroModel;
 use CodeIgniter\Events\Events;
@@ -26,41 +25,39 @@ class RegistroService
 
     public function listarRegistros(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, ?string $busca = null): array
     {
-        $modulo = $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
+        $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
 
-        $db = db_connect();
-        $builder = $db->table('registro r')
-                      ->select('r.*')
-                      ->where('r.modulo_id', $moduloId)
-                      ->orderBy('r.criado_em', 'DESC');
-
-        if ($modulo['tipo'] === 'arquivo') {
-            $builder->select('a.nome_original as arquivo_nome, a.tamanho_bytes as arquivo_tamanho, a.tipo_mime as arquivo_tipo, a.chave_armazenamento as arquivo_chave')
-                    ->join('arquivo a', 'a.registro_id = r.id', 'left');
-        }
-
-        if ($busca !== null && trim($busca) !== '') {
-            $camposTexto = $this->campoModuloModel
+        if ($busca === null || trim($busca) === '') {
+            return $this->registroModel
                 ->where('modulo_id', $moduloId)
-                ->where('tipo', 'texto')
+                ->orderBy('criado_em', 'DESC')
                 ->findAll();
-
-            if (!empty($camposTexto)) {
-                $condicoes = [];
-                foreach ($camposTexto as $campo) {
-                    $condicoes[] = "r.dados->>'{$campo['id']}' ILIKE " . $db->escape('%' . $busca . '%');
-                }
-                $builder->where('(' . implode(' OR ', $condicoes) . ')');
-            } else if ($modulo['tipo'] === 'arquivo') {
-                $builder->where('a.nome_original ILIKE', '%' . $busca . '%');
-            }
         }
 
-        $registros = $builder->get()->getResultArray();
+        $camposTexto = $this->campoModuloModel
+            ->where('modulo_id', $moduloId)
+            ->where('tipo', 'texto')
+            ->findAll();
+
+        if (empty($camposTexto)) {
+            return [];
+        }
+
+        $condicoes = [];
+        $bindings  = [$moduloId];
+
+        foreach ($camposTexto as $campo) {
+            $condicoes[] = "dados->>'{$campo['id']}' ILIKE ?";
+            $bindings[]  = '%' . $busca . '%';
+        }
+
+        $sql = 'SELECT * FROM registro WHERE modulo_id = ? AND (' . implode(' OR ', $condicoes) . ') ORDER BY criado_em DESC';
+
+        $registros = db_connect()->query($sql, $bindings)->getResultArray();
 
         foreach ($registros as &$registro) {
-            $registro['dados'] = is_string($registro['dados']) ? json_decode($registro['dados'], true) : $registro['dados'];
+            $registro['dados'] = json_decode($registro['dados'], true);
         }
 
         return $registros;
@@ -72,15 +69,6 @@ class RegistroService
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
 
         $dadosValidados = $this->validarDadosDoRegistro($campos, $dados);
-
-        $modulo = $this->moduloModel->where('id', $moduloId)->first();
-        if ($modulo && $modulo['tipo'] === 'recrutamento') {
-            $faseModel = new FaseRecrutamentoModel();
-            $primeiraFase = $faseModel->where('modulo_id', $moduloId)->orderBy('ordem', 'ASC')->first();
-            
-            $nomeFase = $primeiraFase ? strtolower(trim($primeiraFase['nome'])) : 'triagem';
-            $dadosValidados['_fase_atual'] = $nomeFase;
-        }
 
         $registroId = $this->registroModel->insert([
             'modulo_id'  => $moduloId,
@@ -154,11 +142,6 @@ class RegistroService
         return $registro;
     }
 
-    /**
-     * Confirma que o módulo existe e pertence à empresa. Opcionalmente,
-     * já devolve a lista de campos dele (evita uma segunda consulta
-     * em quem for validar dados logo em seguida).
-     */
     private function confirmarModuloDaEmpresa(string $moduloId, string $empresaId, bool $comCampos = false): ?array
     {
         $modulo = $this->moduloModel
@@ -171,18 +154,12 @@ class RegistroService
         }
 
         if (! $comCampos) {
-            return $modulo;
+            return null;
         }
 
         return $this->campoModuloModel->where('modulo_id', $moduloId)->findAll();
     }
 
-    /**
-     * Valida os dados recebidos contra a definição real dos campos do
-     * módulo — o tipo de cada campo dita a regra aplicada.
-     *
-     * @throws \DomainException se algum valor não bater com o tipo esperado
-     */
     private function validarDadosDoRegistro(array $campos, array $dadosRecebidos): array
     {
         $dadosRecebidos = $dadosRecebidos['dados'] ?? [];

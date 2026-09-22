@@ -11,6 +11,7 @@ import Modules from './pages/Modules';
 import ModuleForm from './pages/ModuleForm';
 import ModuleRecords from './pages/ModuleRecords';
 import RecrutamentoKanban from './pages/RecrutamentoKanban';
+import FinancialModule from './pages/FinancialModule';
 import TeamManagementContainer from './pages/TeamManagementContainer';
 import AutomacoesContainer from './pages/AutomacoesContainer';
 import AutomacaoForm from './pages/AutomacaoForm';
@@ -60,6 +61,11 @@ function App() {
           <Route path="/modulos" element={
             <ProtectedRoute>
               <Modules />
+            </ProtectedRoute>
+          } />
+          <Route path="/modulos/:id/financeiro" element={
+            <ProtectedRoute>
+              <FinancialModule />
             </ProtectedRoute>
           } />
           <Route path="/modulos/novo" element={

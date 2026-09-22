@@ -118,6 +118,10 @@ export default function TeamManagement({
     event?.preventDefault?.();
 
     if (!memberForm.email.trim()) return;
+    if (!memberForm.cargo) {
+      alert('Por favor, selecione um cargo para o colaborador.');
+      return;
+    }
 
     if (editingMember && !onUpdateMember) return;
     if (!editingMember && !onInviteMember) return;

@@ -122,72 +122,97 @@ class EquipeService
 
     public function listarMembros(string $empresaId): array
     {
-        $membros = $this->usuarioModel
+        return $this->usuarioModel
             ->select('usuario.id, usuario.nome, usuario.email, usuario.criado_em, cargo.nome as cargo_nome')
             ->join('cargo', 'cargo.id = usuario.cargo_id')
             ->where('usuario.empresa_id', $empresaId)
             ->orderBy('usuario.criado_em', 'ASC')
             ->findAll();
-
-        foreach ($membros as &$m) {
-            $m['status'] = 'Ativo';
-        }
-        unset($m);
-
-        $convites = $this->conviteModel
-            ->select('convite.id, convite.email_destinatario as email, convite.criado_em, cargo.nome as cargo_nome')
-            ->join('cargo', 'cargo.id = convite.cargo_id')
-            ->where('convite.empresa_id', $empresaId)
-            ->where('convite.aceito_em', null)
-            ->orderBy('convite.criado_em', 'ASC')
-            ->findAll();
-
-        foreach ($convites as $c) {
-            $membros[] = [
-                'id'         => $c['id'],
-                'nome'       => 'Convite Pendente',
-                'email'      => $c['email'],
-                'criado_em'  => $c['criado_em'],
-                'cargo_nome' => $c['cargo_nome'],
-                'status'     => 'Pendente',
-            ];
-        }
-
-        return $membros;
     }
 
     /**
-     * @throws NaoEncontradoException se o membro/convite não existir/pertencer à empresa
-     * @throws \DomainException se for o administrador principal
+     * Atualização é parcial: só os campos presentes em $dados são
+     * alterados.
+     *
+     * "status" (ativo/inativo) não é tratado aqui — a tabela usuario
+     * não tem essa coluna hoje, e o requisito não está nos RFs
+     * documentados. Decisão registrada em conversa com o time de
+     * front: fica para uma issue própria caso confirmem a
+     * necessidade (envolve migration e decidir o efeito sobre login).
+     *
+     * @throws NaoEncontradoException se o membro não existir/pertencer à empresa
+     * @throws \DomainException se o novo cargo_id não existir/pertencer à
+     *         empresa, ou se a alteração tentar tirar o cargo do
+     *         administrador principal da empresa
      */
-    public function removerMembro(string $id, string $empresaId): void
+    public function atualizarMembro(string $empresaId, string $usuarioId, array $dados): array
     {
         $usuario = $this->usuarioModel
-            ->where('id', $id)
+            ->where('id', $usuarioId)
             ->where('empresa_id', $empresaId)
             ->first();
 
-        if ($usuario) {
-            $empresa = $this->empresaModel->find($empresaId);
+        if (! $usuario) {
+            throw new NaoEncontradoException('Membro não encontrado.');
+        }
 
-            if ($empresa['administrador_principal_id'] === $id) {
-                throw new \DomainException('Não é possível remover o administrador principal da empresa.');
+        $camposParaAtualizar = [];
+
+        if (isset($dados['nome'])) {
+            $camposParaAtualizar['nome'] = $dados['nome'];
+        }
+
+        if (isset($dados['cargo_id']) && $dados['cargo_id'] !== $usuario['cargo_id']) {
+            $novoCargo = $this->cargoModel
+                ->where('id', $dados['cargo_id'])
+                ->where('empresa_id', $empresaId)
+                ->first();
+
+            if (! $novoCargo) {
+                throw new \DomainException('Cargo inválido ou não pertence à empresa.');
             }
 
-            $this->usuarioModel->delete($id);
-            return;
+            $empresa = $this->empresaModel->find($empresaId);
+
+            if ($empresa['administrador_principal_id'] === $usuarioId) {
+                throw new \DomainException('Não é possível alterar o cargo do administrador principal da empresa.');
+            }
+
+            $camposParaAtualizar['cargo_id'] = $dados['cargo_id'];
         }
 
-        $convite = $this->conviteModel
-            ->where('id', $id)
+        if (! empty($camposParaAtualizar)) {
+            $this->usuarioModel->update($usuarioId, $camposParaAtualizar);
+        }
+
+        return $this->usuarioModel
+            ->select('usuario.id, usuario.nome, usuario.email, usuario.criado_em, usuario.cargo_id, cargo.nome as cargo_nome')
+            ->join('cargo', 'cargo.id = usuario.cargo_id')
+            ->where('usuario.id', $usuarioId)
+            ->first();
+    }
+
+    /**
+     * @throws NaoEncontradoException se o membro não existir/pertencer à empresa
+     * @throws \DomainException se for o administrador principal
+     */
+    public function removerMembro(string $usuarioId, string $empresaId): void
+    {
+        $usuario = $this->usuarioModel
+            ->where('id', $usuarioId)
             ->where('empresa_id', $empresaId)
             ->first();
 
-        if ($convite) {
-            $this->conviteModel->delete($id);
-            return;
+        if (! $usuario) {
+            throw new NaoEncontradoException('Membro não encontrado.');
         }
 
-        throw new NaoEncontradoException('Membro ou convite não encontrado.');
+        $empresa = $this->empresaModel->find($empresaId);
+
+        if ($empresa['administrador_principal_id'] === $usuarioId) {
+            throw new \DomainException('Não é possível remover o administrador principal da empresa.');
+        }
+
+        $this->usuarioModel->delete($usuarioId);
     }
 }

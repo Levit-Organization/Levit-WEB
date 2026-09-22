@@ -2,19 +2,22 @@
 
 namespace App\Models;
 
-class UsuarioModel extends BaseModel
+class LancamentoFinanceiroModel extends BaseModel
 {
-    protected $table      = 'usuario';
+    protected $table      = 'lancamento_financeiro';
     protected $primaryKey = 'id';
 
     protected $returnType = 'array';
 
     protected $allowedFields = [
-        'empresa_id',
-        'cargo_id',
-        'nome',
-        'email',
-        'senha_hash',
+        'modulo_id',
+        'registro_id',
+        'descricao',
+        'data_lancamento',
+        'tipo',
+        'categoria_id',
+        'valor',
+        'conciliado',
     ];
 
     protected $useTimestamps = true;
@@ -22,5 +25,3 @@ class UsuarioModel extends BaseModel
     protected $updatedField  = 'atualizado_em';
     protected $dateFormat    = 'datetime';
 }
-
-?>

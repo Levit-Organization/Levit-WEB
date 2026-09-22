@@ -125,6 +125,15 @@ export default function RecrutamentoKanban() {
     setDragOverColumn(null);
     if (!draggedItem) return;
 
+    // BUG-19: No modo "todas as vagas" as colunas usam nomes normalizados como
+    // chave (ex: 'triagem'), não UUIDs. O backend espera UUID em moverFase.
+    // Bloqueamos o drag-and-drop neste modo para evitar erro silencioso.
+    if (vagaSelecionada === 'all') {
+      setDraggedItem(null);
+      setError('Selecione uma vaga específica para mover candidatos entre etapas.');
+      return;
+    }
+
     const { item, sourceColumn } = draggedItem;
     if (sourceColumn === targetColumnId) {
       setDraggedItem(null);
@@ -154,11 +163,7 @@ export default function RecrutamentoKanban() {
 
     // Persist API call
     try {
-      if (vagaSelecionada === 'all') {
-        await recrutamentoService.moverFase(item.id, targetColumnId);
-      } else {
-        await recrutamentoService.moverFaseDaVaga(item.modulo_id, item.id, targetColumnId);
-      }
+      await recrutamentoService.moverFaseDaVaga(item.modulo_id, item.id, targetColumnId);
     } catch (err) {
       // Revert if error
       setError(err.response?.data?.message || 'Erro ao mover candidato.');

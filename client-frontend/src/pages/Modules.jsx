@@ -9,10 +9,6 @@ export default function Modules() {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchModulos();
-  }, []);
-
   const fetchModulos = async () => {
     try {
       setLoading(true);
@@ -24,6 +20,10 @@ export default function Modules() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchModulos();
+  }, []);
 
   const handleDelete = async (e, id) => {
     e.preventDefault();
@@ -83,6 +83,8 @@ export default function Modules() {
               onClick={() => {
                 if (modulo.tipo === 'recrutamento') {
                   navigate('/recrutamento');
+                } else if (modulo.tipo === 'financeiro') {
+                  navigate(`/modulos/${modulo.id}/financeiro`);
                 } else {
                   navigate(`/modulos/${modulo.id}/registros`);
                 }

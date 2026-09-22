@@ -44,7 +44,7 @@ export const moduloService = {
   },
 
   reorderFields: async (moduleId, camposIds) => {
-    const response = await api.put(`/modulos/${moduleId}/campos/reordenar`, { campos: camposIds });
+    const response = await api.put(`/modulos/${moduleId}/campos/reordenar`, { ordem: camposIds });
     return response.data?.data || response.data;
   }
 };

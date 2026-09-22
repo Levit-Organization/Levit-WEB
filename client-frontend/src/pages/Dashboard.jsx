@@ -382,7 +382,7 @@ export default function Dashboard() {
               <Card
                 key={modulo.id}
                 as={Link}
-                to={`/modulos/${modulo.id}/registros`}
+                to={modulo.tipo === 'financeiro' ? `/modulos/${modulo.id}/financeiro` : `/modulos/${modulo.id}/registros`}
                 padding="sm"
                 interactive
                 className="flex items-center gap-3.5 group no-underline"

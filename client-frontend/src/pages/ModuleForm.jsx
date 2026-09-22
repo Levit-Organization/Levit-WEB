@@ -21,6 +21,11 @@ const TIPO_INFO = {
     icon: 'groups',
     description: 'Vaga com pipeline de fases e candidatos em formato Kanban.',
   },
+  financeiro: {
+    label: 'Financeiro',
+    icon: 'account_balance_wallet',
+    description: 'Análise de entradas, saídas, gastos, lucro e saldo financeiro.',
+  },
 };
 
 const CAMPO_TIPO_INFO = {
@@ -391,143 +396,173 @@ export default function ModuleForm() {
             </div>
           )}
 
-          <Card>
-            <div className="flex justify-between items-center mb-5">
-              <div>
-                <h2 className="text-base font-semibold">Campos do Módulo</h2>
-                <p className="text-xs text-light-text mt-0.5">
-                  {isEditing ? 'Adicione, edite ou remova campos' : 'Defina os campos que compõem cada registro'}
-                </p>
+          {!['financeiro', 'arquivo'].includes(formData.tipo) ? (
+            <Card>
+              <div className="flex justify-between items-center mb-5">
+                <div>
+                  <h2 className="text-base font-semibold">Campos do Módulo</h2>
+                  <p className="text-xs text-light-text mt-0.5">
+                    {isEditing ? 'Adicione, edite ou remova campos' : 'Defina os campos que compõem cada registro'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddField}
+                  className="h-9 px-3.5 rounded-lg border border-divider text-sm font-medium text-light-text hover:border-primary hover:text-primary transition-colors flex items-center gap-1.5 shrink-0"
+                >
+                  <span className="material-icons text-base">add</span>
+                  Campo
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleAddField}
-                className="h-9 px-3.5 rounded-lg border border-divider text-sm font-medium text-light-text hover:border-primary hover:text-primary transition-colors flex items-center gap-1.5 shrink-0"
-              >
-                <span className="material-icons text-base">add</span>
-                Campo
-              </button>
-            </div>
 
-            {campos.length === 0 ? (
-              <div className="py-12 border border-dashed border-divider rounded-xl">
-                <EmptyState
-                  icon="view_column"
-                  size="sm"
-                  title="Nenhum campo ainda"
-                  description="Os campos definem o que cada registro guarda — nome, data de admissão, documento. Eles viram as colunas da tabela e os campos do formulário."
-                  actionLabel="Adicionar primeiro campo"
-                  actionIcon="add"
-                  onAction={handleAddField}
-                />
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {campos.map((campo, index) => (
-                  <div key={campo.id || campo._tempId} className="border border-divider rounded-xl overflow-hidden">
-                    <div className="flex items-center gap-3 p-3.5 bg-background/40">
-                      <div className="flex flex-col shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleMoveField(index, -1)}
-                          disabled={index === 0}
-                          className="w-6 h-5 flex items-center justify-center text-light-text hover:text-primary disabled:opacity-25 disabled:hover:text-light-text transition-colors"
-                          title="Mover para cima"
-                        >
-                          <span className="material-icons text-[16px]">expand_less</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleMoveField(index, 1)}
-                          disabled={index === campos.length - 1}
-                          className="w-6 h-5 flex items-center justify-center text-light-text hover:text-primary disabled:opacity-25 disabled:hover:text-light-text transition-colors"
-                          title="Mover para baixo"
-                        >
-                          <span className="material-icons text-[16px]">expand_more</span>
-                        </button>
-                      </div>
-
-                      <span className="w-9 h-9 rounded-lg bg-primary-100 text-primary flex items-center justify-center shrink-0">
-                        <span className="material-icons text-[18px]">{CAMPO_TIPO_INFO[campo.tipo]?.icon || 'text_fields'}</span>
-                      </span>
-
-                      <input
-                        type="text"
-                        value={campo.nome}
-                        onChange={(e) => handleFieldChange(index, 'nome', e.target.value)}
-                        required
-                        placeholder="Nome do campo"
-                        className="flex-1 min-w-0 h-10 px-3.5 bg-surface text-ink border border-divider-strong rounded-lg text-sm placeholder:text-light-text transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100"
-                      />
-
-                      <div className="relative shrink-0 w-40">
-                        <select
-                          value={campo.tipo}
-                          onChange={(e) => handleFieldChange(index, 'tipo', e.target.value)}
-                          disabled={isEditing && !campo._isNew}
-                          className="w-full h-10 appearance-none pl-3.5 pr-8 bg-surface text-ink border border-divider-strong rounded-lg text-sm cursor-pointer transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100 disabled:bg-background disabled:text-faint disabled:border-divider disabled:cursor-not-allowed"
-                        >
-                          {Object.entries(CAMPO_TIPO_INFO).map(([value, info]) => (
-                            <option key={value} value={value}>{info.label}</option>
-                          ))}
-                        </select>
-                        <span className="material-icons absolute right-2 top-1/2 -translate-y-1/2 text-[16px] text-light-text pointer-events-none">expand_more</span>
-                      </div>
-
-                      {campo._isNew && (
-                        <Badge variant="primary" size="sm" className="uppercase tracking-wide shrink-0">
-                          Novo
-                        </Badge>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveField(index)}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-danger hover:bg-danger-bg transition-colors shrink-0"
-                        title="Remover campo"
-                      >
-                        <span className="material-icons text-[19px]">delete_outline</span>
-                      </button>
-                    </div>
-
-                    {campo.tipo === 'selecao' && (
-                      <div className="p-3.5 border-t border-divider">
-                        <p className="text-xs font-medium text-light-text mb-2">Opções de Seleção</p>
-                        <div className="flex flex-col gap-2">
-                          {(campo.opcoes || []).map((opcao, optIdx) => (
-                            <div key={optIdx} className="flex items-center gap-2">
-                              <span className="w-4 h-4 rounded-full border-2 border-divider-strong shrink-0"></span>
-                              <input
-                                type="text"
-                                value={opcao}
-                                onChange={(e) => handleOptionChange(index, optIdx, e.target.value)}
-                                placeholder={`Opção ${optIdx + 1}`}
-                                className="flex-1 h-9 px-3 bg-surface text-ink border border-divider-strong rounded-lg text-sm placeholder:text-light-text transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveOption(index, optIdx)}
-                                className="text-light-text hover:text-danger transition-colors shrink-0"
-                              >
-                                <span className="material-icons text-base">close</span>
-                              </button>
-                            </div>
-                          ))}
+              {campos.length === 0 ? (
+                <div className="py-12 border border-dashed border-divider rounded-xl">
+                  <EmptyState
+                    icon="view_column"
+                    size="sm"
+                    title="Nenhum campo ainda"
+                    description="Os campos definem o que cada registro guarda — nome, data de admissão, documento. Eles viram as colunas da tabela e os campos do formulário."
+                    actionLabel="Adicionar primeiro campo"
+                    actionIcon="add"
+                    onAction={handleAddField}
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {campos.map((campo, index) => (
+                    <div key={campo.id || campo._tempId} className="border border-divider rounded-xl overflow-hidden">
+                      <div className="flex items-center gap-3 p-3.5 bg-background/40">
+                        <div className="flex flex-col shrink-0">
                           <button
                             type="button"
-                            onClick={() => handleAddOption(index)}
-                            className="text-xs text-primary hover:underline font-medium self-start mt-0.5"
+                            onClick={() => handleMoveField(index, -1)}
+                            disabled={index === 0}
+                            className="w-6 h-5 flex items-center justify-center text-light-text hover:text-primary disabled:opacity-25 disabled:hover:text-light-text transition-colors"
+                            title="Mover para cima"
                           >
-                            + Adicionar opção
+                            <span className="material-icons text-[16px]">expand_less</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveField(index, 1)}
+                            disabled={index === campos.length - 1}
+                            className="w-6 h-5 flex items-center justify-center text-light-text hover:text-primary disabled:opacity-25 disabled:hover:text-light-text transition-colors"
+                            title="Mover para baixo"
+                          >
+                            <span className="material-icons text-[16px]">expand_more</span>
                           </button>
                         </div>
+
+                        <span className="w-9 h-9 rounded-lg bg-primary-100 text-primary flex items-center justify-center shrink-0">
+                          <span className="material-icons text-[18px]">{CAMPO_TIPO_INFO[campo.tipo]?.icon || 'text_fields'}</span>
+                        </span>
+
+                        <input
+                          type="text"
+                          value={campo.nome}
+                          onChange={(e) => handleFieldChange(index, 'nome', e.target.value)}
+                          required
+                          placeholder="Nome do campo"
+                          className="flex-1 min-w-0 h-10 px-3.5 bg-surface text-ink border border-divider-strong rounded-lg text-sm placeholder:text-light-text transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100"
+                        />
+
+                        <div className="relative shrink-0 w-40">
+                          <select
+                            value={campo.tipo}
+                            onChange={(e) => handleFieldChange(index, 'tipo', e.target.value)}
+                            disabled={isEditing && !campo._isNew}
+                            className="w-full h-10 appearance-none pl-3.5 pr-8 bg-surface text-ink border border-divider-strong rounded-lg text-sm cursor-pointer transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100 disabled:bg-background disabled:text-faint disabled:border-divider disabled:cursor-not-allowed"
+                          >
+                            {Object.entries(CAMPO_TIPO_INFO).map(([value, info]) => (
+                              <option key={value} value={value}>{info.label}</option>
+                            ))}
+                          </select>
+                          <span className="material-icons absolute right-2 top-1/2 -translate-y-1/2 text-[16px] text-light-text pointer-events-none">expand_more</span>
+                        </div>
+
+                        {campo._isNew && (
+                          <Badge variant="primary" size="sm" className="uppercase tracking-wide shrink-0">
+                            Novo
+                          </Badge>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveField(index)}
+                          className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-danger hover:bg-danger-bg transition-colors shrink-0"
+                          title="Remover campo"
+                        >
+                          <span className="material-icons text-[19px]">delete_outline</span>
+                        </button>
                       </div>
-                    )}
-                  </div>
-                ))}
+
+                      {campo.tipo === 'selecao' && (
+                        <div className="p-3.5 border-t border-divider">
+                          <p className="text-xs font-medium text-light-text mb-2">Opções de Seleção</p>
+                          <div className="flex flex-col gap-2">
+                            {(campo.opcoes || []).map((opcao, optIdx) => (
+                              <div key={optIdx} className="flex items-center gap-2">
+                                <span className="w-4 h-4 rounded-full border-2 border-divider-strong shrink-0"></span>
+                                <input
+                                  type="text"
+                                  value={opcao}
+                                  onChange={(e) => handleOptionChange(index, optIdx, e.target.value)}
+                                  placeholder={`Opção ${optIdx + 1}`}
+                                  className="flex-1 h-9 px-3 bg-surface text-ink border border-divider-strong rounded-lg text-sm placeholder:text-light-text transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveOption(index, optIdx)}
+                                  className="text-light-text hover:text-danger transition-colors shrink-0"
+                                >
+                                  <span className="material-icons text-base">close</span>
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => handleAddOption(index)}
+                              className="text-xs text-primary hover:underline font-medium self-start mt-0.5"
+                            >
+                              + Adicionar opção
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          ) : formData.tipo === 'financeiro' ? (
+            <Card className="bg-primary-50/50 border-primary-200">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl bg-primary-100 text-primary flex items-center justify-center shrink-0">
+                  <span className="material-icons text-[24px]">account_balance_wallet</span>
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-primary-900">Módulo Financeiro Padrão</h2>
+                  <p className="text-sm text-primary-800 mt-1">
+                    Módulos financeiros possuem uma estrutura fixa e otimizada (Data, Descrição, Valor, Categoria) para controle de fluxo de caixa, não sendo necessário definir campos customizados.
+                  </p>
+                </div>
               </div>
-            )}
-          </Card>
+            </Card>
+          ) : (
+            <Card className="bg-primary-50/50 border-primary-200">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl bg-primary-100 text-primary flex items-center justify-center shrink-0">
+                  <span className="material-icons text-[24px]">folder_open</span>
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-primary-900">Módulo de Arquivos</h2>
+                  <p className="text-sm text-primary-800 mt-1">
+                    Este módulo atua como um repositório centralizado e organizado de arquivos (upload, armazenamento e download), não necessitando da criação de campos de dados.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
 
           <div className="flex justify-end gap-3 pt-1 pb-2">
             <Button variant="secondary" to="/modulos">Cancelar</Button>

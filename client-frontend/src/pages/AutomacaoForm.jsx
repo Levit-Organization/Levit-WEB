@@ -96,6 +96,7 @@ export default function AutomacaoForm() {
         if (i !== index) return a;
         if (tipo === 'enviar_email') return { tipo, configuracao: { destinatario_campo_id: '', assunto: '', corpo: '' } };
         if (tipo === 'webhook') return { tipo, configuracao: { url: '' } };
+        if (tipo === 'notificacao') return { tipo, configuracao: { destinatario_campo_id: '', mensagem: '' } };
         return { tipo, configuracao: {} };
       })
     );
@@ -117,6 +118,7 @@ export default function AutomacaoForm() {
     acoes.every((a) => {
       if (a.tipo === 'enviar_email') return a.configuracao.destinatario_campo_id && a.configuracao.assunto && a.configuracao.corpo;
       if (a.tipo === 'webhook') return !!a.configuracao.url;
+      if (a.tipo === 'notificacao') return a.configuracao.destinatario_campo_id && a.configuracao.mensagem;
       return false;
     }) &&
     (!temCondicao || (campoCondicaoId && condicaoOperador && condicaoValor));
@@ -419,6 +421,29 @@ export default function AutomacaoForm() {
                       onChange={(e) => handleAcaoConfigChange(index, 'url', e.target.value)}
                       required
                       placeholder="https://exemplo.com/webhook"
+                    />
+                  </div>
+                )}
+
+                {acao.tipo === 'notificacao' && (
+                  <div className="flex flex-col gap-3.5 pt-4 border-t border-divider">
+                    <Select
+                      label="Destinatário"
+                      value={acao.configuracao.destinatario_campo_id || ''}
+                      onChange={(e) => handleAcaoConfigChange(index, 'destinatario_campo_id', e.target.value)}
+                      disabled={!moduloSelecionado}
+                      required
+                      placeholder="Selecione um usuário ou campo"
+                      options={camposModulo.map((c) => ({ value: c.id, label: c.nome }))}
+                    />
+
+                    <Textarea
+                      label="Mensagem da Notificação"
+                      value={acao.configuracao.mensagem || ''}
+                      onChange={(e) => handleAcaoConfigChange(index, 'mensagem', e.target.value)}
+                      required
+                      rows={3}
+                      placeholder="Escreva a mensagem. Use {{nome_do_campo}} para inserir dados do registro."
                     />
                   </div>
                 )}

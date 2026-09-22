@@ -36,7 +36,7 @@ class ModuloService
         $campos = $dados['campos'] ?? [];
         $fases  = $dados['fases'] ?? [];
 
-        if (! in_array($tipo, ['dados', 'arquivo', 'recrutamento'], true)) {
+        if (! in_array($tipo, ['dados', 'arquivo', 'recrutamento', 'financeiro'], true)) {
             throw new \DomainException("Tipo de módulo inválido: '{$tipo}'.");
         }
 
