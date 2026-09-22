@@ -1,0 +1,1810 @@
+##### app/Services/AuthService.php #####
+--- api-backend/app/Services/AuthService.php	2026-08-27 00:13:17.917789000 -0300
++++ Levit-dev-guilherme-vb/app/Services/AuthService.php	2026-09-06 02:16:44.363811500 -0300
+@@ -54,8 +54,9 @@
+         ]);
+ 
+         $cargoAdminId = $this->cargoModel->insert([
+-            'empresa_id' => $empresaId,
+-            'nome'       => 'Admin',
++            'empresa_id'   => $empresaId,
++            'nome'         => 'Admin',
++            'acesso_total' => true,
+         ]);
+ 
+         $todasPermissoes = $this->permissaoModel->findAll();
+@@ -159,10 +160,9 @@
+         return array_column($permissoes, 'codigo');
+     }
+ 
+-    /**
+-     * Retorna a lista de permissões do usuário, ou `null` se ele não
+-     * existir mais (ex: foi removido da equipe). Uma única consulta,
+-     * reaproveitada pelo AuthFilter em toda requisição autenticada.
++        /**
++     * Retorna cargo, permissões globais e a flag de acesso total do
++     * usuário — ou `null` se ele não existir mais.
+      */
+     public function dadosDeAutorizacao(string $usuarioId): ?array
+     {
+@@ -172,13 +172,19 @@
+             return null;
+         }
+ 
++        $cargo = $this->cargoModel->find($usuario['cargo_id']);
++
+         $permissoes = $this->cargoPermissaoModel
+             ->select('permissao.codigo')
+             ->join('permissao', 'permissao.id = cargo_permissao.permissao_id')
+             ->where('cargo_permissao.cargo_id', $usuario['cargo_id'])
+             ->findAll();
+ 
+-        return array_column($permissoes, 'codigo');
++                return [
++            'cargo_id'     => $usuario['cargo_id'],
++            'acesso_total' => ($cargo['acesso_total'] ?? 'f') === 't',
++            'permissoes'   => array_column($permissoes, 'codigo'),
++        ];
+     }
+ 
+     /**
+##### app/Models/CargoModel.php #####
+--- api-backend/app/Models/CargoModel.php	2026-08-27 00:13:17.864926200 -0300
++++ Levit-dev-guilherme-vb/app/Models/CargoModel.php	2026-09-06 02:16:44.296792300 -0300
+@@ -12,6 +12,7 @@
+     protected $allowedFields = [
+         'empresa_id',
+         'nome',
++        'acesso_total',
+     ];
+ 
+     protected $useTimestamps = false;
+##### app/Models/UsuarioModel.php #####
+--- api-backend/app/Models/UsuarioModel.php	2026-08-27 00:13:17.904166500 -0300
++++ Levit-dev-guilherme-vb/app/Models/UsuarioModel.php	2026-09-06 02:16:44.344115800 -0300
+@@ -21,4 +21,6 @@
+     protected $createdField  = 'criado_em';
+     protected $updatedField  = 'atualizado_em';
+     protected $dateFormat    = 'datetime';
+-}
+\ No newline at end of file
++}
++
++?>
+\ No newline at end of file
+##### app/Models/EmpresaModel.php #####
+--- api-backend/app/Models/EmpresaModel.php	2026-08-27 00:13:17.876869600 -0300
++++ Levit-dev-guilherme-vb/app/Models/EmpresaModel.php	2026-09-06 02:16:44.320638300 -0300
+@@ -22,4 +22,6 @@
+     protected $createdField  = 'criado_em';
+     protected $updatedField  = 'atualizado_em';
+     protected $dateFormat    = 'datetime';
+-}
+\ No newline at end of file
++}
++
++?>
+\ No newline at end of file
+##### app/Services/ModuloService.php #####
+--- api-backend/app/Services/ModuloService.php	2026-08-27 08:24:28.308844000 -0300
++++ Levit-dev-guilherme-vb/app/Services/ModuloService.php	2026-09-06 02:16:44.459467200 -0300
+@@ -1,468 +1,405 @@
+-<?php
+-
+-namespace App\Services;
+-
+-use App\Models\CampoModuloModel;
+-use App\Models\ModuloModel;
+-use App\Exceptions\NaoEncontradoException;
+-use App\Models\FaseRecrutamentoModel;
+-use App\Models\CandidatoModel;
+-
+-class ModuloService
+-{
+-    private const TIPOS_VALIDOS = ['texto', 'numero', 'data', 'selecao'];
+-
+-    protected ModuloModel $moduloModel;
+-    protected CampoModuloModel $campoModuloModel;
+-    protected FaseRecrutamentoModel $faseRecrutamentoModel;
+-    protected CandidatoModel $candidatoModel;
+-    protected \App\Models\AutomacaoModel $automacaoModel;
+-
+-    public function __construct()
+-    {
+-        $this->moduloModel           = new ModuloModel();
+-        $this->campoModuloModel      = new CampoModuloModel();
+-        $this->faseRecrutamentoModel = new FaseRecrutamentoModel();
+-        $this->candidatoModel        = new CandidatoModel();
+-        $this->automacaoModel        = new \App\Models\AutomacaoModel();
+-    }
+-
+-    /**
+-     * Cria um módulo novo, junto com seus campos iniciais.
+-     *
+-     * @throws \DomainException se os dados violarem uma regra de negócio
+-     */
+-    public function criarModulo(string $empresaId, string $usuarioId, array $dados): array
+-    {
+-        $tipo   = $dados['tipo'] ?? 'dados';
+-        $campos = $dados['campos'] ?? [];
+-        $fases  = $dados['fases'] ?? [];
+-
+-        if (! in_array($tipo, ['dados', 'arquivo', 'recrutamento'], true)) {
+-            throw new \DomainException("Tipo de módulo inválido: '{$tipo}'.");
+-        }
+-
+-        if ($tipo === 'dados' && empty($campos)) {
+-            throw new \DomainException('O módulo precisa de pelo menos um campo.');
+-        }
+-
+-        if ($tipo === 'recrutamento' && empty($fases)) {
+-            throw new \DomainException('O módulo de recrutamento precisa de pelo menos uma fase.');
+-        }
+-
+-        foreach ($campos as $campo) {
+-            $this->validarCampo($campo);
+-        }
+-
+-        foreach ($fases as $nomeFase) {
+-            if (! is_string($nomeFase) || trim($nomeFase) === '') {
+-                throw new \DomainException('Toda fase precisa de um nome.');
+-            }
+-        }
+-
+-        $db = db_connect();
+-        $db->transStart();
+-
+-        $moduloId = $this->moduloModel->insert([
+-            'empresa_id' => $empresaId,
+-            'nome'       => $dados['nome'],
+-            'icone'      => $dados['icone'] ?? null,
+-            'tipo'       => $tipo,
+-            'criado_por' => $usuarioId,
+-        ]);
+-
+-        foreach ($campos as $ordem => $campo) {
+-            $this->campoModuloModel->insert([
+-                'modulo_id' => $moduloId,
+-                'nome'      => $campo['nome'],
+-                'tipo'      => $campo['tipo'],
+-                'opcoes'    => $campo['opcoes'] ?? null,
+-                'ordem'     => $ordem,
+-            ]);
+-        }
+-
+-        foreach ($fases as $ordem => $nomeFase) {
+-            $this->faseRecrutamentoModel->insert([
+-                'modulo_id' => $moduloId,
+-                'nome'      => $nomeFase,
+-                'ordem'     => $ordem,
+-            ]);
+-        }
+-
+-        $db->transComplete();
+-
+-        if ($db->transStatus() === false) {
+-            throw new \RuntimeException('Não foi possível criar o módulo. Tente novamente.');
+-        }
+-
+-        return $this->buscarModuloComCampos($moduloId, $empresaId);
+-    }
+-
+-    /**
+-     * Confirma que um campo existe, pertence ao módulo informado, e que
+-     * esse módulo pertence à empresa de quem está pedindo.
+-     */
+-    private function buscarCampoValidado(string $campoId, string $moduloId, string $empresaId): array
+-    {
+-        $campo = $this->campoModuloModel
+-            ->select('campo_modulo.*')
+-            ->join('modulo', 'modulo.id = campo_modulo.modulo_id')
+-            ->where('campo_modulo.id', $campoId)
+-            ->where('campo_modulo.modulo_id', $moduloId)
+-            ->where('modulo.empresa_id', $empresaId)
+-            ->first();
+-
+-        if (! $campo) {
+-            throw new NaoEncontradoException('Campo não encontrado.');
+-        }
+-
+-        return $campo;
+-    }
+-
+-    /**
+-     * Valida um campo individual: nome preenchido, tipo permitido, e
+-     * opções obrigatórias quando o tipo é "selecao".
+-     */
+-    private function validarCampo(array $campo): void
+-    {
+-        if (empty($campo['nome'])) {
+-            throw new \DomainException('Todo campo precisa de um nome.');
+-        }
+-
+-        if (! in_array($campo['tipo'] ?? null, self::TIPOS_VALIDOS, true)) {
+-            $tipoRecebido = $campo['tipo'] ?? '(vazio)';
+-            throw new \DomainException("Tipo de campo inválido: '{$tipoRecebido}'.");
+-        }
+-
+-        if ($campo['tipo'] === 'selecao' && empty($campo['opcoes'])) {
+-            throw new \DomainException('Campos do tipo Seleção Única precisam de ao menos uma opção.');
+-        }
+-    }
+-
+-    /**
+-     * Busca um módulo já com seus campos, ordenados — SEMPRE filtrando
+-     * pela empresa do usuário que está pedindo.
+-     *
+-     * @throws \DomainException se o módulo não existir OU não pertencer à empresa
+-     */
+-    public function buscarModuloComCampos(string $moduloId, string $empresaId): array
+-    {
+-        $modulo = $this->moduloModel
+-            ->where('id', $moduloId)
+-            ->where('empresa_id', $empresaId)
+-            ->first();
+-
+-        if (! $modulo) {
+-            throw new NaoEncontradoException('Módulo não encontrado.');
+-        }
+-
+-        $modulo['campos'] = $this->campoModuloModel
+-            ->where('modulo_id', $moduloId)
+-            ->orderBy('ordem', 'ASC')
+-            ->findAll();
+-
+-        if ($modulo['tipo'] === 'recrutamento') {
+-            $modulo['fases'] = $this->faseRecrutamentoModel
+-                ->where('modulo_id', $moduloId)
+-                ->orderBy('ordem', 'ASC')
+-                ->findAll();
+-        }
+-
+-        return $modulo;
+-    }
+-
+-    /**
+-     * Atualiza nome e/ou ícone de um módulo já existente.
+-     */
+-    public function atualizarModulo(string $moduloId, string $empresaId, array $dados): array
+-    {
+-        $modulo = $this->moduloModel
+-            ->where('id', $moduloId)
+-            ->where('empresa_id', $empresaId)
+-            ->first();
+-
+-        if (! $modulo) {
+-            throw new NaoEncontradoException('Módulo não encontrado.');
+-        }
+-
+-        $camposParaAtualizar = [];
+-
+-        if (isset($dados['nome'])) {
+-            $camposParaAtualizar['nome'] = $dados['nome'];
+-        }
+-
+-        if (array_key_exists('icone', $dados)) {
+-            $camposParaAtualizar['icone'] = $dados['icone'];
+-        }
+-
+-        if (! empty($camposParaAtualizar)) {
+-            $this->moduloModel->update($moduloId, $camposParaAtualizar);
+-        }
+-
+-        return $this->buscarModuloComCampos($moduloId, $empresaId);
+-    }
+-
+-    /**
+-     * Adiciona um campo novo a um módulo já existente — mesmo que
+-     * ele já tenha registros (US05, critério 2).
+-     */
+-    public function adicionarCampo(string $moduloId, string $empresaId, array $campo): array
+-    {
+-        $modulo = $this->moduloModel
+-            ->where('id', $moduloId)
+-            ->where('empresa_id', $empresaId)
+-            ->first();
+-
+-        if (! $modulo) {
+-            throw new NaoEncontradoException('Módulo não encontrado.');
+-        }
+-
+-        $this->validarCampo($campo);
+-
+-        $proximaOrdem = $this->campoModuloModel
+-            ->where('modulo_id', $moduloId)
+-            ->countAllResults();
+-
+-        $this->campoModuloModel->insert([
+-            'modulo_id' => $moduloId,
+-            'nome'      => $campo['nome'],
+-            'tipo'      => $campo['tipo'],
+-            'opcoes'    => $campo['opcoes'] ?? null,
+-            'ordem'     => $proximaOrdem,
+-        ]);
+-
+-        return $this->buscarModuloComCampos($moduloId, $empresaId);
+-    }
+-
+-    public function atualizarCampo(string $campoId, string $moduloId, string $empresaId, array $dados): array
+-    {
+-        $this->buscarCampoValidado($campoId, $moduloId, $empresaId);
+-
+-        $camposParaAtualizar = [];
+-
+-        if (isset($dados['nome'])) {
+-            $camposParaAtualizar['nome'] = $dados['nome'];
+-        }
+-
+-        if (array_key_exists('opcoes', $dados)) {
+-            $camposParaAtualizar['opcoes'] = $dados['opcoes'];
+-        }
+-
+-        if (! empty($camposParaAtualizar)) {
+-            $this->campoModuloModel->update($campoId, $camposParaAtualizar);
+-        }
+-
+-        return $this->buscarModuloComCampos($moduloId, $empresaId);
+-    }
+-
+-    public function reordenarCampos(string $moduloId, string $empresaId, array $ordemCampoIds): array
+-    {
+-        $modulo = $this->moduloModel
+-            ->where('id', $moduloId)
+-            ->where('empresa_id', $empresaId)
+-            ->first();
+-
+-        if (! $modulo) {
+-            throw new NaoEncontradoException('Módulo não encontrado.');
+-        }
+-
+-        $idsExistentes = array_column(
+-            $this->campoModuloModel->where('modulo_id', $moduloId)->findAll(),
+-            'id'
+-        );
+-
+-        $listaBate = count($ordemCampoIds) === count($idsExistentes)
+-            && empty(array_diff($ordemCampoIds, $idsExistentes));
+-
+-        if (! $listaBate) {
+-            throw new \DomainException('A lista enviada não corresponde exatamente aos campos deste módulo.');
+-        }
+-
+-        $db = db_connect();
+-        $db->transStart();
+-
+-        foreach ($ordemCampoIds as $ordem => $campoId) {
+-            $this->campoModuloModel->update($campoId, ['ordem' => $ordem]);
+-        }
+-
+-        $db->transComplete();
+-
+-        if ($db->transStatus() === false) {
+-            throw new \RuntimeException('Não foi possível reordenar os campos. Tente novamente.');
+-        }
+-
+-        return $this->buscarModuloComCampos($moduloId, $empresaId);
+-    }
+-
+-    /**
+-     * @throws \DomainException se já existir algum registro usando esse campo
+-     */
+-    public function excluirCampo(string $campoId, string $moduloId, string $empresaId): void
+-    {
+-        $this->buscarCampoValidado($campoId, $moduloId, $empresaId);
+-
+-        $db = db_connect();
+-
+-        $linha = $db->query(
+-            'SELECT COUNT(*) AS total FROM registro WHERE modulo_id = ? AND jsonb_exists(dados, ?)',
+-            [$moduloId, $campoId]
+-        )->getRow();
+-
+-        if ((int) $linha->total > 0) {
+-            throw new \DomainException('Não é possível excluir um campo que já possui registros preenchidos.');
+-        }
+-
+-        if ($this->automacaoModel->where('campo_condicao_id', $campoId)->first()) {
+-            throw new \DomainException('Não é possível excluir um campo usado como condição em uma automação.');
+-        }
+-
+-        $this->campoModuloModel->delete($campoId);
+-    }
+-
+-        private function buscarFaseValidada(string $faseId, string $moduloId, string $empresaId): array
+-    {
+-        $fase = $this->faseRecrutamentoModel
+-            ->select('fase_recrutamento.*')
+-            ->join('modulo', 'modulo.id = fase_recrutamento.modulo_id')
+-            ->where('fase_recrutamento.id', $faseId)
+-            ->where('fase_recrutamento.modulo_id', $moduloId)
+-            ->where('modulo.empresa_id', $empresaId)
+-            ->first();
+-
+-        if (! $fase) {
+-            throw new NaoEncontradoException('Fase não encontrada.');
+-        }
+-
+-        return $fase;
+-    }
+-
+-    public function adicionarFase(string $moduloId, string $empresaId, string $nomeFase): array
+-    {
+-        $modulo = $this->moduloModel
+-            ->where('id', $moduloId)
+-            ->where('empresa_id', $empresaId)
+-            ->where('tipo', 'recrutamento')
+-            ->first();
+-
+-        if (! $modulo) {
+-            throw new NaoEncontradoException('Vaga não encontrada.');
+-        }
+-
+-        if (trim($nomeFase) === '') {
+-            throw new \DomainException('Toda fase precisa de um nome.');
+-        }
+-
+-        $proximaOrdem = $this->faseRecrutamentoModel
+-            ->where('modulo_id', $moduloId)
+-            ->countAllResults();
+-
+-        $this->faseRecrutamentoModel->insert([
+-            'modulo_id' => $moduloId,
+-            'nome'      => $nomeFase,
+-            'ordem'     => $proximaOrdem,
+-        ]);
+-
+-        return $this->buscarModuloComCampos($moduloId, $empresaId);
+-    }
+-
+-    public function atualizarFase(string $faseId, string $moduloId, string $empresaId, string $novoNome): array
+-    {
+-        $this->buscarFaseValidada($faseId, $moduloId, $empresaId);
+-
+-        if (trim($novoNome) === '') {
+-            throw new \DomainException('Toda fase precisa de um nome.');
+-        }
+-
+-        $this->faseRecrutamentoModel->update($faseId, ['nome' => $novoNome]);
+-
+-        return $this->buscarModuloComCampos($moduloId, $empresaId);
+-    }
+-
+-    public function reordenarFases(string $moduloId, string $empresaId, array $ordemFaseIds): array
+-    {
+-        $modulo = $this->moduloModel
+-            ->where('id', $moduloId)
+-            ->where('empresa_id', $empresaId)
+-            ->where('tipo', 'recrutamento')
+-            ->first();
+-
+-        if (! $modulo) {
+-            throw new NaoEncontradoException('Vaga não encontrada.');
+-        }
+-
+-        $idsExistentes = array_column(
+-            $this->faseRecrutamentoModel->where('modulo_id', $moduloId)->findAll(),
+-            'id'
+-        );
+-
+-        $listaBate = count($ordemFaseIds) === count($idsExistentes)
+-            && empty(array_diff($ordemFaseIds, $idsExistentes));
+-
+-        if (! $listaBate) {
+-            throw new \DomainException('A lista enviada não corresponde exatamente às fases desta vaga.');
+-        }
+-
+-        $db = db_connect();
+-        $db->transStart();
+-
+-        foreach ($ordemFaseIds as $ordem => $faseId) {
+-            $this->faseRecrutamentoModel->update($faseId, ['ordem' => $ordem]);
+-        }
+-
+-        $db->transComplete();
+-
+-        if ($db->transStatus() === false) {
+-            throw new \RuntimeException('Não foi possível reordenar as fases. Tente novamente.');
+-        }
+-
+-        return $this->buscarModuloComCampos($moduloId, $empresaId);
+-    }
+-
+-    /**
+-     * @throws \DomainException se ainda existir candidato ativo nessa fase
+-     */
+-    public function excluirFase(string $faseId, string $moduloId, string $empresaId): void
+-    {
+-        $this->buscarFaseValidada($faseId, $moduloId, $empresaId);
+-
+-        $totalCandidatos = $this->candidatoModel->where('fase_atual_id', $faseId)->countAllResults();
+-
+-        if ($totalCandidatos > 0) {
+-            throw new \DomainException('Não é possível excluir uma fase que ainda possui candidatos.');
+-        }
+-
+-        $this->faseRecrutamentoModel->delete($faseId);
+-    }
+-
+-    /**
+-     * Lista todos os módulos da empresa, já com o total de registros
+-     * de cada um — numa única consulta, evitando N+1.
+-     */
+-    public function listarModulos(string $empresaId): array
+-    {
+-        return $this->moduloModel
+-            ->select('modulo.*, COUNT(registro.id) AS total_registros')
+-            ->join('registro', 'registro.modulo_id = modulo.id', 'left')
+-            ->where('modulo.empresa_id', $empresaId)
+-            ->groupBy('modulo.id')
+-            ->orderBy('modulo.criado_em', 'ASC')
+-            ->findAll();
+-    }
+-
+-    /**
+-     * @throws NaoEncontradoException se o módulo não existir ou não pertencer à empresa
+-     */
+-    public function excluirModulo(string $moduloId, string $empresaId): void
+-    {
+-        $modulo = $this->moduloModel
+-            ->where('id', $moduloId)
+-            ->where('empresa_id', $empresaId)
+-            ->first();
+-
+-        if (! $modulo) {
+-            throw new NaoEncontradoException('Módulo não encontrado.');
+-        }
+-
+-        $this->moduloModel->delete($moduloId);
+-    }
++<?php
++
++namespace App\Services;
++
++use App\Exceptions\NaoEncontradoException;
++use App\Models\AutomacaoModel;
++use App\Models\CampoModuloModel;
++use App\Models\CandidatoModel;
++use App\Models\FaseRecrutamentoModel;
++use App\Models\ModuloModel;
++
++class ModuloService
++{
++    private const TIPOS_VALIDOS = ['texto', 'numero', 'data', 'selecao'];
++
++    protected ModuloModel $moduloModel;
++    protected CampoModuloModel $campoModuloModel;
++    protected FaseRecrutamentoModel $faseRecrutamentoModel;
++    protected CandidatoModel $candidatoModel;
++    protected AutomacaoModel $automacaoModel;
++    protected AutorizacaoModuloService $autorizacaoModuloService;
++
++    public function __construct()
++    {
++        $this->moduloModel              = new ModuloModel();
++        $this->campoModuloModel         = new CampoModuloModel();
++        $this->faseRecrutamentoModel    = new FaseRecrutamentoModel();
++        $this->candidatoModel           = new CandidatoModel();
++        $this->automacaoModel           = new AutomacaoModel();
++        $this->autorizacaoModuloService = new AutorizacaoModuloService();
++    }
++
++    public function criarModulo(string $empresaId, string $usuarioId, string $cargoId, array $dados): array
++    {
++        $tipo   = $dados['tipo'] ?? 'dados';
++        $campos = $dados['campos'] ?? [];
++        $fases  = $dados['fases'] ?? [];
++
++        if (! in_array($tipo, ['dados', 'arquivo', 'recrutamento'], true)) {
++            throw new \DomainException("Tipo de módulo inválido: '{$tipo}'.");
++        }
++
++        if ($tipo === 'dados' && empty($campos)) {
++            throw new \DomainException('O módulo precisa de pelo menos um campo.');
++        }
++
++        if ($tipo === 'recrutamento' && empty($fases)) {
++            throw new \DomainException('O módulo de recrutamento precisa de pelo menos uma fase.');
++        }
++
++        foreach ($campos as $campo) {
++            $this->validarCampo($campo);
++        }
++
++        foreach ($fases as $nomeFase) {
++            if (! is_string($nomeFase) || trim($nomeFase) === '') {
++                throw new \DomainException('Toda fase precisa de um nome.');
++            }
++        }
++
++        $db = db_connect();
++        $db->transStart();
++
++        $moduloId = $this->moduloModel->insert([
++            'empresa_id' => $empresaId,
++            'nome'       => $dados['nome'],
++            'icone'      => $dados['icone'] ?? null,
++            'tipo'       => $tipo,
++            'criado_por' => $usuarioId,
++        ]);
++
++        foreach ($campos as $ordem => $campo) {
++            $this->campoModuloModel->insert([
++                'modulo_id' => $moduloId,
++                'nome'      => $campo['nome'],
++                'tipo'      => $campo['tipo'],
++                'opcoes'    => $campo['opcoes'] ?? null,
++                'ordem'     => $ordem,
++            ]);
++        }
++
++        foreach ($fases as $ordem => $nomeFase) {
++            $this->faseRecrutamentoModel->insert([
++                'modulo_id' => $moduloId,
++                'nome'      => $nomeFase,
++                'ordem'     => $ordem,
++            ]);
++        }
++
++        // Quem criou já enxerga o que acabou de criar, mesmo sem acesso_total.
++        $this->autorizacaoModuloService->concederGerenciar($cargoId, $moduloId);
++
++        $db->transComplete();
++
++        if ($db->transStatus() === false) {
++            throw new \RuntimeException('Não foi possível criar o módulo. Tente novamente.');
++        }
++
++        return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, true);
++    }
++
++    private function validarCampo(array $campo): void
++    {
++        if (empty($campo['nome'])) {
++            throw new \DomainException('Todo campo precisa de um nome.');
++        }
++
++        if (! in_array($campo['tipo'] ?? null, self::TIPOS_VALIDOS, true)) {
++            $tipoRecebido = $campo['tipo'] ?? '(vazio)';
++            throw new \DomainException("Tipo de campo inválido: '{$tipoRecebido}'.");
++        }
++
++        if ($campo['tipo'] === 'selecao' && empty($campo['opcoes'])) {
++            throw new \DomainException('Campos do tipo Seleção Única precisam de ao menos uma opção.');
++        }
++    }
++
++    /**
++     * Lista só os módulos que o cargo tem algum nível de acesso —
++     * módulos sem nenhuma concessão ficam invisíveis (exceto acesso_total).
++     */
++    public function listarModulos(string $empresaId, string $cargoId, bool $acessoTotal): array
++    {
++        $builder = $this->moduloModel
++            ->select('modulo.*, COUNT(registro.id) AS total_registros')
++            ->join('registro', 'registro.modulo_id = modulo.id', 'left')
++            ->where('modulo.empresa_id', $empresaId);
++
++        if (! $acessoTotal) {
++            $builder
++                ->join('cargo_modulo_permissao', 'cargo_modulo_permissao.modulo_id = modulo.id')
++                ->where('cargo_modulo_permissao.cargo_id', $cargoId);
++        }
++
++        return $builder
++            ->groupBy('modulo.id')
++            ->orderBy('modulo.criado_em', 'ASC')
++            ->findAll();
++    }
++
++    public function buscarModuloComCampos(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
++    {
++        $modulo = $this->moduloModel
++            ->where('id', $moduloId)
++            ->where('empresa_id', $empresaId)
++            ->first();
++
++        if (! $modulo) {
++            throw new NaoEncontradoException('Módulo não encontrado.');
++        }
++
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
++
++        $modulo['campos'] = $this->campoModuloModel
++            ->where('modulo_id', $moduloId)
++            ->orderBy('ordem', 'ASC')
++            ->findAll();
++
++        if ($modulo['tipo'] === 'recrutamento') {
++            $modulo['fases'] = $this->faseRecrutamentoModel
++                ->where('modulo_id', $moduloId)
++                ->orderBy('ordem', 'ASC')
++                ->findAll();
++        }
++
++        return $modulo;
++    }
++
++    public function atualizarModulo(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $dados): array
++    {
++        $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal); // confirma existência + visualizar
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
++
++        $camposParaAtualizar = [];
++
++        if (isset($dados['nome'])) {
++            $camposParaAtualizar['nome'] = $dados['nome'];
++        }
++
++        if (array_key_exists('icone', $dados)) {
++            $camposParaAtualizar['icone'] = $dados['icone'];
++        }
++
++        if (! empty($camposParaAtualizar)) {
++            $this->moduloModel->update($moduloId, $camposParaAtualizar);
++        }
++
++        return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++    }
++
++    public function adicionarCampo(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $campo): array
++    {
++        $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
++
++        $this->validarCampo($campo);
++
++        $proximaOrdem = $this->campoModuloModel->where('modulo_id', $moduloId)->countAllResults();
++
++        $this->campoModuloModel->insert([
++            'modulo_id' => $moduloId,
++            'nome'      => $campo['nome'],
++            'tipo'      => $campo['tipo'],
++            'opcoes'    => $campo['opcoes'] ?? null,
++            'ordem'     => $proximaOrdem,
++        ]);
++
++        return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++    }
++
++    private function buscarCampoValidado(string $campoId, string $moduloId, string $empresaId): array
++    {
++        $campo = $this->campoModuloModel
++            ->select('campo_modulo.*')
++            ->join('modulo', 'modulo.id = campo_modulo.modulo_id')
++            ->where('campo_modulo.id', $campoId)
++            ->where('campo_modulo.modulo_id', $moduloId)
++            ->where('modulo.empresa_id', $empresaId)
++            ->first();
++
++        if (! $campo) {
++            throw new NaoEncontradoException('Campo não encontrado.');
++        }
++
++        return $campo;
++    }
++
++    public function atualizarCampo(string $campoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $dados): array
++    {
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
++        $this->buscarCampoValidado($campoId, $moduloId, $empresaId);
++
++        $camposParaAtualizar = [];
++
++        if (isset($dados['nome'])) {
++            $camposParaAtualizar['nome'] = $dados['nome'];
++        }
++
++        if (array_key_exists('opcoes', $dados)) {
++            $camposParaAtualizar['opcoes'] = $dados['opcoes'];
++        }
++
++        if (! empty($camposParaAtualizar)) {
++            $this->campoModuloModel->update($campoId, $camposParaAtualizar);
++        }
++
++        return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++    }
++
++    public function reordenarCampos(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $ordemCampoIds): array
++    {
++        $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
++
++        $idsExistentes = array_column($this->campoModuloModel->where('modulo_id', $moduloId)->findAll(), 'id');
++
++        $listaBate = count($ordemCampoIds) === count($idsExistentes)
++            && empty(array_diff($ordemCampoIds, $idsExistentes));
++
++        if (! $listaBate) {
++            throw new \DomainException('A lista enviada não corresponde exatamente aos campos deste módulo.');
++        }
++
++        $db = db_connect();
++        $db->transStart();
++
++        foreach ($ordemCampoIds as $ordem => $campoId) {
++            $this->campoModuloModel->update($campoId, ['ordem' => $ordem]);
++        }
++
++        $db->transComplete();
++
++        if ($db->transStatus() === false) {
++            throw new \RuntimeException('Não foi possível reordenar os campos. Tente novamente.');
++        }
++
++        return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++    }
++
++    public function excluirCampo(string $campoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
++    {
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
++        $this->buscarCampoValidado($campoId, $moduloId, $empresaId);
++
++        $db = db_connect();
++
++        $linha = $db->query(
++            'SELECT COUNT(*) AS total FROM registro WHERE modulo_id = ? AND jsonb_exists(dados, ?)',
++            [$moduloId, $campoId]
++        )->getRow();
++
++        if ((int) $linha->total > 0) {
++            throw new \DomainException('Não é possível excluir um campo que já possui registros preenchidos.');
++        }
++
++        if ($this->automacaoModel->where('campo_condicao_id', $campoId)->first()) {
++            throw new \DomainException('Não é possível excluir um campo usado como condição em uma automação.');
++        }
++
++        $this->campoModuloModel->delete($campoId);
++    }
++
++    public function excluirModulo(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
++    {
++        $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
++
++        $this->moduloModel->delete($moduloId);
++    }
++
++    public function adicionarFase(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $nomeFase): array
++    {
++        $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
++
++        if (trim($nomeFase) === '') {
++            throw new \DomainException('Toda fase precisa de um nome.');
++        }
++
++        $proximaOrdem = $this->faseRecrutamentoModel->where('modulo_id', $moduloId)->countAllResults();
++
++        $this->faseRecrutamentoModel->insert([
++            'modulo_id' => $moduloId,
++            'nome'      => $nomeFase,
++            'ordem'     => $proximaOrdem,
++        ]);
++
++        return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++    }
++
++    private function buscarFaseValidada(string $faseId, string $moduloId, string $empresaId): array
++    {
++        $fase = $this->faseRecrutamentoModel
++            ->select('fase_recrutamento.*')
++            ->join('modulo', 'modulo.id = fase_recrutamento.modulo_id')
++            ->where('fase_recrutamento.id', $faseId)
++            ->where('fase_recrutamento.modulo_id', $moduloId)
++            ->where('modulo.empresa_id', $empresaId)
++            ->first();
++
++        if (! $fase) {
++            throw new NaoEncontradoException('Fase não encontrada.');
++        }
++
++        return $fase;
++    }
++
++    public function atualizarFase(string $faseId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $novoNome): array
++    {
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
++        $this->buscarFaseValidada($faseId, $moduloId, $empresaId);
++
++        if (trim($novoNome) === '') {
++            throw new \DomainException('Toda fase precisa de um nome.');
++        }
++
++        $this->faseRecrutamentoModel->update($faseId, ['nome' => $novoNome]);
++
++        return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++    }
++
++    public function reordenarFases(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $ordemFaseIds): array
++    {
++        $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
++
++        $idsExistentes = array_column($this->faseRecrutamentoModel->where('modulo_id', $moduloId)->findAll(), 'id');
++
++        $listaBate = count($ordemFaseIds) === count($idsExistentes)
++            && empty(array_diff($ordemFaseIds, $idsExistentes));
++
++        if (! $listaBate) {
++            throw new \DomainException('A lista enviada não corresponde exatamente às fases desta vaga.');
++        }
++
++        $db = db_connect();
++        $db->transStart();
++
++        foreach ($ordemFaseIds as $ordem => $faseId) {
++            $this->faseRecrutamentoModel->update($faseId, ['ordem' => $ordem]);
++        }
++
++        $db->transComplete();
++
++        if ($db->transStatus() === false) {
++            throw new \RuntimeException('Não foi possível reordenar as fases. Tente novamente.');
++        }
++
++        return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
++    }
++
++    public function excluirFase(string $faseId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
++    {
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
++        $this->buscarFaseValidada($faseId, $moduloId, $empresaId);
++
++        $totalCandidatos = $this->candidatoModel->where('fase_atual_id', $faseId)->countAllResults();
++
++        if ($totalCandidatos > 0) {
++            throw new \DomainException('Não é possível excluir uma fase que ainda possui candidatos.');
++        }
++
++        $this->faseRecrutamentoModel->delete($faseId);
++    }
+ }
+\ No newline at end of file
+##### app/Services/AutomacaoService.php #####
+--- api-backend/app/Services/AutomacaoService.php	2026-08-27 07:27:13.560231400 -0300
++++ Levit-dev-guilherme-vb/app/Services/AutomacaoService.php	2026-09-06 02:16:44.363811500 -0300
+@@ -10,28 +10,29 @@
+ 
+ class AutomacaoService
+ {
+-    private const GATILHOS_VALIDOS    = ['criacao', 'atualizacao', 'exclusao'];
+-    private const OPERADORES_VALIDOS  = ['igual', 'diferente'];
+-    private const TIPOS_ACAO_VALIDOS  = ['enviar_email', 'webhook'];
++    private const GATILHOS_VALIDOS   = ['criacao', 'atualizacao', 'exclusao'];
++    private const OPERADORES_VALIDOS = ['igual', 'diferente'];
++    private const TIPOS_ACAO_VALIDOS = ['enviar_email', 'webhook'];
+ 
+     protected ModuloModel $moduloModel;
+     protected CampoModuloModel $campoModuloModel;
+     protected AutomacaoModel $automacaoModel;
+     protected AutomacaoAcaoModel $automacaoAcaoModel;
++    protected AutorizacaoModuloService $autorizacaoModuloService;
+ 
+     public function __construct()
+     {
+-        $this->moduloModel        = new ModuloModel();
+-        $this->campoModuloModel   = new CampoModuloModel();
+-        $this->automacaoModel     = new AutomacaoModel();
+-        $this->automacaoAcaoModel = new AutomacaoAcaoModel();
++        $this->moduloModel              = new ModuloModel();
++        $this->campoModuloModel         = new CampoModuloModel();
++        $this->automacaoModel           = new AutomacaoModel();
++        $this->automacaoAcaoModel       = new AutomacaoAcaoModel();
++        $this->autorizacaoModuloService = new AutorizacaoModuloService();
+     }
+ 
+-    public function criarAutomacao(string $moduloId, string $empresaId, string $usuarioId, array $dados): array
++    public function criarAutomacao(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $usuarioId, array $dados): array
+     {
+-        if (! $this->moduloModel->where('id', $moduloId)->where('empresa_id', $empresaId)->first()) {
+-            throw new NaoEncontradoException('Módulo não encontrado.');
+-        }
++        $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
+ 
+         $gatilho = $dados['gatilho'] ?? '';
+         if (! in_array($gatilho, self::GATILHOS_VALIDOS, true)) {
+@@ -93,10 +94,6 @@
+         return $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+     }
+ 
+-    /**
+-     * Valida a configuração de uma ação de acordo com o tipo dela —
+-     * cada tipo exige campos diferentes na configuração.
+-     */
+     private function validarAcao(array $acao): void
+     {
+         $tipo = $acao['tipo'] ?? null;
+@@ -115,11 +112,10 @@
+         }
+     }
+ 
+-    public function listarAutomacoes(string $moduloId, string $empresaId): array
++    public function listarAutomacoes(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
+     {
+-        if (! $this->moduloModel->where('id', $moduloId)->where('empresa_id', $empresaId)->first()) {
+-            throw new NaoEncontradoException('Módulo não encontrado.');
+-        }
++        $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
+ 
+         $automacoes = $this->automacaoModel->where('modulo_id', $moduloId)->findAll();
+ 
+@@ -156,18 +152,28 @@
+         return $automacao;
+     }
+ 
+-    public function alternarAtivo(string $automacaoId, string $moduloId, string $empresaId, bool $ativo): array
++    public function alternarAtivo(string $automacaoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, bool $ativo): array
+     {
+         $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
+ 
+         $this->automacaoModel->update($automacaoId, ['ativo' => $ativo]);
+ 
+         return $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+     }
+ 
+-    public function excluirAutomacao(string $automacaoId, string $moduloId, string $empresaId): void
++    public function excluirAutomacao(string $automacaoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
+     {
+         $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
++
+         $this->automacaoModel->delete($automacaoId);
+     }
++
++    private function confirmarModuloDaEmpresa(string $moduloId, string $empresaId): void
++    {
++        if (! $this->moduloModel->where('id', $moduloId)->where('empresa_id', $empresaId)->first()) {
++            throw new NaoEncontradoException('Módulo não encontrado.');
++        }
++    }
+ }
+\ No newline at end of file
+##### app/Services/ArquivoService.php #####
+--- api-backend/app/Services/ArquivoService.php	2026-08-27 00:13:17.912140900 -0300
++++ Levit-dev-guilherme-vb/app/Services/ArquivoService.php	2026-09-06 02:16:44.355667500 -0300
+@@ -16,19 +16,17 @@
+     protected ModuloModel $moduloModel;
+     protected RegistroModel $registroModel;
+     protected ArquivoModel $arquivoModel;
++    protected AutorizacaoModuloService $autorizacaoModuloService;
+ 
+     public function __construct()
+     {
+-        $this->moduloModel   = new ModuloModel();
+-        $this->registroModel = new RegistroModel();
+-        $this->arquivoModel  = new ArquivoModel();
++        $this->moduloModel              = new ModuloModel();
++        $this->registroModel            = new RegistroModel();
++        $this->arquivoModel             = new ArquivoModel();
++        $this->autorizacaoModuloService = new AutorizacaoModuloService();
+     }
+ 
+-    /**
+-     * Faz upload de um arquivo, criando o registro e o arquivo
+-     * vinculado numa única transação.
+-     */
+-    public function enviarArquivo(string $moduloId, string $empresaId, string $usuarioId, UploadedFile $arquivo): array
++    public function enviarArquivo(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $usuarioId, UploadedFile $arquivo): array
+     {
+         $modulo = $this->moduloModel
+             ->where('id', $moduloId)
+@@ -40,6 +38,8 @@
+             throw new NaoEncontradoException('Módulo de arquivo não encontrado.');
+         }
+ 
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
++
+         if (! $arquivo->isValid()) {
+             throw new \DomainException('O arquivo enviado é inválido ou não chegou corretamente.');
+         }
+@@ -101,13 +101,12 @@
+         return $arquivo;
+     }
+ 
+-    /**
+-     * Devolve os bytes do arquivo, já com o metadado necessário pra
+-     * montar a resposta HTTP de download.
+-     */
+-    public function baixarArquivo(string $registroId, string $moduloId, string $empresaId): array
++    public function baixarArquivo(string $registroId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
+     {
+-        $arquivo  = $this->buscarArquivo($registroId, $moduloId, $empresaId);
++        $arquivo = $this->buscarArquivo($registroId, $moduloId, $empresaId);
++
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
++
+         $conteudo = service('storage')->obter($arquivo['chave_armazenamento']);
+ 
+         return [
+@@ -117,13 +116,14 @@
+         ];
+     }
+ 
+-    public function excluirArquivo(string $registroId, string $moduloId, string $empresaId): void
++    public function excluirArquivo(string $registroId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
+     {
+         $arquivo = $this->buscarArquivo($registroId, $moduloId, $empresaId);
+ 
++        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
++
+         service('storage')->excluir($arquivo['chave_armazenamento']);
+ 
+-        // Excluir o registro apaga o `arquivo` em cascata (constraint do banco)
+         $this->registroModel->delete($registroId);
+     }
+ }
+\ No newline at end of file
+##### app/Services/JwtService.php #####
+--- api-backend/app/Services/JwtService.php	2026-08-27 00:18:56.028579000 -0300
++++ Levit-dev-guilherme-vb/app/Services/JwtService.php	2026-09-06 02:16:44.454456900 -0300
+@@ -13,7 +13,7 @@
+ 
+     public function __construct()
+     {
+-        $this->secretKey = env('JWT_SECRET_KEY') ?? 'levit_secret_key_default_value_2026';
++        $this->secretKey = env('JWT_SECRET_KEY');
+     }
+ 
+     /**
+##### app/Services/EquipeService.php #####
+--- api-backend/app/Services/EquipeService.php	2026-09-02 15:40:38.740522500 -0300
++++ Levit-dev-guilherme-vb/app/Services/EquipeService.php	2026-09-06 02:16:44.449441500 -0300
+@@ -122,72 +122,35 @@
+ 
+     public function listarMembros(string $empresaId): array
+     {
+-        $membros = $this->usuarioModel
++        return $this->usuarioModel
+             ->select('usuario.id, usuario.nome, usuario.email, usuario.criado_em, cargo.nome as cargo_nome')
+             ->join('cargo', 'cargo.id = usuario.cargo_id')
+             ->where('usuario.empresa_id', $empresaId)
+             ->orderBy('usuario.criado_em', 'ASC')
+             ->findAll();
+-
+-        foreach ($membros as &$m) {
+-            $m['status'] = 'Ativo';
+-        }
+-        unset($m);
+-
+-        $convites = $this->conviteModel
+-            ->select('convite.id, convite.email_destinatario as email, convite.criado_em, cargo.nome as cargo_nome')
+-            ->join('cargo', 'cargo.id = convite.cargo_id')
+-            ->where('convite.empresa_id', $empresaId)
+-            ->where('convite.aceito_em', null)
+-            ->orderBy('convite.criado_em', 'ASC')
+-            ->findAll();
+-
+-        foreach ($convites as $c) {
+-            $membros[] = [
+-                'id'         => $c['id'],
+-                'nome'       => 'Convite Pendente',
+-                'email'      => $c['email'],
+-                'criado_em'  => $c['criado_em'],
+-                'cargo_nome' => $c['cargo_nome'],
+-                'status'     => 'Pendente',
+-            ];
+-        }
+-
+-        return $membros;
+     }
+ 
+     /**
+-     * @throws NaoEncontradoException se o membro/convite não existir/pertencer à empresa
++     * @throws NaoEncontradoException se o membro não existir/pertencer à empresa
+      * @throws \DomainException se for o administrador principal
+      */
+-    public function removerMembro(string $id, string $empresaId): void
++    public function removerMembro(string $usuarioId, string $empresaId): void
+     {
+         $usuario = $this->usuarioModel
+-            ->where('id', $id)
++            ->where('id', $usuarioId)
+             ->where('empresa_id', $empresaId)
+             ->first();
+ 
+-        if ($usuario) {
+-            $empresa = $this->empresaModel->find($empresaId);
+-
+-            if ($empresa['administrador_principal_id'] === $id) {
+-                throw new \DomainException('Não é possível remover o administrador principal da empresa.');
+-            }
+-
+-            $this->usuarioModel->delete($id);
+-            return;
++        if (! $usuario) {
++            throw new NaoEncontradoException('Membro não encontrado.');
+         }
+ 
+-        $convite = $this->conviteModel
+-            ->where('id', $id)
+-            ->where('empresa_id', $empresaId)
+-            ->first();
++        $empresa = $this->empresaModel->find($empresaId);
+ 
+-        if ($convite) {
+-            $this->conviteModel->delete($id);
+-            return;
++        if ($empresa['administrador_principal_id'] === $usuarioId) {
++            throw new \DomainException('Não é possível remover o administrador principal da empresa.');
+         }
+ 
+-        throw new NaoEncontradoException('Membro ou convite não encontrado.');
++        $this->usuarioModel->delete($usuarioId);
+     }
+ }
+\ No newline at end of file
+##### app/Services/Storage/BackblazeStorageService.php #####
+--- api-backend/app/Services/Storage/BackblazeStorageService.php	2026-08-27 08:02:30.383579900 -0300
++++ Levit-dev-guilherme-vb/app/Services/Storage/BackblazeStorageService.php	2026-09-06 02:16:44.491162600 -0300
+@@ -12,14 +12,13 @@
+ 
+     public function __construct()
+     {
+-        $this->bucket = env('B2_BUCKET') ?? '';
++        $this->bucket = env('B2_BUCKET');
+ 
+         $this->client = new S3Client([
+             'version'                 => 'latest',
+             'region'                  => env('B2_REGION'),
+             'endpoint'                => 'https://' . env('B2_ENDPOINT'),
+             'use_path_style_endpoint' => true,
+-            'http'                    => ['verify' => false],
+             'credentials'             => [
+                 'key'    => env('B2_KEY_ID'),
+                 'secret' => env('B2_APPLICATION_KEY'),
+@@ -39,7 +38,7 @@
+                 'SourceFile' => $caminhoTemporario,
+             ]);
+         } catch (S3Exception $e) {
+-            throw new \RuntimeException('Não foi possível salvar o arquivo no armazenamento remoto. Detalhes: ' . $e->getMessage());
++            throw new \RuntimeException('Não foi possível salvar o arquivo no armazenamento remoto.');
+         }
+ 
+         return $chave;
+##### app/Controllers/ModuloController.php #####
+--- api-backend/app/Controllers/ModuloController.php	2026-08-27 00:13:17.654957400 -0300
++++ Levit-dev-guilherme-vb/app/Controllers/ModuloController.php	2026-09-06 02:16:43.963921300 -0300
+@@ -2,8 +2,9 @@
+ 
+ namespace App\Controllers;
+ 
+-use App\Services\ModuloService;
++use App\Exceptions\AcessoNegadoException;
+ use App\Exceptions\NaoEncontradoException;
++use App\Services\ModuloService;
+ 
+ class ModuloController extends BaseApiController
+ {
+@@ -33,7 +34,7 @@
+         $user = service('authenticatedUser');
+ 
+         try {
+-            $modulo = $this->moduloService->criarModulo($user->empresaId, $user->id, $dados);
++            $modulo = $this->moduloService->criarModulo($user->empresaId, $user->id, $user->cargoId, $dados);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
+         } catch (\DomainException $e) {
+@@ -45,6 +46,30 @@
+         return $this->respondSuccess($modulo, 201);
+     }
+ 
++    public function listar()
++    {
++        $user = service('authenticatedUser');
++
++        $modulos = $this->moduloService->listarModulos($user->empresaId, $user->cargoId, $user->acessoTotal);
++
++        return $this->respondSuccess($modulos, 200);
++    }
++
++    public function detalhes($moduloId)
++    {
++        $user = service('authenticatedUser');
++
++        try {
++            $modulo = $this->moduloService->buscarModuloComCampos($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
++        } catch (NaoEncontradoException $e) {
++            return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
++        }
++
++        return $this->respondSuccess($modulo, 200);
++    }
++
+     public function atualizar($moduloId)
+     {
+         $dados = $this->request->getJSON(true) ?? [];
+@@ -61,9 +86,11 @@
+         $user = service('authenticatedUser');
+ 
+         try {
+-            $modulo = $this->moduloService->atualizarModulo($moduloId, $user->empresaId, $dados);
++            $modulo = $this->moduloService->atualizarModulo($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->respondSuccess($modulo, 200);
+@@ -75,9 +102,11 @@
+         $user  = service('authenticatedUser');
+ 
+         try {
+-            $modulo = $this->moduloService->adicionarCampo($moduloId, $user->empresaId, $campo);
++            $modulo = $this->moduloService->adicionarCampo($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $campo);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 422);
+         }
+@@ -91,9 +120,11 @@
+         $user  = service('authenticatedUser');
+ 
+         try {
+-            $modulo = $this->moduloService->atualizarCampo($campoId, $moduloId, $user->empresaId, $dados);
++            $modulo = $this->moduloService->atualizarCampo($campoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->respondSuccess($modulo, 200);
+@@ -105,9 +136,11 @@
+         $user  = service('authenticatedUser');
+ 
+         try {
+-            $modulo = $this->moduloService->reordenarCampos($moduloId, $user->empresaId, $dados['ordem'] ?? []);
++            $modulo = $this->moduloService->reordenarCampos($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['ordem'] ?? []);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 422);
+         } catch (\RuntimeException $e) {
+@@ -122,9 +155,11 @@
+         $user = service('authenticatedUser');
+ 
+         try {
+-            $this->moduloService->excluirCampo($campoId, $moduloId, $user->empresaId);
++            $this->moduloService->excluirCampo($campoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 409);
+         }
+@@ -132,44 +167,32 @@
+         return $this->respondSuccess(null, 200);
+     }
+ 
+-    public function detalhes($moduloId)
+-    {
+-        try {
+-            $modulo = $this->moduloService->buscarModuloComCampos($moduloId, service('authenticatedUser')->empresaId);
+-        } catch (NaoEncontradoException $e) {
+-            return $this->respondError($e->getMessage(), 404);
+-        }
+-
+-        return $this->respondSuccess($modulo, 200);
+-    }
+-
+-    public function listar()
+-    {
+-        $modulos = $this->moduloService->listarModulos(service('authenticatedUser')->empresaId);
+-
+-        return $this->respondSuccess($modulos, 200);
+-    }
+-
+     public function excluir($moduloId)
+     {
++        $user = service('authenticatedUser');
++
+         try {
+-            $this->moduloService->excluirModulo($moduloId, service('authenticatedUser')->empresaId);
++            $this->moduloService->excluirModulo($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->respondSuccess(null, 200);
+     }
+ 
+-        public function adicionarFase($moduloId)
++    public function adicionarFase($moduloId)
+     {
+         $dados = $this->request->getJSON(true) ?? [];
+         $user  = service('authenticatedUser');
+ 
+         try {
+-            $modulo = $this->moduloService->adicionarFase($moduloId, $user->empresaId, $dados['nome'] ?? '');
++            $modulo = $this->moduloService->adicionarFase($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['nome'] ?? '');
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 422);
+         }
+@@ -183,9 +206,11 @@
+         $user  = service('authenticatedUser');
+ 
+         try {
+-            $modulo = $this->moduloService->atualizarFase($faseId, $moduloId, $user->empresaId, $dados['nome'] ?? '');
++            $modulo = $this->moduloService->atualizarFase($faseId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['nome'] ?? '');
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 422);
+         }
+@@ -199,9 +224,11 @@
+         $user  = service('authenticatedUser');
+ 
+         try {
+-            $modulo = $this->moduloService->reordenarFases($moduloId, $user->empresaId, $dados['ordem'] ?? []);
++            $modulo = $this->moduloService->reordenarFases($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['ordem'] ?? []);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 422);
+         } catch (\RuntimeException $e) {
+@@ -216,9 +243,11 @@
+         $user = service('authenticatedUser');
+ 
+         try {
+-            $this->moduloService->excluirFase($faseId, $moduloId, $user->empresaId);
++            $this->moduloService->excluirFase($faseId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 409);
+         }
+##### app/Controllers/RegistroController.php #####
+--- api-backend/app/Controllers/RegistroController.php	2026-08-27 00:13:17.660367500 -0300
++++ Levit-dev-guilherme-vb/app/Controllers/RegistroController.php	2026-09-06 02:16:43.977112500 -0300
+@@ -2,6 +2,7 @@
+ 
+ namespace App\Controllers;
+ 
++use App\Exceptions\AcessoNegadoException;
+ use App\Exceptions\NaoEncontradoException;
+ use App\Services\RegistroService;
+ 
+@@ -20,9 +21,11 @@
+         $busca = $this->request->getGet('busca');
+ 
+         try {
+-            $registros = $this->registroService->listarRegistros($moduloId, $user->empresaId, $busca);
++            $registros = $this->registroService->listarRegistros($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $busca);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->respondSuccess($registros, 200);
+@@ -34,9 +37,11 @@
+         $user  = service('authenticatedUser');
+ 
+         try {
+-            $registro = $this->registroService->criarRegistro($moduloId, $user->empresaId, $user->id, $dados);
++            $registro = $this->registroService->criarRegistro($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $user->id, $dados);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 422);
+         }
+@@ -50,9 +55,11 @@
+         $user  = service('authenticatedUser');
+ 
+         try {
+-            $registro = $this->registroService->atualizarRegistro($registroId, $moduloId, $user->empresaId, $user->id, $dados);
++            $registro = $this->registroService->atualizarRegistro($registroId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $user->id, $dados);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 422);
+         }
+@@ -65,9 +72,11 @@
+         $user = service('authenticatedUser');
+ 
+         try {
+-            $this->registroService->excluirRegistro($registroId, $moduloId, $user->empresaId);
++            $this->registroService->excluirRegistro($registroId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->respondSuccess(null, 200);
+##### app/Controllers/CandidatoController.php #####
+--- api-backend/app/Controllers/CandidatoController.php	2026-08-27 07:27:13.218994700 -0300
++++ Levit-dev-guilherme-vb/app/Controllers/CandidatoController.php	2026-09-06 02:16:43.946308200 -0300
+@@ -2,6 +2,7 @@
+ 
+ namespace App\Controllers;
+ 
++use App\Exceptions\AcessoNegadoException;
+ use App\Exceptions\NaoEncontradoException;
+ use App\Services\CandidatoService;
+ 
+@@ -45,21 +46,37 @@
+ 
+     public function kanban($moduloId)
+     {
++        $user = service('authenticatedUser');
++
+         try {
+-            $kanban = $this->candidatoService->listarKanban($moduloId, service('authenticatedUser')->empresaId);
++            $kanban = $this->candidatoService->listarKanban($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->respondSuccess($kanban, 200);
+     }
+ 
++    public function kanbanGlobal()
++    {
++        $user   = service('authenticatedUser');
++        $kanban = $this->candidatoService->listarKanbanGlobal($user->empresaId, $user->cargoId, $user->acessoTotal);
++
++        return $this->respondSuccess($kanban, 200);
++    }
++
+     public function detalhes($moduloId, $candidatoId)
+     {
++        $user = service('authenticatedUser');
++
+         try {
+-            $candidato = $this->candidatoService->buscarCandidato($candidatoId, $moduloId, service('authenticatedUser')->empresaId);
++            $candidato = $this->candidatoService->buscarCandidatoComPermissao($candidatoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->respondSuccess($candidato, 200);
+@@ -72,14 +89,12 @@
+ 
+         try {
+             $candidato = $this->candidatoService->moverFase(
+-                $candidatoId,
+-                $moduloId,
+-                $user->empresaId,
+-                $dados['fase_id'] ?? '',
+-                $user->id
++                $candidatoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['fase_id'] ?? '', $user->id
+             );
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 422);
+         }
+@@ -87,37 +102,38 @@
+         return $this->respondSuccess($candidato, 200);
+     }
+ 
+-    public function excluir($moduloId, $candidatoId)
++    public function moverFaseGlobal($candidatoId)
+     {
++        $dados = $this->request->getJSON(true) ?? [];
++        $user  = service('authenticatedUser');
++
+         try {
+-            $this->candidatoService->excluirCandidato($candidatoId, $moduloId, service('authenticatedUser')->empresaId);
++            $candidato = $this->candidatoService->moverFaseGlobalPorNome(
++                $candidatoId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados['fase'] ?? '', $user->id
++            );
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
++        } catch (\DomainException $e) {
++            return $this->respondError($e->getMessage(), 422);
+         }
+ 
+-        return $this->respondSuccess(null, 200);
+-    }
+-
+-    public function kanbanGlobal()
+-    {
+-        $kanban = $this->candidatoService->listarKanbanGlobal(service('authenticatedUser')->empresaId);
+-
+-        return $this->respondSuccess($kanban, 200);
++        return $this->respondSuccess($candidato, 200);
+     }
+ 
+-    public function moverFaseGlobal($candidatoId)
++    public function excluir($moduloId, $candidatoId)
+     {
+-        $dados = $this->request->getJSON(true) ?? [];
+-        $user  = service('authenticatedUser');
++        $user = service('authenticatedUser');
+ 
+         try {
+-            $candidato = $this->candidatoService->moverFaseGlobalPorNome($candidatoId, $user->empresaId, $dados['fase'] ?? '', $user->id);
++            $this->candidatoService->excluirCandidato($candidatoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
+-        } catch (\DomainException $e) {
+-            return $this->respondError($e->getMessage(), 422);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+-        return $this->respondSuccess($candidato, 200);
++        return $this->respondSuccess(null, 200);
+     }
+ }
+\ No newline at end of file
+##### app/Controllers/AutomacaoController.php #####
+--- api-backend/app/Controllers/AutomacaoController.php	2026-08-27 07:27:13.203322100 -0300
++++ Levit-dev-guilherme-vb/app/Controllers/AutomacaoController.php	2026-09-06 02:16:43.925800700 -0300
+@@ -2,6 +2,7 @@
+ 
+ namespace App\Controllers;
+ 
++use App\Exceptions\AcessoNegadoException;
+ use App\Exceptions\NaoEncontradoException;
+ use App\Services\AutomacaoService;
+ 
+@@ -31,9 +32,11 @@
+         $user = service('authenticatedUser');
+ 
+         try {
+-            $automacao = $this->automacaoService->criarAutomacao($moduloId, $user->empresaId, $user->id, $dados);
++            $automacao = $this->automacaoService->criarAutomacao($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $user->id, $dados);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 422);
+         } catch (\RuntimeException $e) {
+@@ -45,10 +48,14 @@
+ 
+     public function listar($moduloId)
+     {
++        $user = service('authenticatedUser');
++
+         try {
+-            $automacoes = $this->automacaoService->listarAutomacoes($moduloId, service('authenticatedUser')->empresaId);
++            $automacoes = $this->automacaoService->listarAutomacoes($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->respondSuccess($automacoes, 200);
+@@ -60,9 +67,11 @@
+         $user  = service('authenticatedUser');
+ 
+         try {
+-            $automacao = $this->automacaoService->alternarAtivo($automacaoId, $moduloId, $user->empresaId, (bool) ($dados['ativo'] ?? true));
++            $automacao = $this->automacaoService->alternarAtivo($automacaoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, (bool) ($dados['ativo'] ?? true));
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->respondSuccess($automacao, 200);
+@@ -70,10 +79,14 @@
+ 
+     public function excluir($moduloId, $automacaoId)
+     {
++        $user = service('authenticatedUser');
++
+         try {
+-            $this->automacaoService->excluirAutomacao($automacaoId, $moduloId, service('authenticatedUser')->empresaId);
++            $this->automacaoService->excluirAutomacao($automacaoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->respondSuccess(null, 200);
+##### app/Controllers/ArquivoController.php #####
+--- api-backend/app/Controllers/ArquivoController.php	2026-08-27 00:13:17.623101200 -0300
++++ Levit-dev-guilherme-vb/app/Controllers/ArquivoController.php	2026-09-06 02:16:43.914086500 -0300
+@@ -2,6 +2,7 @@
+ 
+ namespace App\Controllers;
+ 
++use App\Exceptions\AcessoNegadoException;
+ use App\Exceptions\NaoEncontradoException;
+ use App\Services\ArquivoService;
+ 
+@@ -24,9 +25,11 @@
+         }
+ 
+         try {
+-            $resultado = $this->arquivoService->enviarArquivo($moduloId, $user->empresaId, $user->id, $arquivo);
++            $resultado = $this->arquivoService->enviarArquivo($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $user->id, $arquivo);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         } catch (\DomainException $e) {
+             return $this->respondError($e->getMessage(), 422);
+         } catch (\RuntimeException $e) {
+@@ -41,9 +44,11 @@
+         $user = service('authenticatedUser');
+ 
+         try {
+-            $arquivo = $this->arquivoService->baixarArquivo($registroId, $moduloId, $user->empresaId);
++            $arquivo = $this->arquivoService->baixarArquivo($registroId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->response
+@@ -57,9 +62,11 @@
+         $user = service('authenticatedUser');
+ 
+         try {
+-            $this->arquivoService->excluirArquivo($registroId, $moduloId, $user->empresaId);
++            $this->arquivoService->excluirArquivo($registroId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+         } catch (NaoEncontradoException $e) {
+             return $this->respondError($e->getMessage(), 404);
++        } catch (AcessoNegadoException $e) {
++            return $this->respondError($e->getMessage(), 403);
+         }
+ 
+         return $this->respondSuccess(null, 200);
+##### app/Controllers/AuthController.php #####
+--- api-backend/app/Controllers/AuthController.php	2026-08-27 00:13:17.627172500 -0300
++++ Levit-dev-guilherme-vb/app/Controllers/AuthController.php	2026-09-06 02:16:43.920324200 -0300
+@@ -43,7 +43,10 @@
+             return $this->respondError($e->getMessage(), 500);
+         }
+ 
+-
++        $token = $this->jwtService->gerar([
++            'sub'        => $resultado['usuario']['id'],
++            'empresa_id' => $resultado['empresa']['id'],
++        ]);
+ 
+         return $this->respondSuccess(
+             $this->authService->montarRespostaAutenticacao($resultado['usuario'], $resultado['empresa']),
+@@ -85,4 +88,4 @@
+ 
+         return $this->respondSuccess(null, 200);
+     }
+-}
++}
+\ No newline at end of file

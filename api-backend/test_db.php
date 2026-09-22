@@ -1,0 +1,1 @@
+<?php require 'vendor/codeigniter4/framework/system/Test/bootstrap.php'; \ = \Config\Database::connect(); print_r(\->table('modulo')->get()->getResultArray()); print_r(\->table('campo_modulo')->get()->getResultArray());
