@@ -103,7 +103,7 @@ class AutomacaoService
 
         $config = $acao['configuracao'] ?? [];
 
-        if ($tipo === 'enviar_email' && (empty($config['destinatario_campo_id']) || empty($config['assunto']) || empty($config['corpo']))) {
+        if ($tipo === 'enviar_email' && ((empty($config['destinatario_campo_id']) && empty($config['destinatario'])) || empty($config['assunto']) || empty($config['corpo']))) {
             throw new \DomainException('Ação de e-mail precisa de destinatário, assunto e corpo.');
         }
 
