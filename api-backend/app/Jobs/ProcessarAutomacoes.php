@@ -46,7 +46,7 @@ class ProcessarAutomacoes extends BaseJob
                 ->findAll();
 
             foreach ($acoes as $acao) {
-                $this->executarAcao($acao, $dadosRegistro);
+                $this->executarAcao($acao, $dadosRegistro, $automacao['modulo_id']);
             }
 
             $logModel->insert([
@@ -79,25 +79,64 @@ class ProcessarAutomacoes extends BaseJob
         };
     }
 
-    private function executarAcao(array $acao, array $dadosRegistro): void
+    private function executarAcao(array $acao, array $dadosRegistro, string $moduloId): void
     {
         match ($acao['tipo']) {
-            'enviar_email' => $this->executarEnvioEmail($acao, $dadosRegistro),
+            'enviar_email' => $this->executarEnvioEmail($acao, $dadosRegistro, $moduloId),
             'webhook'      => $this->executarWebhook($acao, $dadosRegistro),
             default        => throw new \RuntimeException("Tipo de ação desconhecido: {$acao['tipo']}"),
         };
     }
 
-    private function executarEnvioEmail(array $acao, array $dadosRegistro): void
+    private function substituirVariaveis(string $texto, string $moduloId, array $dadosRegistro): string
     {
-        $config       = $acao['configuracao'];
-        $destinatario = $dadosRegistro[$config['destinatario_campo_id']] ?? null;
+        if (!preg_match_all('/\{\{(.*?)\}\}/', $texto, $matches)) {
+            return $texto;
+        }
 
-        if (! $destinatario) {
+        $campoModel = new \App\Models\ModuloCampoModel();
+        $campos = $campoModel->where('modulo_id', $moduloId)->findAll();
+        
+        $mapaNomesParaIds = [];
+        foreach ($campos as $campo) {
+            $mapaNomesParaIds[mb_strtolower(trim($campo['nome']))] = $campo['id'];
+        }
+
+        $textoSubstituido = $texto;
+        foreach ($matches[1] as $index => $nomeVariavel) {
+            $nomeLimpo = mb_strtolower(trim($nomeVariavel));
+            $valor = '';
+            
+            if (isset($mapaNomesParaIds[$nomeLimpo])) {
+                $campoId = $mapaNomesParaIds[$nomeLimpo];
+                $valor = $dadosRegistro[$campoId] ?? '';
+            }
+            
+            $textoSubstituido = str_replace($matches[0][$index], (string)$valor, $textoSubstituido);
+        }
+
+        return $textoSubstituido;
+    }
+
+    private function executarEnvioEmail(array $acao, array $dadosRegistro, string $moduloId): void
+    {
+        $config = $acao['configuracao'];
+        
+        $destinatarioBruto = $config['destinatario'] ?? '';
+        if (empty($destinatarioBruto) && !empty($config['destinatario_campo_id'])) {
+            $destinatarioBruto = $dadosRegistro[$config['destinatario_campo_id']] ?? '';
+        }
+
+        $destinatario = $this->substituirVariaveis($destinatarioBruto, $moduloId, $dadosRegistro);
+
+        if (empty($destinatario)) {
             throw new \RuntimeException('Não foi possível determinar o destinatário do e-mail.');
         }
 
-        service('email')->enviar($destinatario, $config['assunto'], $config['corpo']);
+        $assunto = $this->substituirVariaveis($config['assunto'] ?? '', $moduloId, $dadosRegistro);
+        $corpo   = $this->substituirVariaveis($config['corpo'] ?? '', $moduloId, $dadosRegistro);
+
+        service('email')->enviar($destinatario, $assunto, $corpo);
     }
 
     private function executarWebhook(array $acao, array $dadosRegistro): void

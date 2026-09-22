@@ -7,7 +7,7 @@ import { automacaoService } from '../services/automacaoService';
 import { GATILHO_INFO, ACAO_INFO, OPERADOR_INFO } from '../utils/automacaoConstants';
 
 function novaAcao() {
-  return { tipo: 'enviar_email', configuracao: { destinatario_campo_id: '', assunto: '', corpo: '' } };
+  return { tipo: 'enviar_email', configuracao: { destinatario: '', assunto: '', corpo: '' } };
 }
 
 export default function AutomacaoForm() {
@@ -94,7 +94,7 @@ export default function AutomacaoForm() {
     setAcoes((prev) =>
       prev.map((a, i) => {
         if (i !== index) return a;
-        if (tipo === 'enviar_email') return { tipo, configuracao: { destinatario_campo_id: '', assunto: '', corpo: '' } };
+        if (tipo === 'enviar_email') return { tipo, configuracao: { destinatario: '', assunto: '', corpo: '' } };
         if (tipo === 'webhook') return { tipo, configuracao: { url: '' } };
         if (tipo === 'notificacao') return { tipo, configuracao: { destinatario_campo_id: '', mensagem: '' } };
         return { tipo, configuracao: {} };
@@ -116,7 +116,7 @@ export default function AutomacaoForm() {
     nome.trim().length >= 2 &&
     !!moduloId &&
     acoes.every((a) => {
-      if (a.tipo === 'enviar_email') return a.configuracao.destinatario_campo_id && a.configuracao.assunto && a.configuracao.corpo;
+      if (a.tipo === 'enviar_email') return (a.configuracao.destinatario || a.configuracao.destinatario_campo_id) && a.configuracao.assunto && a.configuracao.corpo;
       if (a.tipo === 'webhook') return !!a.configuracao.url;
       if (a.tipo === 'notificacao') return a.configuracao.destinatario_campo_id && a.configuracao.mensagem;
       return false;
@@ -382,14 +382,18 @@ export default function AutomacaoForm() {
 
                 {acao.tipo === 'enviar_email' && (
                   <div className="flex flex-col gap-3.5 pt-4 border-t border-divider">
-                    <Select
-                      label="Destinatário"
-                      value={acao.configuracao.destinatario_campo_id || ''}
-                      onChange={(e) => handleAcaoConfigChange(index, 'destinatario_campo_id', e.target.value)}
-                      disabled={!moduloSelecionado}
+                    <Input
+                      label="Destinatário (E-mail)"
+                      value={acao.configuracao.destinatario || acao.configuracao.destinatario_campo_id || ''}
+                      onChange={(e) => {
+                        handleAcaoConfigChange(index, 'destinatario', e.target.value);
+                        if (acao.configuracao.destinatario_campo_id) {
+                          handleAcaoConfigChange(index, 'destinatario_campo_id', '');
+                        }
+                      }}
                       required
-                      placeholder="Campo com o e-mail do destinatário"
-                      options={camposModulo.map((c) => ({ value: c.id, label: c.nome }))}
+                      placeholder="Ex: admin@empresa.com ou {{Email}}"
+                      hint={camposModulo.length > 0 ? `Para enviar a um e-mail do registro, use: ${camposModulo.map((c) => `{{${c.nome}}}`).join(', ')}` : undefined}
                     />
 
                     <Input
