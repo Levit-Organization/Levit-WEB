@@ -5,13 +5,16 @@ function baixarBlob(blob, nomeArquivoPadrao, contentDisposition) {
   const nomeArquivo = match?.[1] || nomeArquivoPadrao;
 
   const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = nomeArquivo;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = nomeArquivo;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    window.URL.revokeObjectURL(url);
+  }
 }
 
 export async function extrairErroBlob(error) {

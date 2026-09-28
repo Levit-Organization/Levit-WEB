@@ -7,7 +7,6 @@ import AuthLayout from './AuthLayout';
 export default function ResetPassword() {
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
-  const [token, setToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -15,15 +14,14 @@ export default function ResetPassword() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token');
+
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const tokenParam = params.get('token');
-    if (tokenParam) {
-      setToken(tokenParam);
-    } else {
+    if (!token) {
       setError('Token de recuperação não fornecido na URL.');
     }
-  }, [location]);
+  }, [token]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

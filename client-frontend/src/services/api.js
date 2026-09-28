@@ -20,19 +20,43 @@ api.interceptors.request.use((config) => {
 
 // Interceptor: handle 401 responses globally
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Normaliza respostas da API: extrai response.data.data quando existir
+    if (response.data?.data !== undefined) {
+      response.data = response.data.data;
+    }
+    return response;
+  },
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('levit_token');
       localStorage.removeItem('levit_user');
       localStorage.removeItem('levit_empresa');
       // Only redirect if not already on auth pages
-      if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
+      if (
+        !window.location.pathname.startsWith('/login') &&
+        !window.location.pathname.startsWith('/register')
+      ) {
         window.location.href = '/login';
       }
     }
     return Promise.reject(error);
   }
 );
+
+/**
+ * Helper para criar uma função de fetch que repassa o AbortSignal
+ * do TanStack Query para o Axios, cancelando requisições obsoletas
+ * quando a query é invalidada ou o componente é desmontado.
+ *
+ * Uso nos hooks:
+ *   queryFn: ({ signal }) => apiGet('/rota', { signal })
+ *
+ * @param {string} url
+ * @param {object} [options]  - { params, signal, ...axiosConfig }
+ */
+export function apiGet(url, { signal, ...options } = {}) {
+  return api.get(url, { signal, ...options }).then((r) => r.data);
+}
 
 export default api;

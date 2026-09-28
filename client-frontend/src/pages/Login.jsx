@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Input, Button, Alert } from '../components/ui';
 import AuthLayout from './AuthLayout';
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, autenticado } = useAuth();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -24,7 +25,8 @@ export default function Login() {
 
     try {
       await login(email, senha);
-      navigate('/dashboard');
+      const destino = location.state?.from?.pathname || '/dashboard';
+      navigate(destino, { replace: true });
     } catch (err) {
       const msg = err.response?.data?.message || 'Erro ao fazer login. Tente novamente.';
       setErro(msg);

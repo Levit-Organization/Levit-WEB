@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { Button, Input, Select, Alert, Badge, Card, EmptyState, PageHeader } from '../components/ui';
+import { Button, Input, Select, Textarea, Alert, Badge, Card, EmptyState, PageHeader } from '../components/ui';
 import { moduloService } from '../services/moduloService';
 import { MODULO_ICON_OPTIONS } from '../utils/iconOptions';
 
@@ -43,7 +43,8 @@ export default function ModuleForm() {
   const [formData, setFormData] = useState({
     nome: '',
     icone: 'extension',
-    tipo: 'dados'
+    tipo: 'dados',
+    descricao: ''
   });
   const [campos, setCampos] = useState([]);
   const [camposOriginais, setCamposOriginais] = useState([]);
@@ -67,7 +68,8 @@ export default function ModuleForm() {
         setFormData({
           nome: modulo.nome,
           icone: modulo.icone || 'extension',
-          tipo: modulo.tipo || 'dados'
+          tipo: modulo.tipo || 'dados',
+          descricao: modulo.descricao || ''
         });
         if (modulo.campos) {
           setCampos(modulo.campos);
@@ -93,6 +95,7 @@ export default function ModuleForm() {
       nome: '',
       tipo: 'texto',
       opcoes: null,
+      publico: false,
       _isNew: true,
       _tempId: Date.now()
     }]);
@@ -294,6 +297,15 @@ export default function ModuleForm() {
             options={Object.entries(TIPO_INFO).map(([value, info]) => ({ value, label: info.label }))}
           />
 
+          <Textarea
+            label="Descrição do Módulo"
+            name="descricao"
+            value={formData.descricao}
+            onChange={handleInputChange}
+            placeholder="Ex: Utilizado para controlar vagas e candidatos."
+            hint="Opcional. Ajuda a detalhar o propósito deste módulo ou informações importantes."
+          />
+
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-sm font-medium">Ícone</label>
@@ -479,6 +491,18 @@ export default function ModuleForm() {
                           </select>
                           <span className="material-icons absolute right-2 top-1/2 -translate-y-1/2 text-[16px] text-light-text pointer-events-none">expand_more</span>
                         </div>
+
+                        {formData.tipo === 'recrutamento' && (
+                          <label className="flex items-center gap-2 cursor-pointer shrink-0 ml-2" title="Marque se este campo deve ser preenchido pelo candidato no formulário de inscrição.">
+                            <input
+                              type="checkbox"
+                              checked={!!campo.publico}
+                              onChange={(e) => handleFieldChange(index, 'publico', e.target.checked)}
+                              className="w-4 h-4 rounded border-divider-strong text-primary focus:ring-primary/20 cursor-pointer"
+                            />
+                            <span className="text-xs text-light-text whitespace-nowrap">Preenchido pelo candidato</span>
+                          </label>
+                        )}
 
                         {campo._isNew && (
                           <Badge variant="primary" size="sm" className="uppercase tracking-wide shrink-0">

@@ -1,72 +1,63 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { Button, Input, Select, Drawer, Alert, Spinner, Card, EmptyState, PageHeader } from '../components/ui';
-import { moduloService } from '../services/moduloService';
-import { registroService } from '../services/registroService';
+import { useQuery } from '@tanstack/react-query';
+import { apiGet } from '../services/api';
+import {
+  useRegistros,
+  useCriarRegistro,
+  useAtualizarRegistro,
+  useDeletarRegistro,
+} from '../hooks/useRegistros';
 import { arquivoService } from '../services/arquivoService';
 
 export default function ModuleRecords() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [modulo, setModulo] = useState(null);
-  const [registros, setRegistros] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  // ── UI-only state (não afeta fetch) ──────────────────────────────────────
   const [busca, setBusca] = useState('');
+  const [buscaAtiva, setBuscaAtiva] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingRegistro, setEditingRegistro] = useState(null);
   const [formDados, setFormDados] = useState({});
   const [selectedFile, setSelectedFile] = useState(null);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchData();
-  }, [id]);
+  // ── Dados do módulo ───────────────────────────────────────────────────────
+  const {
+    data: modulo,
+    isLoading: loadingModulo,
+    isError: moduloError,
+  } = useQuery({
+    queryKey: ['modulo', id],
+    queryFn: ({ signal }) => apiGet(`/modulos/${id}`, { signal }),
+    enabled: !!id,
+    onSuccess: (data) => {
+      if (data?.tipo === 'recrutamento') navigate('/recrutamento', { replace: true });
+      if (data?.tipo === 'financeiro') navigate(`/modulos/${id}/financeiro`, { replace: true });
+    },
+  });
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [moduloData, registrosData] = await Promise.all([
-        moduloService.getById(id),
-        registroService.getAll(id)
-      ]);
-      
-      if (moduloData.tipo === 'recrutamento') {
-        navigate('/recrutamento', { replace: true });
-        return;
-      }
+  // ── Registros com busca ───────────────────────────────────────────────────
+  const {
+    data: registros = [],
+    isLoading: loadingRegistros,
+    isFetching,
+  } = useRegistros(id, { busca: buscaAtiva });
 
-      if (moduloData.tipo === 'financeiro') {
-        navigate(`/modulos/${id}/financeiro`, { replace: true });
-        return;
-      }
+  const loading = loadingModulo || loadingRegistros;
 
-      setModulo(moduloData);
-      setRegistros(registrosData);
-    } catch (err) {
-      setError('Erro ao carregar dados do módulo.');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ── Mutations ─────────────────────────────────────────────────────────────
+  const { mutateAsync: criarRegistro, isPending: criando } = useCriarRegistro(id);
+  const { mutateAsync: atualizarRegistro, isPending: atualizando } = useAtualizarRegistro(id);
+  const { mutateAsync: deletarRegistro } = useDeletarRegistro(id);
+  const saving = criando || atualizando;
 
-  const handleSearch = async () => {
-    try {
-      setLoading(true);
-      const data = await registroService.getAll(id, busca);
-      setRegistros(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSearchKeyDown = (e) => {
-    if (e.key === 'Enter') handleSearch();
-  };
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const handleSearch = () => setBuscaAtiva(busca);
+  const handleSearchKeyDown = (e) => { if (e.key === 'Enter') handleSearch(); };
 
   const openNewForm = () => {
     setEditingRegistro(null);
@@ -90,32 +81,24 @@ export default function ModuleRecords() {
   };
 
   const handleFieldChange = (campoId, value) => {
-    setFormDados(prev => ({ ...prev, [campoId]: value }));
+    setFormDados((prev) => ({ ...prev, [campoId]: value }));
   };
 
   const handleSave = async () => {
     try {
-      setSaving(true);
       setError('');
       if (modulo?.tipo === 'arquivo') {
-        if (!selectedFile) {
-          throw new Error('Selecione um arquivo.');
-        }
+        if (!selectedFile) throw new Error('Selecione um arquivo.');
         await arquivoService.upload(id, selectedFile);
+      } else if (editingRegistro) {
+        await atualizarRegistro({ registroId: editingRegistro.id, dados: formDados });
       } else {
-        if (editingRegistro) {
-          await registroService.update(id, editingRegistro.id, { dados: formDados });
-        } else {
-          await registroService.create(id, { dados: formDados });
-        }
+        await criarRegistro(formDados);
       }
       closeForm();
       setSelectedFile(null);
-      fetchData();
     } catch (err) {
       setError(err.message || err.response?.data?.message || 'Erro ao salvar registro.');
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -125,11 +108,9 @@ export default function ModuleRecords() {
       if (modulo?.tipo === 'arquivo') {
         await arquivoService.delete(id, registroId);
       } else {
-        await registroService.delete(id, registroId);
+        await deletarRegistro(registroId);
       }
-      fetchData();
-    } catch (err) {
-      console.error(err);
+    } catch {
       alert('Erro ao excluir.');
     }
   };
@@ -137,14 +118,14 @@ export default function ModuleRecords() {
   const handleDownload = async (registroId, fileName) => {
     try {
       await arquivoService.downloadFile(id, registroId, fileName);
-    } catch (e) {
+    } catch {
       alert('Erro ao baixar arquivo.');
     }
   };
 
   const renderFieldInput = (campo) => {
     const value = formDados[campo.id] ?? '';
-    
+
     switch (campo.tipo) {
       case 'texto':
         return (
@@ -187,8 +168,6 @@ export default function ModuleRecords() {
   };
 
   const campos = modulo?.campos || [];
-
-  // Get visible columns (max 5 for the table, show all in form)
   const visibleCampos = campos.slice(0, 5);
 
   if (loading && !modulo) {
@@ -240,17 +219,17 @@ export default function ModuleRecords() {
           <EmptyState
             icon={modulo?.tipo === 'arquivo' ? 'folder_open' : 'inbox'}
             size="lg"
-            title={busca.trim() ? 'Nenhum resultado' : 'Nenhum registro ainda'}
+            title={buscaAtiva.trim() ? 'Nenhum resultado' : 'Nenhum registro ainda'}
             description={
-              busca.trim()
-                ? `Nada bate com "${busca.trim()}" neste módulo. Tente outro termo.`
+              buscaAtiva.trim()
+                ? `Nada bate com "${buscaAtiva.trim()}" neste módulo. Tente outro termo.`
                 : modulo?.tipo === 'arquivo'
                   ? 'Este módulo guarda arquivos. Envie o primeiro para começar a organizar os documentos aqui.'
                   : 'Cada registro é uma linha com os campos que você configurou neste módulo.'
             }
-            actionLabel={busca.trim() ? undefined : modulo?.tipo === 'arquivo' ? 'Enviar arquivo' : 'Criar primeiro registro'}
-            actionIcon={busca.trim() ? undefined : modulo?.tipo === 'arquivo' ? 'upload' : 'add'}
-            onAction={busca.trim() ? undefined : openNewForm}
+            actionLabel={buscaAtiva.trim() ? undefined : modulo?.tipo === 'arquivo' ? 'Enviar arquivo' : 'Criar primeiro registro'}
+            actionIcon={buscaAtiva.trim() ? undefined : modulo?.tipo === 'arquivo' ? 'upload' : 'add'}
+            onAction={buscaAtiva.trim() ? undefined : openNewForm}
           />
         </Card>
       ) : (
@@ -265,7 +244,7 @@ export default function ModuleRecords() {
                       <th className="text-left px-4 py-3 font-semibold text-xs text-light-text uppercase tracking-wider">Tamanho</th>
                     </>
                   ) : (
-                    visibleCampos.map(campo => (
+                    visibleCampos.map((campo) => (
                       <th key={campo.id} className="text-left px-4 py-3 font-semibold text-xs text-light-text uppercase tracking-wider">
                         {campo.nome}
                       </th>
@@ -288,7 +267,7 @@ export default function ModuleRecords() {
                         </td>
                       </>
                     ) : (
-                      visibleCampos.map(campo => (
+                      visibleCampos.map((campo) => (
                         <td key={campo.id} className="px-4 py-3 truncate max-w-[200px]" title={registro.dados?.[campo.id] ?? '--'}>
                           {registro.dados?.[campo.id] ?? <span className="text-light-text">--</span>}
                         </td>
@@ -367,7 +346,7 @@ export default function ModuleRecords() {
         ) : (
           <>
             <div className="flex flex-col gap-5">
-              {campos.map(campo => (
+              {campos.map((campo) => (
                 <div key={campo.id}>
                   <label className="block text-sm font-medium mb-1.5 text-ink">
                     {campo.nome}
@@ -394,4 +373,3 @@ export default function ModuleRecords() {
     </Layout>
   );
 }
-

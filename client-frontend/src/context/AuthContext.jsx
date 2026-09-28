@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
@@ -45,29 +45,29 @@ export function AuthProvider({ children }) {
     carregarPerfil();
   }, [carregarPerfil]);
 
-  const login = async (email, senha) => {
+  const login = useCallback(async (email, senha) => {
     const res = await api.post('/auth/login', { email, senha });
-    const { token, usuario: usr, empresa: emp } = res.data.data;
+    const { token, usuario: usr, empresa: emp } = res.data;
     localStorage.setItem('levit_token', token);
     localStorage.setItem('levit_user', JSON.stringify(usr));
     localStorage.setItem('levit_empresa', JSON.stringify(emp));
     setUsuario(usr);
     setEmpresa(emp);
-    return res.data.data;
-  };
+    return res.data;
+  }, []);
 
-  const registrar = async (dados) => {
+  const registrar = useCallback(async (dados) => {
     const res = await api.post('/auth/registrar', dados);
-    const { token, usuario: usr, empresa: emp } = res.data.data;
+    const { token, usuario: usr, empresa: emp } = res.data;
     localStorage.setItem('levit_token', token);
     localStorage.setItem('levit_user', JSON.stringify(usr));
     localStorage.setItem('levit_empresa', JSON.stringify(emp));
     setUsuario(usr);
     setEmpresa(emp);
-    return res.data.data;
-  };
+    return res.data;
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await api.post('/auth/logout');
     } catch {
@@ -79,7 +79,7 @@ export function AuthProvider({ children }) {
       setUsuario(null);
       setEmpresa(null);
     }
-  };
+  }, []);
 
   // Helper: get user initials
   const iniciais = usuario?.nome
@@ -93,19 +93,21 @@ export function AuthProvider({ children }) {
 
   const autenticado = !!usuario;
 
+  const contextValue = useMemo(() => ({
+    usuario,
+    empresa,
+    loading,
+    autenticado,
+    iniciais,
+    primeiroNome,
+    login,
+    registrar,
+    logout,
+    carregarPerfil,
+  }), [usuario, empresa, loading, autenticado, iniciais, primeiroNome, login, registrar, logout, carregarPerfil]);
+
   return (
-    <AuthContext.Provider value={{
-      usuario,
-      empresa,
-      loading,
-      autenticado,
-      iniciais,
-      primeiroNome,
-      login,
-      registrar,
-      logout,
-      carregarPerfil,
-    }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

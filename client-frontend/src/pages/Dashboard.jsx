@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Layout from '../components/Layout';
@@ -14,9 +13,11 @@ import {
   tempoRelativo,
   estaParado,
 } from '../components/ui';
-import { moduloService } from '../services/moduloService';
-import { equipeService } from '../services/equipeService';
-import { recrutamentoService } from '../services/recrutamentoService';
+import { useModulos, useVagas, useOutrosModulos } from '../hooks/useModulos';
+import { useEquipe } from '../hooks/useEquipe';
+import { useQuery } from '@tanstack/react-query';
+import { apiGet } from '../services/api';
+import { kanbanKey } from '../hooks/useKanban';
 
 function SecaoTitulo({ children, acao }) {
   return (
@@ -29,86 +30,28 @@ function SecaoTitulo({ children, acao }) {
 
 export default function Dashboard() {
   const { primeiroNome, empresa } = useAuth();
-  const [modulos, setModulos] = useState([]);
-  const [loadingModulos, setLoadingModulos] = useState(true);
 
-  const [equipe, setEquipe] = useState([]);
-  const [loadingEquipe, setLoadingEquipe] = useState(true);
-  const [equipeIndisponivel, setEquipeIndisponivel] = useState(false);
-  const [equipeErro, setEquipeErro] = useState('');
-
-  const [vagaDestaque, setVagaDestaque] = useState(null);
-  const [vagaKanban, setVagaKanban] = useState(null);
-  const [loadingVaga, setLoadingVaga] = useState(false);
-  const [vagaIndisponivel, setVagaIndisponivel] = useState(false);
-  const [vagaErro, setVagaErro] = useState('');
-
-  useEffect(() => {
-    fetchModulos();
-    fetchEquipe();
-  }, []);
-
-  useEffect(() => {
-    const vagas = modulos.filter((m) => m.tipo === 'recrutamento');
-    const vaga = vagas[vagas.length - 1] || null;
-    setVagaDestaque(vaga);
-    if (vaga) {
-      fetchKanbanDaVaga(vaga.id);
-    }
-  }, [modulos]);
-
-  const fetchModulos = async () => {
-    try {
-      setLoadingModulos(true);
-      const data = await moduloService.getAll();
-      setModulos(data);
-    } catch (error) {
-      console.error('Erro ao carregar módulos:', error);
-    } finally {
-      setLoadingModulos(false);
-    }
-  };
-
-  const fetchEquipe = async () => {
-    try {
-      setLoadingEquipe(true);
-      setEquipeErro('');
-      const data = await equipeService.listarMembros();
-      setEquipe(data || []);
-    } catch (error) {
-      console.error('Erro ao carregar equipe:', error);
-      if (error.response?.status === 403) {
-        setEquipeIndisponivel(true);
-      } else {
-        setEquipeErro(error.response?.data?.message || 'Erro ao carregar a equipe.');
-      }
-    } finally {
-      setLoadingEquipe(false);
-    }
-  };
-
-  const fetchKanbanDaVaga = async (moduloId) => {
-    try {
-      setLoadingVaga(true);
-      setVagaIndisponivel(false);
-      setVagaErro('');
-      const kanban = await recrutamentoService.getKanbanDaVaga(moduloId);
-      setVagaKanban(kanban || {});
-    } catch (error) {
-      console.error('Erro ao carregar candidatos da vaga:', error);
-      if (error.response?.status === 403) {
-        setVagaIndisponivel(true);
-      } else {
-        setVagaErro(error.response?.data?.message || 'Erro ao carregar os candidatos desta vaga.');
-      }
-    } finally {
-      setLoadingVaga(false);
-    }
-  };
-
-  const vagas = modulos.filter((m) => m.tipo === 'recrutamento');
+  // ── Dados via TanStack Query ──────────────────────────────────────────────
+  const { data: modulos = [], isLoading: loadingModulos } = useModulos();
+  const vagas   = modulos.filter((m) => m.tipo === 'recrutamento');
   const outrosModulos = modulos.filter((m) => m.tipo !== 'recrutamento');
 
+  const vagaDestaque = vagas[vagas.length - 1] ?? null;
+
+  const { data: equipe = [], isLoading: loadingEquipe, isError: equipeError, error: equipeErrorObj } = useEquipe();
+  const equipeIndisponivel = equipeErrorObj?.response?.status === 403;
+  const equipeErro = equipeIndisponivel ? '' : (equipeErrorObj?.response?.data?.message || (equipeError ? 'Erro ao carregar a equipe.' : ''));
+
+  const { data: vagaKanban, isLoading: loadingVaga, isError: vagaError, error: vagaErrorObj } = useQuery({
+    queryKey: kanbanKey(vagaDestaque?.id),
+    queryFn: ({ signal }) => apiGet(`/modulos/${vagaDestaque.id}/kanban`, { signal }),
+    enabled: !!vagaDestaque?.id,
+  });
+
+  const vagaIndisponivel = vagaErrorObj?.response?.status === 403;
+  const vagaErro = vagaIndisponivel ? '' : (vagaErrorObj?.response?.data?.message || (vagaError ? 'Erro ao carregar os candidatos desta vaga.' : ''));
+
+  // ── Métricas derivadas ────────────────────────────────────────────────────
   const fasesDaVaga = vagaKanban ? Object.entries(vagaKanban) : [];
   const candidatosDaVaga = fasesDaVaga.flatMap(([, fase]) => fase.candidatos || []);
   const totalCandidatosVaga = candidatosDaVaga.length;
@@ -150,20 +93,17 @@ export default function Dashboard() {
         ) : (
           <>
             <StatCard
-              icon="work_outline"
               value={vagas.length}
               label={vagas.length === 1 ? 'Vaga aberta' : 'Vagas abertas'}
               variant="primary"
             />
             <StatCard
-              icon="person_search"
               value={totalCandidatosVaga}
               label="Candidatos no funil"
               hint={vagaDestaque?.nome}
               variant="info"
             />
             <StatCard
-              icon="groups"
               value={membrosAtivos}
               label={membrosAtivos === 1 ? 'Pessoa na equipe' : 'Pessoas na equipe'}
               variant="success"
@@ -176,7 +116,6 @@ export default function Dashboard() {
               }
             />
             <StatCard
-              icon="schedule"
               value={paradosVaga}
               label="Parados há mais de 14 dias"
               hint={paradosVaga > 0 ? 'Precisam de uma resposta' : 'Funil em dia'}
@@ -186,169 +125,8 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* FUNIL + EQUIPE */}
-      <section className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-8 shrink-0">
-        {/* Funil da vaga em destaque */}
-        <Card className="lg:col-span-3 min-w-0">
-          <SecaoTitulo
-            acao={
-              vagaDestaque && (
-                <Link to="/recrutamento" className="text-sm text-primary font-semibold hover:underline shrink-0">
-                  Abrir funil
-                </Link>
-              )
-            }
-          >
-            {vagaDestaque ? vagaDestaque.nome : 'Funil de recrutamento'}
-          </SecaoTitulo>
-
-          {loadingModulos || loadingVaga ? (
-            <div className="flex gap-2.5">
-              {[1, 2, 3, 4].map((s) => (
-                <div key={s} className="flex-1">
-                  <Skeleton className="h-3 w-16 mb-2" />
-                  <Skeleton className="h-16 w-full rounded-lg" />
-                </div>
-              ))}
-            </div>
-          ) : !vagaDestaque ? (
-            <EmptyState
-              size="sm"
-              icon="work_outline"
-              title="Nenhuma vaga aberta"
-              description="Crie uma vaga para montar o funil de etapas e começar a receber candidaturas."
-              actionLabel="Criar vaga"
-              actionIcon="add"
-              actionTo="/modulos/novo"
-              className="py-4"
-            />
-          ) : vagaIndisponivel ? (
-            <EmptyState size="sm" icon="lock" title="Sem acesso" description="Seu cargo não tem permissão para ver esta vaga." className="py-4" />
-          ) : vagaErro ? (
-            <EmptyState size="sm" icon="error_outline" title="Não foi possível carregar" description={vagaErro} className="py-4" />
-          ) : totalCandidatosVaga === 0 ? (
-            <EmptyState
-              size="sm"
-              icon="person_search"
-              title="Nenhum candidato ainda"
-              description="Assim que alguém se candidatar, o funil aparece aqui com o avanço por etapa."
-              className="py-4"
-            />
-          ) : (
-            <>
-              {/* Barra do funil: largura proporcional ao volume por etapa */}
-              <div className="flex gap-1 mb-4">
-                {fasesDaVaga.map(([faseId, fase], indice) => {
-                  const qtd = fase.candidatos?.length || 0;
-                  const cor = coresDaFase(indice, fasesDaVaga.length);
-                  return (
-                    <div
-                      key={faseId}
-                      className={`h-1.5 rounded-full ${qtd ? cor.dot : 'bg-divider'}`}
-                      style={{ flex: Math.max(qtd, 0.35) }}
-                      title={`${fase.fase}: ${qtd}`}
-                    />
-                  );
-                })}
-              </div>
-
-              <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${Math.min(fasesDaVaga.length, 5)}, minmax(0, 1fr))` }}>
-                {fasesDaVaga.slice(0, 5).map(([faseId, fase], indice) => {
-                  const cor = coresDaFase(indice, fasesDaVaga.length);
-                  const qtd = fase.candidatos?.length || 0;
-
-                  return (
-                    <div key={faseId} className="min-w-0">
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${cor.dot}`} />
-                        <span className="text-2xs font-semibold uppercase tracking-wide text-light-text truncate">
-                          {fase.fase}
-                        </span>
-                      </div>
-                      <p className={`text-xl font-bold tabular ${qtd ? cor.text : 'text-faint'}`}>{qtd}</p>
-                      <div className="mt-2 flex -space-x-1.5">
-                        {(fase.candidatos || []).slice(0, 4).map((c) => (
-                          <Avatar key={c.id} name={c.nome} size="xs" ring />
-                        ))}
-                        {qtd > 4 && (
-                          <span className="w-6 h-6 rounded-full bg-background ring-2 ring-surface flex items-center justify-center text-[9px] font-bold text-light-text">
-                            +{qtd - 4}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </Card>
-
-        {/* Equipe */}
-        <Card className="lg:col-span-2 min-w-0">
-          <SecaoTitulo
-            acao={
-              <Link to="/team" className="text-sm text-primary font-semibold hover:underline shrink-0">
-                Ver equipe
-              </Link>
-            }
-          >
-            Equipe
-          </SecaoTitulo>
-
-          {loadingEquipe ? (
-            <div className="flex flex-col gap-3.5">
-              {[1, 2, 3].map((s) => (
-                <div key={s} className="flex items-center gap-3">
-                  <Skeleton className="w-9 h-9 rounded-full shrink-0" />
-                  <div className="flex-1">
-                    <Skeleton className="h-3.5 w-28 mb-1.5" />
-                    <Skeleton className="h-3 w-20" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : equipeIndisponivel ? (
-            <EmptyState size="sm" icon="lock" title="Sem acesso" description="Seu cargo não tem permissão para ver a equipe." className="py-4" />
-          ) : equipeErro ? (
-            <EmptyState size="sm" icon="error_outline" title="Não foi possível carregar" description={equipeErro} className="py-4" />
-          ) : equipe.length === 0 ? (
-            <EmptyState
-              size="sm"
-              icon="group_add"
-              title="Só você por aqui"
-              description="Convide quem participa das contratações para dividir o acompanhamento das vagas."
-              actionLabel="Convidar pessoa"
-              actionIcon="person_add"
-              actionTo="/team"
-              className="py-4"
-            />
-          ) : (
-            <div className="flex flex-col">
-              {equipe.slice(0, 5).map((membro) => (
-                <div key={membro.id} className="flex items-center gap-3 py-2">
-                  <Avatar name={membro.nome} size="md" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-ink truncate">{membro.nome}</p>
-                    <p className="text-2xs text-light-text truncate">{membro.cargo_nome || 'Sem cargo'}</p>
-                  </div>
-                  {membro.status === 'Pendente' && (
-                    <Badge variant="warning" size="sm">Convite pendente</Badge>
-                  )}
-                </div>
-              ))}
-              {equipe.length > 5 && (
-                <p className="text-2xs text-light-text pt-2">
-                  e mais {equipe.length - 5} {equipe.length - 5 === 1 ? 'pessoa' : 'pessoas'}
-                </p>
-              )}
-            </div>
-          )}
-        </Card>
-      </section>
-
       {/* MÓDULOS */}
-      <section className="mb-4 shrink-0">
+      <section className="mb-8 shrink-0">
         <SecaoTitulo
           acao={<Button to="/modulos/novo" size="sm" variant="secondary" icon="add">Novo módulo</Button>}
         >
@@ -411,6 +189,167 @@ export default function Dashboard() {
             </Link>
           </div>
         )}
+      </section>
+
+      {/* FUNIL + EQUIPE */}
+      <section className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4 shrink-0">
+        {/* Funil da vaga em destaque */}
+        <Card className="lg:col-span-3 min-w-0">
+          <SecaoTitulo
+            acao={
+              vagaDestaque && (
+                <Link to="/recrutamento" className="text-sm text-primary font-semibold hover:underline shrink-0">
+                  Abrir funil
+                </Link>
+              )
+            }
+          >
+            {vagaDestaque ? vagaDestaque.nome : 'Funil de recrutamento'}
+          </SecaoTitulo>
+
+          {loadingModulos || loadingVaga ? (
+            <div className="flex gap-2.5">
+              {[1, 2, 3, 4].map((s) => (
+                <div key={s} className="flex-1">
+                  <Skeleton className="h-3 w-16 mb-2" />
+                  <Skeleton className="h-16 w-full rounded-lg" />
+                </div>
+              ))}
+            </div>
+          ) : !vagaDestaque ? (
+            <EmptyState
+              size="sm"
+              icon="work_outline"
+              title="Nenhuma vaga aberta"
+              description="Crie uma vaga para montar o funil de etapas e começar a receber candidaturas."
+              actionLabel="Criar vaga"
+              actionIcon="add"
+              actionTo="/modulos/novo"
+              className="py-4"
+            />
+          ) : vagaIndisponivel ? (
+            <EmptyState size="sm" icon="lock" title="Sem acesso" description="Seu cargo não tem permissão para ver esta vaga." className="py-4" />
+          ) : vagaErro ? (
+            <EmptyState size="sm" icon="error_outline" title="Não foi possível carregar" description={vagaErro} className="py-4" />
+          ) : totalCandidatosVaga === 0 ? (
+            <EmptyState
+              size="sm"
+              icon="person_search"
+              title="Nenhum candidato ainda"
+              description="Assim que alguém se candidatar, o funil aparece aqui com o avanço por etapa."
+              className="py-4"
+            />
+          ) : (
+            <>
+              <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(fasesDaVaga.length, 5)}, minmax(0, 1fr))` }}>
+                {fasesDaVaga.slice(0, 5).map(([faseId, fase], indice) => {
+                  const cor = coresDaFase(indice, fasesDaVaga.length);
+                  const qtd = fase.candidatos?.length || 0;
+
+                  return (
+                    <div key={faseId} className="min-w-0 bg-background rounded-lg p-3 flex flex-col h-full border border-divider">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className={`h-2 w-2 rounded-full shrink-0 ${cor.dot}`} />
+                          <span className="text-xs font-semibold uppercase tracking-wide text-ink truncate">
+                            {fase.fase}
+                          </span>
+                        </div>
+                        <span className={`text-xs font-bold ${qtd ? cor.text : 'text-faint'}`}>{qtd}</span>
+                      </div>
+
+                      <div className="flex flex-col gap-2 flex-1">
+                        {(fase.candidatos || []).slice(0, 4).map((c) => (
+                          <div key={c.id} className="bg-surface border border-divider p-2 rounded-md shadow-sm flex items-center gap-2">
+                            <Avatar name={c.nome} size="xs" />
+                            <span className="text-xs font-medium text-ink truncate">{c.nome}</span>
+                          </div>
+                        ))}
+                        {qtd > 4 && (
+                          <div className="text-center py-1 mt-auto">
+                            <span className="text-xs text-light-text hover:text-primary cursor-pointer font-medium">
+                              +{qtd - 4} candidatos
+                            </span>
+                          </div>
+                        )}
+                        {qtd === 0 && (
+                          <div className="flex-1 border-2 border-dashed border-divider rounded-md flex items-center justify-center py-4">
+                            <span className="text-2xs text-faint">Vazio</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </Card>
+
+        {/* Equipe */}
+        <Card className="lg:col-span-2 min-w-0">
+          <SecaoTitulo
+            acao={
+              <Link to="/team" className="text-sm text-primary font-semibold hover:underline shrink-0">
+                Ver equipe
+              </Link>
+            }
+          >
+            Equipe
+          </SecaoTitulo>
+
+          {loadingEquipe ? (
+            <div className="flex flex-col gap-3.5">
+              {[1, 2, 3].map((s) => (
+                <div key={s} className="flex items-center gap-3">
+                  <Skeleton className="w-9 h-9 rounded-full shrink-0" />
+                  <div className="flex-1">
+                    <Skeleton className="h-3.5 w-28 mb-1.5" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : equipeIndisponivel ? (
+            <EmptyState size="sm" icon="lock" title="Sem acesso" description="Seu cargo não tem permissão para ver a equipe." className="py-4" />
+          ) : equipeErro ? (
+            <EmptyState size="sm" icon="error_outline" title="Não foi possível carregar" description={equipeErro} className="py-4" />
+          ) : equipe.length === 0 ? (
+            <EmptyState
+              size="sm"
+              icon="group_add"
+              title="Só você por aqui"
+              description="Convide quem participa das contratações para dividir o acompanhamento das vagas."
+              actionLabel="Convidar pessoa"
+              actionIcon="person_add"
+              actionTo="/team"
+              className="py-4"
+            />
+          ) : (
+            <div className="flex flex-col">
+              {equipe.slice(0, 5).map((membro) => (
+                <div key={membro.id} className="flex items-center justify-between gap-3 py-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar name={membro.nome} size="md" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-ink truncate">{membro.nome}</p>
+                    </div>
+                  </div>
+                  {membro.status === 'Pendente' ? (
+                    <Badge variant="warning" size="sm">Pendente</Badge>
+                  ) : (
+                    <Badge variant="default" size="sm">{membro.cargo_nome || 'Sem cargo'}</Badge>
+                  )}
+                </div>
+              ))}
+              {equipe.length > 5 && (
+                <p className="text-2xs text-light-text pt-2">
+                  e mais {equipe.length - 5} {equipe.length - 5 === 1 ? 'pessoa' : 'pessoas'}
+                </p>
+              )}
+            </div>
+          )}
+        </Card>
       </section>
     </Layout>
   );
