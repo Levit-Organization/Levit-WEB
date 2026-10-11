@@ -40,6 +40,7 @@ const CAMPO_TIPO_INFO = {
   selecao: { label: 'Lista de opções', icon: 'list_alt' },
   responsavel: { label: 'Responsável', icon: 'person' },
   prazo: { label: 'Prazo', icon: 'event_available' },
+  recorrencia: { label: 'Repetição', icon: 'event_repeat' },
 };
 
 /** Modelos agrupados: primeiro os segmentos em que o Levit foca, depois os usos gerais. */
@@ -55,6 +56,7 @@ const GRUPOS_DE_MODELOS = Object.entries(
 const CAMPO_TIPO_DICA = {
   responsavel: 'Uma pessoa da equipe. Ela vê os itens dela em "Meus itens" e pode ser avisada pelas automações.',
   prazo: 'Itens atrasados aparecem em "Precisa da sua atenção". Um item sai dos atrasados quando uma coluna de lista dele fica em Concluído, Entregue, Pago ou parecido.',
+  recorrencia: 'Para o que se repete (todo mês, todo ano…). Quando um item com repetição é concluído, o Levit cria o próximo com o prazo avançado e o status de volta ao início.',
 };
 
 export default function ModuleForm() {

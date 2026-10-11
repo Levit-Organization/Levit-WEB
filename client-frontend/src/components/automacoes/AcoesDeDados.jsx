@@ -21,7 +21,7 @@ export function AcaoAtualizarCampo({ configuracao, campos, onChange }) {
           placeholder="Selecione a coluna"
           options={campos.map((c) => ({ value: c.id, label: c.nome }))}
         />
-        {['selecao', 'responsavel', 'prazo'].includes(campo?.tipo) ? (
+        {['selecao', 'responsavel', 'prazo', 'recorrencia'].includes(campo?.tipo) ? (
           <CampoValor label="Novo valor" campo={campo} value={configuracao.valor || ''} onChange={(v) => onChange({ valor: v })} />
         ) : (
           <Input

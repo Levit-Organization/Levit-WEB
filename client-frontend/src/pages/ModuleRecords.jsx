@@ -23,6 +23,8 @@ import { useAuth } from '../hooks/useAuth';
 import SeloPrazo from '../components/prazos/SeloPrazo';
 import PessoaResponsavel from '../components/prazos/PessoaResponsavel';
 import { itemConcluido, opcaoDeConclusao } from '../utils/prazos';
+import { REPETICOES, rotuloDaRepeticao } from '../utils/recorrencia';
+import ImportarPlanilha from '../components/importacao/ImportarPlanilha';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { usePagination } from '../hooks/usePagination';
 import { useToast, useConfirm } from '../hooks/useFeedback';
@@ -100,6 +102,7 @@ export default function ModuleRecords() {
     [pessoasQuery.data]
   );
   const [soMeus, setSoMeus] = useState(false);
+  const [importando, setImportando] = useState(false);
 
   const colunas = useMemo(() => {
     if (ehArquivo) {
@@ -294,6 +297,14 @@ export default function ModuleRecords() {
       case 'data':
       case 'prazo':
         return <Input type="date" {...comum} />;
+      case 'recorrencia':
+        return (
+          <Select
+            placeholder="Não repete"
+            options={REPETICOES.map((r) => ({ value: r.valor, label: r.rotulo }))}
+            {...comum}
+          />
+        );
       case 'responsavel':
         return (
           <Select
@@ -315,7 +326,7 @@ export default function ModuleRecords() {
     }
   };
 
-  const TIPOS = { texto: 'Texto', numero: 'Número', data: 'Data', selecao: 'Seleção', responsavel: 'Pessoa da equipe', prazo: 'Data' };
+  const TIPOS = { texto: 'Texto', numero: 'Número', data: 'Data', selecao: 'Seleção', responsavel: 'Pessoa da equipe', prazo: 'Data', recorrencia: 'Repetição' };
 
   // --- Renderização -----------------------------------------------------------
   if (moduloQuery.isLoading) {
@@ -369,6 +380,11 @@ export default function ModuleRecords() {
             <Button to={`/modulos/${id}/editar`} variant="secondary" icon="settings">
               Configurar
             </Button>
+            {!ehArquivo && campos.length > 0 && (
+              <Button variant="secondary" icon="upload_file" onClick={() => setImportando(true)}>
+                Importar
+              </Button>
+            )}
             <Button onClick={() => abrirFormulario(null)} icon={ehArquivo ? 'upload' : 'add'}>
               {ehArquivo ? 'Enviar arquivo' : 'Novo item'}
             </Button>
@@ -548,6 +564,14 @@ export default function ModuleRecords() {
                       if (!textoVazio && coluna.tipo === 'prazo') {
                         exibicao = <SeloPrazo data={valor} concluido={itemConcluido(registro.dados, campos)} />;
                       }
+                      if (!textoVazio && coluna.tipo === 'recorrencia') {
+                        exibicao = (
+                          <span className="inline-flex items-center gap-1 text-ink-soft">
+                            <span className="material-icons text-[15px] text-primary" aria-hidden="true">event_repeat</span>
+                            {rotuloDaRepeticao(valor) ?? valor}
+                          </span>
+                        );
+                      }
                       if (!textoVazio && coluna.tipo === 'responsavel') {
                         exibicao = <PessoaResponsavel nome={valor} />;
                       }
@@ -664,6 +688,16 @@ export default function ModuleRecords() {
           )}
         </form>
       </Drawer>
+      {importando && (
+        <ImportarPlanilha
+          aberto
+          onFechar={() => setImportando(false)}
+          modulo={modulo}
+          campos={campos}
+          pessoas={pessoasQuery.data ?? []}
+          onImportado={() => queryClient.invalidateQueries({ queryKey: ['registros', id] })}
+        />
+      )}
     </Layout>
   );
 }

@@ -4,6 +4,7 @@ import { cn } from '../ui/cn';
 import SeloPrazo from '../prazos/SeloPrazo';
 import PessoaResponsavel from '../prazos/PessoaResponsavel';
 import { itemConcluido } from '../../utils/prazos';
+import { rotuloDaRepeticao } from '../../utils/recorrencia';
 
 const SEM_VALOR = '';
 
@@ -14,6 +15,7 @@ function formatar(valor, tipo) {
     return Number.isNaN(data.getTime()) ? String(valor) : data.toLocaleDateString('pt-BR');
   }
   if (tipo === 'numero') return Number(valor).toLocaleString('pt-BR');
+  if (tipo === 'recorrencia') return rotuloDaRepeticao(valor) ?? String(valor);
   return String(valor);
 }
 

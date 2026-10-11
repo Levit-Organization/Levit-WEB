@@ -1,6 +1,7 @@
 import { Button, Input, Select } from '../ui';
 import { cn } from '../ui/cn';
 import { usePessoas } from '../../hooks/queries';
+import { REPETICOES } from '../../utils/recorrencia';
 import {
   MAX_REGRAS,
   OPERADOR_INFO,
@@ -31,6 +32,19 @@ function CampoValorPessoa({ label, value, onChange, required }) {
 export function CampoValor({ label, campo, opcoesEtapa = [], value, onChange, required, placeholder = 'Valor' }) {
   if (campo?.tipo === 'responsavel') {
     return <CampoValorPessoa label={label} value={value} onChange={onChange} required={required} />;
+  }
+
+  if (campo?.tipo === 'recorrencia') {
+    return (
+      <Select
+        label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+        placeholder="Selecione"
+        options={REPETICOES.map((r) => ({ value: r.valor, label: r.rotulo }))}
+      />
+    );
   }
 
   const opcoes = campo?.tipo === 'selecao' ? campo.opcoes || [] : campo?.tipo === 'etapa' ? opcoesEtapa : null;

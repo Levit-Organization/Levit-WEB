@@ -108,7 +108,78 @@ class RegistroService
             'dados_anteriores' => $anterior['dados'] ?? [],
         ]);
 
+        // Item que se repete e acabou de ser concluído: nasce a próxima ocorrência.
+        (new RecorrenciaService())->depoisDeSalvar($registroId, $moduloId, $campos, $anterior['dados'] ?? [], $dadosValidados, $usuarioId);
+
         return $this->buscarRegistro($registroId, $moduloId, $empresaId);
+    }
+
+    /** Máximo de itens por importação (uma planilha maior vai em partes). */
+    public const MAX_IMPORTACAO = 1000;
+
+    /**
+     * Importa itens de uma planilha. Cada linha passa pela mesma validação de
+     * um item criado à mão; as válidas entram numa transação só e as inválidas
+     * voltam com o número da linha e o motivo.
+     *
+     * Não dispara automações: importar 500 clientes não deve mandar 500
+     * e-mails. Fica uma linha no histórico de atividades.
+     *
+     * @param array<int, array{linha?: int, dados: array}> $itens
+     *
+     * @return array{criados: int, erros: array<int, array{linha: int, mensagem: string}>}
+     */
+    public function importar(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $usuarioId, array $itens): array
+    {
+        $campos = $this->confirmarModuloDaEmpresa($moduloId, $empresaId, true);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
+
+        if ($itens === []) {
+            throw new \DomainException('A planilha não tem nenhuma linha para importar.');
+        }
+        if (count($itens) > self::MAX_IMPORTACAO) {
+            throw new \DomainException('Importe no máximo ' . self::MAX_IMPORTACAO . ' linhas por vez.');
+        }
+
+        helper('uuid');
+        $agora   = gmdate('Y-m-d H:i:s');
+        $validos = [];
+        $erros   = [];
+        foreach (array_values($itens) as $i => $item) {
+            $linha = (int) ($item['linha'] ?? $i + 2); // linha 1 é o cabeçalho
+            try {
+                $dados = $this->validarDadosDoRegistro($campos, ['dados' => (array) ($item['dados'] ?? [])], $moduloId);
+                if ($dados === []) {
+                    throw new \DomainException('Linha vazia.');
+                }
+                $validos[] = [
+                    'id'            => generate_uuid_v7(),
+                    'modulo_id'     => $moduloId,
+                    'dados'         => json_encode($dados, JSON_UNESCAPED_UNICODE),
+                    'criado_por'    => $usuarioId,
+                    'criado_em'     => $agora,
+                    'atualizado_em' => $agora,
+                ];
+            } catch (\DomainException $e) {
+                $erros[] = ['linha' => $linha, 'mensagem' => $e->getMessage()];
+            }
+        }
+
+        if ($validos !== []) {
+            $db = db_connect();
+            $db->transStart();
+            foreach (array_chunk($validos, 200) as $lote) {
+                $db->table('registro')->insertBatch($lote);
+            }
+            $db->transComplete();
+            if ($db->transStatus() === false) {
+                throw new \RuntimeException('Não foi possível importar agora. Nada foi gravado; tente de novo.');
+            }
+
+            AtividadeService::registrar('itens_importados', 'Importou ' . count($validos) . (count($validos) === 1 ? ' item' : ' itens') . ' de uma planilha', $moduloId);
+        }
+
+        return ['criados' => count($validos), 'erros' => $erros];
     }
 
     public function excluirRegistro(string $registroId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
@@ -167,6 +238,8 @@ class RegistroService
             'dados_anteriores' => $anteriores,
             'cadeia'           => $cadeia,
         ]);
+
+        (new RecorrenciaService())->depoisDeSalvar($registroId, $moduloId, $campos, $anteriores, $novos, null);
 
         return true;
     }
@@ -278,6 +351,13 @@ class RegistroService
                         throw new \DomainException("A coluna '{$campo['nome']}' precisa ser uma das opções válidas.");
                     }
                     $dadosValidados[$campo['id']] = $valor;
+                    break;
+
+                case 'recorrencia':
+                    if (! isset(RecorrenciaService::PERIODOS[$valor])) {
+                        throw new \DomainException("A coluna '{$campo['nome']}' precisa ser uma das repetições: semanal, quinzenal, mensal, trimestral ou anual.");
+                    }
+                    $dadosValidados[$campo['id']] = (string) $valor;
                     break;
 
                 case 'responsavel':

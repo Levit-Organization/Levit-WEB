@@ -14,6 +14,12 @@ export const registroService = {
     return response.data?.data || response.data;
   },
 
+  /** Itens de uma planilha, já convertidos: [{ linha, dados }]. Responde { criados, erros }. */
+  importar: async (moduloId, itens) => {
+    const response = await api.post(`/modulos/${moduloId}/registros/importar`, { itens });
+    return response.data?.data || response.data;
+  },
+
   update: async (moduloId, registroId, data, config) => {
     const response = await api.put(`/modulos/${moduloId}/registros/${registroId}`, data, config);
     return response.data?.data || response.data;

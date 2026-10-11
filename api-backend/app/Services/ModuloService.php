@@ -11,7 +11,7 @@ use App\Models\ModuloModel;
 
 class ModuloService
 {
-    private const TIPOS_VALIDOS = ['texto', 'numero', 'data', 'selecao', 'responsavel', 'prazo'];
+    private const TIPOS_VALIDOS = ['texto', 'numero', 'data', 'selecao', 'responsavel', 'prazo', 'recorrencia'];
 
     protected ModuloModel $moduloModel;
     protected CampoModuloModel $campoModuloModel;

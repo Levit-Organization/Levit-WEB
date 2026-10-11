@@ -8,6 +8,7 @@ const lista = (nome, opcoes) => ({ nome, tipo: 'selecao', opcoes });
 const coluna = (nome, tipo = 'texto') => ({ nome, tipo, opcoes: null });
 const responsavel = (nome = 'Responsável') => coluna(nome, 'responsavel');
 const prazo = (nome = 'Prazo') => coluna(nome, 'prazo');
+const repeticao = (nome = 'Repete') => coluna(nome, 'recorrencia');
 
 export const MODELOS_TABELA = [
   {
@@ -24,6 +25,7 @@ export const MODELOS_TABELA = [
       coluna('Competência'),
       responsavel(),
       prazo('Vencimento'),
+      repeticao(),
       lista('Status', ['A fazer', 'Aguardando cliente', 'Em andamento', 'Entregue']),
     ],
   },

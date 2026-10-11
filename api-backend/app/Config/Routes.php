@@ -28,6 +28,7 @@ $routes->group('api/v1', function ($routes) {
 
     $routes->get("modulos/({$uuid})/registros", 'RegistroController::listar/$1', ['filter' => 'auth']);
     $routes->post("modulos/({$uuid})/registros", 'RegistroController::criar/$1', ['filter' => 'auth']);
+    $routes->post("modulos/({$uuid})/registros/importar", 'RegistroController::importar/$1', ['filter' => 'auth']);
     $routes->put("modulos/({$uuid})/registros/({$uuid})", 'RegistroController::atualizar/$1/$2', ['filter' => 'auth']);
     $routes->delete("modulos/({$uuid})/registros/({$uuid})", 'RegistroController::excluir/$1/$2', ['filter' => 'auth']);
 
