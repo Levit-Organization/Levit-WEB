@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\AuthService;
 use App\Services\EquipeService;
@@ -24,6 +25,7 @@ class EquipeController extends BaseApiController
         $rules = [
             'email'    => ['required', 'valid_email'],
             'cargo_id' => ['required'],
+            'mensagem' => ['permit_empty', 'max_length[500]'],
         ];
 
         if (! $this->validateData($dados, $rules)) {
@@ -33,14 +35,59 @@ class EquipeController extends BaseApiController
         $user = service('authenticatedUser');
 
         try {
-            $resultado = $this->equipeService->convidar($user->empresaId, $user->id, $dados['email'], $dados['cargo_id']);
+            $resultado = $this->equipeService->convidar($user->empresaId, $user->id, $dados['email'], $dados['cargo_id'], $dados['mensagem'] ?? null);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 409);
+        } catch (\RuntimeException $e) {
+            return $this->respondFalha($e, 502);
         }
 
         return $this->respondSuccess($resultado, 201);
+    }
+
+    public function listarConvites()
+    {
+        return $this->respondSuccess($this->equipeService->listarConvitesPendentes(service('authenticatedUser')->empresaId));
+    }
+
+    public function reenviarConvite($conviteId)
+    {
+        $user = service('authenticatedUser');
+
+        try {
+            $convite = $this->equipeService->reenviarConvite($user->empresaId, $conviteId, $user->id);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (\RuntimeException $e) {
+            return $this->respondFalha($e, 502);
+        }
+
+        return $this->respondSuccess($convite);
+    }
+
+    public function cancelarConvite($conviteId)
+    {
+        try {
+            $this->equipeService->cancelarConvite(service('authenticatedUser')->empresaId, $conviteId);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        }
+
+        return $this->respondSuccess(null);
+    }
+
+    /** Público: o que a página do convite mostra antes de aceitar. */
+    public function detalhesDoConvite($token)
+    {
+        try {
+            return $this->respondSuccess($this->equipeService->detalhesDoConvite($token));
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        }
     }
 
     public function aceitarConvite()
@@ -63,16 +110,23 @@ class EquipeController extends BaseApiController
 
         try {
             $resultado = $this->equipeService->aceitarConvite($dados['token'], $dados['nome'], $dados['senha']);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
-            return $this->respondError($e->getMessage(), 500);
+            return $this->respondFalha($e, 500);
         }
 
         return $this->respondSuccess(
             $this->authService->montarRespostaAutenticacao($resultado['usuario'], $resultado['empresa']),
             201
         );
+    }
+
+    public function listarPessoas()
+    {
+        return $this->respondSuccess($this->equipeService->listarPessoas(service('authenticatedUser')->empresaId));
     }
 
     public function listarMembros()
@@ -99,6 +153,8 @@ class EquipeController extends BaseApiController
             $membro = $this->equipeService->atualizarMembro(service('authenticatedUser')->empresaId, $usuarioId, $dados);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         }
@@ -112,6 +168,8 @@ class EquipeController extends BaseApiController
             $this->equipeService->removerMembro($usuarioId, service('authenticatedUser')->empresaId);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 409);
         }
