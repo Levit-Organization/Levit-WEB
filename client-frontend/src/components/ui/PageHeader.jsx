@@ -30,12 +30,12 @@ export default function PageHeader({
             aria-label="Voltar"
             className="w-10 h-10 flex items-center justify-center rounded-lg text-light-text hover:bg-primary-100 hover:text-primary-700 transition-colors shrink-0"
           >
-            <span className="material-icons text-[20px]">arrow_back</span>
+            <span className="material-icons text-[20px]" aria-hidden="true">arrow_back</span>
           </Link>
         )}
         {icon && (
           <div className="w-11 h-11 rounded-xl bg-primary-100 text-primary flex items-center justify-center shrink-0">
-            <span className="material-icons text-[22px]">{icon}</span>
+            <span className="material-icons text-[22px]" aria-hidden="true">{icon}</span>
           </div>
         )}
         <div className="min-w-0">

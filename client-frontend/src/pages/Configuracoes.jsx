@@ -1,15 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import Layout from '../components/Layout';
-import { Button, Input, Textarea, Select, Alert, Card, Skeleton, EmptyState } from '../components/ui';
-import { useAuth } from '../context/AuthContext';
+import { Button, Input, Textarea, Select, Alert, Card, Skeleton, EmptyState, ErrorState } from '../components/ui';
+import { useAuth } from '../hooks/useAuth';
 import { moduloService } from '../services/moduloService';
+import { useModulos, queryKeys } from '../hooks/queries';
+import { useToast } from '../hooks/useFeedback';
+import { mensagemDeErro } from '../lib/queryClient';
+import { mascararTelefone } from '../utils/masks';
 import { backupService, extrairErroBlob } from '../services/backupService';
 import { MODULO_ICON_OPTIONS } from '../utils/iconOptions';
 import { getAvatar, setAvatar, getLogo, setLogo, TAMANHO_MAXIMO_IMAGEM } from '../utils/avatarStorage';
 
+const SEM_DADOS = [];
+
 const TABS = [
   { id: 'perfil', label: 'Perfil' },
-  { id: 'empresa', label: 'Empresa e Módulos' },
+  { id: 'empresa', label: 'Empresa e Tabelas' },
   { id: 'avancado', label: 'Avançado e Dados' },
 ];
 
@@ -46,11 +53,12 @@ function ImageUploader({ value, onChange, shape = 'circle', size = 96, fallback,
         type="button"
         onClick={() => inputRef.current?.click()}
         title="Alterar imagem"
+        aria-label="Alterar imagem"
         className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:bg-primary-600 transition-colors border-2 border-surface"
       >
-        <span className="material-icons text-[16px]">photo_camera</span>
+        <span className="material-icons text-[16px]" aria-hidden="true">photo_camera</span>
       </button>
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} tabIndex={-1} aria-hidden="true" />
     </div>
   );
 }
@@ -132,10 +140,10 @@ function PerfilTab() {
 
         {erroImagem && <Alert variant="error" className="-mt-2">{erroImagem}</Alert>}
 
-        <Input label="Nome completo" type="text" value={perfil.nome} onChange={(e) => handlePerfilChange('nome', e.target.value)} />
-        <Input label="E-mail" type="email" value={perfil.email} onChange={(e) => handlePerfilChange('email', e.target.value)} />
-        <Input label="Telefone" type="text" value={perfil.telefone} onChange={(e) => handlePerfilChange('telefone', e.target.value)} placeholder="(00) 00000-0000" />
-        <Input label="LinkedIn" type="text" value={perfil.linkedin} onChange={(e) => handlePerfilChange('linkedin', e.target.value)} placeholder="linkedin.com/in/seu-perfil" />
+        <Input label="Nome completo" name="nome" autoComplete="name" type="text" value={perfil.nome} onChange={(e) => handlePerfilChange('nome', e.target.value)} />
+        <Input label="E-mail" name="email" autoComplete="email" inputMode="email" type="email" value={perfil.email} onChange={(e) => handlePerfilChange('email', e.target.value)} />
+        <Input label="Telefone" name="telefone" autoComplete="tel" inputMode="tel" type="tel" value={perfil.telefone} onChange={(e) => handlePerfilChange('telefone', mascararTelefone(e.target.value))} placeholder="(00) 00000-0000" />
+        <Input label="LinkedIn" name="linkedin" autoComplete="off" type="text" value={perfil.linkedin} onChange={(e) => handlePerfilChange('linkedin', e.target.value)} placeholder="linkedin.com/in/seu-perfil" />
         <Textarea label="Bio" value={perfil.bio} onChange={(e) => handlePerfilChange('bio', e.target.value)} rows={3} placeholder="Uma breve descrição sobre você" />
 
         {avisoPerfil && <Alert variant="warning">{avisoPerfil}</Alert>}
@@ -151,9 +159,9 @@ function PerfilTab() {
           <p className="text-xs text-light-text mt-0.5">Atualize sua senha de acesso.</p>
         </div>
 
-        <Input label="Senha atual" type="password" value={senhas.atual} onChange={(e) => handleSenhaChange('atual', e.target.value)} />
-        <Input label="Nova senha" type="password" hint="Mínimo de 8 caracteres." value={senhas.nova} onChange={(e) => handleSenhaChange('nova', e.target.value)} />
-        <Input label="Confirmar nova senha" type="password" value={senhas.confirmar} onChange={(e) => handleSenhaChange('confirmar', e.target.value)} />
+        <Input label="Senha atual" name="senha_atual" autoComplete="current-password" type="password" value={senhas.atual} onChange={(e) => handleSenhaChange('atual', e.target.value)} />
+        <Input label="Nova senha" name="nova_senha" autoComplete="new-password" type="password" hint="Mínimo de 8 caracteres." value={senhas.nova} onChange={(e) => handleSenhaChange('nova', e.target.value)} />
+        <Input label="Confirmar nova senha" name="confirmar_senha" autoComplete="new-password" type="password" value={senhas.confirmar} onChange={(e) => handleSenhaChange('confirmar', e.target.value)} />
 
         {erroSenha && <Alert variant="error">{erroSenha}</Alert>}
         {avisoSenha && <Alert variant="warning">{avisoSenha}</Alert>}
@@ -168,8 +176,10 @@ function PerfilTab() {
 
 function EmpresaModulosTab() {
   const { empresa } = useAuth();
-  const [modulos, setModulos] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const modulosQuery = useModulos();
+  const modulos = modulosQuery.data ?? SEM_DADOS;
+  const loading = modulosQuery.isLoading;
   const [pickerAbertoId, setPickerAbertoId] = useState(null);
   const [salvandoId, setSalvandoId] = useState(null);
   const [error, setError] = useState('');
@@ -187,26 +197,25 @@ function EmpresaModulosTab() {
     setLogo(empresa?.id, null);
   };
 
-  useEffect(() => {
-    moduloService.getAll()
-      .then(setModulos)
-      .catch(() => setError('Erro ao carregar os módulos.'))
-      .finally(() => setLoading(false));
-  }, []);
+  const trocarIconeNoCache = (moduloId, icone) =>
+    queryClient.setQueryData(queryKeys.modulos, (atual) =>
+      atual?.map((m) => (m.id === moduloId ? { ...m, icone } : m))
+    );
 
   const handleEscolherIcone = async (modulo, icone) => {
     setPickerAbertoId(null);
     if (icone === modulo.icone) return;
 
     setSalvandoId(modulo.id);
+    setError('');
     const anterior = modulo.icone;
-    setModulos((prev) => prev.map((m) => (m.id === modulo.id ? { ...m, icone } : m)));
+    trocarIconeNoCache(modulo.id, icone);
 
     try {
       await moduloService.update(modulo.id, { icone });
     } catch (err) {
-      setError('Erro ao atualizar o ícone do módulo.');
-      setModulos((prev) => prev.map((m) => (m.id === modulo.id ? { ...m, icone: anterior } : m)));
+      setError(mensagemDeErro(err, 'Erro ao atualizar o ícone da tabela.'));
+      trocarIconeNoCache(modulo.id, anterior);
     } finally {
       setSalvandoId(null);
     }
@@ -243,12 +252,19 @@ function EmpresaModulosTab() {
       </Card>
 
       <Card>
-        <h2 className="text-base font-semibold mb-0.5">Aparência dos módulos</h2>
+        <h2 className="text-base font-semibold mb-0.5">Aparência das tabelas</h2>
         <p className="text-xs text-light-text mb-4">O ícone escolhido aqui aparece para toda a equipe.</p>
 
         {error && <Alert variant="error" className="mb-4">{error}</Alert>}
 
-        {loading ? (
+        {modulosQuery.isError && !modulosQuery.data ? (
+          <ErrorState
+            size="sm"
+            description={mensagemDeErro(modulosQuery.error, 'Erro ao carregar as tabelas.')}
+            onRetry={() => modulosQuery.refetch()}
+            className="py-6"
+          />
+        ) : loading ? (
           <div className="flex flex-col gap-2">
             {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)}
           </div>
@@ -256,8 +272,8 @@ function EmpresaModulosTab() {
           <EmptyState
             size="sm"
             icon="widgets"
-            title="Nenhum módulo criado ainda"
-            description="Quando você criar um módulo, o ícone dele pode ser personalizado por aqui."
+            title="Nenhuma tabela criada ainda"
+            description="Quando você criar uma tabela, o ícone dela pode ser personalizado por aqui."
             className="py-6"
           />
         ) : (
@@ -266,7 +282,7 @@ function EmpresaModulosTab() {
               <div key={modulo.id} className="border border-divider rounded-xl p-3.5">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-lg bg-primary-100 flex items-center justify-center shrink-0">
-                    <span className="material-icons text-primary text-[18px]">{modulo.icone || 'extension'}</span>
+                    <span className="material-icons text-primary text-[18px]" aria-hidden="true">{modulo.icone || 'extension'}</span>
                   </div>
                   <span className="flex-1 min-w-0 truncate text-sm font-medium text-ink">{modulo.nome}</span>
                   <button
@@ -287,13 +303,15 @@ function EmpresaModulosTab() {
                         type="button"
                         onClick={() => handleEscolherIcone(modulo, icon)}
                         title={icon}
+                        aria-label={`Usar o ícone ${icon}`}
+                        aria-pressed={modulo.icone === icon}
                         className={`aspect-square rounded-lg flex items-center justify-center transition-colors ${
                           modulo.icone === icon
                             ? 'bg-primary text-white shadow-sm'
                             : 'bg-surface border border-divider text-light-text hover:border-primary hover:text-primary'
                         }`}
                       >
-                        <span className="material-icons text-[18px]">{icon}</span>
+                        <span className="material-icons text-[18px]" aria-hidden="true">{icon}</span>
                       </button>
                     ))}
                   </div>
@@ -308,24 +326,19 @@ function EmpresaModulosTab() {
 }
 
 function AvancadoDadosTab() {
-  const [modulos, setModulos] = useState([]);
+  const toast = useToast();
+  const modulos = useModulos().data ?? SEM_DADOS;
   const [moduloSelecionado, setModuloSelecionado] = useState('');
   const [exportandoJson, setExportandoJson] = useState(false);
   const [exportandoCsv, setExportandoCsv] = useState(false);
   const [erro, setErro] = useState('');
-  const [sucesso, setSucesso] = useState('');
-
-  useEffect(() => {
-    moduloService.getAll().then(setModulos).catch(() => {});
-  }, []);
 
   const handleExportarJson = async () => {
     setErro('');
-    setSucesso('');
     setExportandoJson(true);
     try {
       await backupService.exportarJson();
-      setSucesso('Backup JSON baixado com sucesso.');
+      toast.success('Backup JSON baixado com sucesso.');
     } catch (err) {
       setErro(await extrairErroBlob(err));
     } finally {
@@ -336,12 +349,11 @@ function AvancadoDadosTab() {
   const handleExportarCsv = async () => {
     if (!moduloSelecionado) return;
     setErro('');
-    setSucesso('');
     setExportandoCsv(true);
     try {
       const modulo = modulos.find((m) => String(m.id) === String(moduloSelecionado));
       await backupService.exportarCsv(moduloSelecionado, modulo?.nome || 'modulo');
-      setSucesso('CSV exportado com sucesso.');
+      toast.success('CSV exportado com sucesso.');
     } catch (err) {
       setErro(await extrairErroBlob(err));
     } finally {
@@ -356,17 +368,16 @@ function AvancadoDadosTab() {
         <p className="text-xs text-light-text mb-4">Baixe uma cópia dos dados da sua empresa.</p>
 
         {erro && <Alert variant="error" className="mb-4">{erro}</Alert>}
-        {sucesso && <Alert variant="success" className="mb-4">{sucesso}</Alert>}
 
         <div className="flex flex-col gap-5">
           <div className="flex items-center justify-between gap-4 p-4 border border-divider rounded-xl">
             <div className="flex items-center gap-3.5 min-w-0">
               <div className="w-11 h-11 rounded-xl bg-warning-bg flex items-center justify-center shrink-0">
-                <span className="material-icons text-warning text-[22px]">data_object</span>
+                <span className="material-icons text-warning text-[22px]" aria-hidden="true">data_object</span>
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-ink">Backup completo (JSON)</p>
-                <p className="text-xs text-light-text mt-0.5">Todos os módulos, registros e configurações da empresa.</p>
+                <p className="text-xs text-light-text mt-0.5">Todas as tabelas, itens e configurações da empresa.</p>
               </div>
             </div>
             <Button variant="secondary" size="sm" icon="download" onClick={handleExportarJson} loading={exportandoJson}>
@@ -377,10 +388,10 @@ function AvancadoDadosTab() {
           <div className="p-4 border border-divider rounded-xl">
             <div className="flex items-center gap-3.5 mb-3">
               <div className="w-11 h-11 rounded-xl bg-success-bg flex items-center justify-center shrink-0">
-                <span className="material-icons text-success text-[22px]">table_view</span>
+                <span className="material-icons text-success text-[22px]" aria-hidden="true">table_view</span>
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium text-ink">Registros de um módulo (CSV)</p>
+                <p className="text-sm font-medium text-ink">Itens de uma tabela (CSV)</p>
                 <p className="text-xs text-light-text mt-0.5">Compatível com Excel e Google Sheets.</p>
               </div>
             </div>
@@ -389,7 +400,8 @@ function AvancadoDadosTab() {
                 <Select
                   value={moduloSelecionado}
                   onChange={(e) => setModuloSelecionado(e.target.value)}
-                  placeholder="Selecione um módulo"
+                  aria-label="Tabela para exportar"
+                  placeholder="Selecione uma tabela"
                   options={modulos.map((m) => ({ value: m.id, label: m.nome }))}
                 />
               </div>
@@ -422,13 +434,17 @@ export default function Configuracoes() {
           <p className="text-sm text-light-text mt-0.5">Gerencie seu perfil, a empresa e os dados da conta</p>
         </header>
 
-        <div className="border-b border-divider flex justify-center gap-8 mb-6 shrink-0">
+        <div role="tablist" aria-label="Seções de configuração" className="border-b border-divider flex justify-center gap-4 sm:gap-8 mb-6 shrink-0 overflow-x-auto">
           {TABS.map((t) => (
             <button
               key={t.id}
+              id={`aba-${t.id}`}
               type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              aria-controls={`painel-${t.id}`}
               onClick={() => setTab(t.id)}
-              className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tab === t.id
                   ? 'text-primary border-primary'
                   : 'text-light-text border-transparent hover:text-ink-soft'
@@ -439,9 +455,11 @@ export default function Configuracoes() {
           ))}
         </div>
 
-        {tab === 'perfil' && <PerfilTab />}
-        {tab === 'empresa' && <EmpresaModulosTab />}
-        {tab === 'avancado' && <AvancadoDadosTab />}
+        <div id={`painel-${tab}`} role="tabpanel" aria-labelledby={`aba-${tab}`}>
+          {tab === 'perfil' && <PerfilTab />}
+          {tab === 'empresa' && <EmpresaModulosTab />}
+          {tab === 'avancado' && <AvancadoDadosTab />}
+        </div>
       </div>
     </Layout>
   );

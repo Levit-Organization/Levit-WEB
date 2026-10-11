@@ -11,7 +11,7 @@ use App\Models\ModuloModel;
 
 class ModuloService
 {
-    private const TIPOS_VALIDOS = ['texto', 'numero', 'data', 'selecao'];
+    private const TIPOS_VALIDOS = ['texto', 'numero', 'data', 'selecao', 'responsavel', 'prazo'];
 
     protected ModuloModel $moduloModel;
     protected CampoModuloModel $campoModuloModel;
@@ -37,15 +37,15 @@ class ModuloService
         $fases  = $dados['fases'] ?? [];
 
         if (! in_array($tipo, ['dados', 'arquivo', 'recrutamento', 'financeiro'], true)) {
-            throw new \DomainException("Tipo de módulo inválido: '{$tipo}'.");
+            throw new \DomainException("Tipo de tabela inválida: '{$tipo}'.");
         }
 
         if ($tipo === 'dados' && empty($campos)) {
-            throw new \DomainException('O módulo precisa de pelo menos um campo.');
+            throw new \DomainException('A tabela precisa de pelo menos uma coluna.');
         }
 
         if ($tipo === 'recrutamento' && empty($fases)) {
-            throw new \DomainException('O módulo de recrutamento precisa de pelo menos uma fase.');
+            throw new \DomainException('A tabela de recrutamento precisa de pelo menos uma fase.');
         }
 
         foreach ($campos as $campo) {
@@ -93,8 +93,10 @@ class ModuloService
         $db->transComplete();
 
         if ($db->transStatus() === false) {
-            throw new \RuntimeException('Não foi possível criar o módulo. Tente novamente.');
+            throw new \RuntimeException('Não foi possível criar a tabela. Tente novamente.');
         }
+
+        AtividadeService::registrar('tabela_criada', "Criou a tabela “{$dados['nome']}”", $moduloId, $dados['nome']);
 
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, true);
     }
@@ -102,16 +104,16 @@ class ModuloService
     private function validarCampo(array $campo): void
     {
         if (empty($campo['nome'])) {
-            throw new \DomainException('Todo campo precisa de um nome.');
+            throw new \DomainException('Toda coluna precisa de um nome.');
         }
 
         if (! in_array($campo['tipo'] ?? null, self::TIPOS_VALIDOS, true)) {
             $tipoRecebido = $campo['tipo'] ?? '(vazio)';
-            throw new \DomainException("Tipo de campo inválido: '{$tipoRecebido}'.");
+            throw new \DomainException("Tipo de coluna inválida: '{$tipoRecebido}'.");
         }
 
         if ($campo['tipo'] === 'selecao' && empty($campo['opcoes'])) {
-            throw new \DomainException('Campos do tipo Seleção Única precisam de ao menos uma opção.');
+            throw new \DomainException('Colunas do tipo lista de opções precisam de ao menos uma opção.');
         }
     }
 
@@ -146,7 +148,7 @@ class ModuloService
             ->first();
 
         if (! $modulo) {
-            throw new NaoEncontradoException('Módulo não encontrado.');
+            throw new NaoEncontradoException('Tabela não encontrada.');
         }
 
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
@@ -185,7 +187,12 @@ class ModuloService
             $this->moduloModel->update($moduloId, $camposParaAtualizar);
         }
 
-        return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
+        $modulo = $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
+        if (! empty($camposParaAtualizar)) {
+            AtividadeService::registrar('tabela_alterada', "Alterou nome ou ícone da tabela “{$modulo['nome']}”", $moduloId, $modulo['nome']);
+        }
+
+        return $modulo;
     }
 
     public function adicionarCampo(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $campo): array
@@ -205,6 +212,8 @@ class ModuloService
             'ordem'     => $proximaOrdem,
         ]);
 
+        AtividadeService::registrar('coluna_criada', "Adicionou a coluna “{$campo['nome']}”", $moduloId);
+
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
     }
 
@@ -219,7 +228,7 @@ class ModuloService
             ->first();
 
         if (! $campo) {
-            throw new NaoEncontradoException('Campo não encontrado.');
+            throw new NaoEncontradoException('Coluna não encontrada.');
         }
 
         return $campo;
@@ -258,7 +267,7 @@ class ModuloService
             && empty(array_diff($ordemCampoIds, $idsExistentes));
 
         if (! $listaBate) {
-            throw new \DomainException('A lista enviada não corresponde exatamente aos campos deste módulo.');
+            throw new \DomainException('A lista enviada não corresponde exatamente às colunas desta tabela.');
         }
 
         $db = db_connect();
@@ -271,7 +280,7 @@ class ModuloService
         $db->transComplete();
 
         if ($db->transStatus() === false) {
-            throw new \RuntimeException('Não foi possível reordenar os campos. Tente novamente.');
+            throw new \RuntimeException('Não foi possível reordenar as colunas. Tente novamente.');
         }
 
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
@@ -290,22 +299,25 @@ class ModuloService
         )->getRow();
 
         if ((int) $linha->total > 0) {
-            throw new \DomainException('Não é possível excluir um campo que já possui registros preenchidos.');
+            throw new \DomainException('Não é possível excluir uma coluna que já possui itens preenchidos.');
         }
 
         if ($this->automacaoModel->where('campo_condicao_id', $campoId)->first()) {
-            throw new \DomainException('Não é possível excluir um campo usado como condição em uma automação.');
+            throw new \DomainException('Não é possível excluir uma coluna usada como condição em uma automação.');
         }
 
+        $nomeCampo = $this->campoModuloModel->select('nome')->find($campoId)['nome'] ?? 'uma coluna';
         $this->campoModuloModel->delete($campoId);
+        AtividadeService::registrar('coluna_excluida', "Excluiu a coluna “{$nomeCampo}”", $moduloId);
     }
 
     public function excluirModulo(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
     {
-        $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
+        $modulo = $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
 
         $this->moduloModel->delete($moduloId);
+        AtividadeService::registrar('tabela_excluida', "Excluiu a tabela “{$modulo['nome']}”", $moduloId, $modulo['nome']);
     }
 
     public function adicionarFase(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $nomeFase): array
@@ -324,6 +336,8 @@ class ModuloService
             'nome'      => $nomeFase,
             'ordem'     => $proximaOrdem,
         ]);
+
+        AtividadeService::registrar('etapa_criada', "Adicionou a etapa “{$nomeFase}”", $moduloId);
 
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
     }
@@ -401,5 +415,6 @@ class ModuloService
         }
 
         $this->faseRecrutamentoModel->delete($faseId);
+        AtividadeService::registrar('etapa_excluida', 'Excluiu uma etapa do recrutamento', $moduloId);
     }
 }

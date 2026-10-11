@@ -33,7 +33,7 @@ class ArquivoController extends BaseApiController
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
-            return $this->respondError($e->getMessage(), 500);
+            return $this->respondFalha($e, 500);
         }
 
         return $this->respondSuccess($resultado, 201);
@@ -53,7 +53,8 @@ class ArquivoController extends BaseApiController
 
         return $this->response
             ->setContentType($arquivo['tipo_mime'])
-            ->setHeader('Content-Disposition', 'attachment; filename="' . $arquivo['nome_original'] . '"')
+            ->setHeader('Content-Disposition', $this->cabecalhoDeAnexo($arquivo['nome_original']))
+            ->setHeader('X-Content-Type-Options', 'nosniff')
             ->setBody($arquivo['conteudo']);
     }
 

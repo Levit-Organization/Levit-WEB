@@ -1,12 +1,12 @@
 import { cn } from './cn';
 
-export default function Toggle({ checked, onChange, label, description, disabled = false }) {
+export default function Toggle({ checked, onChange, label, ariaLabel, description, disabled = false }) {
   const switchEl = (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
-      aria-label={label}
+      aria-label={ariaLabel || label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
@@ -16,6 +16,7 @@ export default function Toggle({ checked, onChange, label, description, disabled
       )}
     >
       <span
+        aria-hidden="true"
         className={cn(
           'absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-surface shadow-sm transition-transform duration-150 ease-out-quart',
           checked && 'translate-x-5'

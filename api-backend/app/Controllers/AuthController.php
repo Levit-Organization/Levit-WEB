@@ -13,6 +13,49 @@ class AuthController extends BaseApiController
         $this->authService = new AuthService();
     }
 
+    /** Sempre a mesma resposta, exista ou não a conta. */
+    public function esqueciSenha()
+    {
+        $dados = $this->request->getJSON(true) ?? [];
+
+        if (! $this->validateData($dados, ['email' => ['required', 'valid_email']])) {
+            return $this->respondError('Informe um e-mail válido.', 422, $this->validator->getErrors());
+        }
+
+        $this->authService->solicitarRedefinicaoDeSenha($dados['email']);
+
+        return $this->response->setJSON([
+            'status'  => 'success',
+            'message' => 'Se houver uma conta com esse e-mail, enviamos um link para criar uma senha nova. Confira também o spam.',
+        ]);
+    }
+
+    public function redefinirSenha()
+    {
+        $dados = $this->request->getJSON(true) ?? [];
+
+        $rules = [
+            'token' => ['required', 'regex_match[/^[0-9a-f]{64}$/]'],
+            'senha' => ['required', 'min_length[8]', 'regex_match[/^(?=.*[A-Za-z])(?=.*\d).+$/]'],
+        ];
+        $messages = [
+            'token' => ['regex_match' => 'Link de redefinição inválido.'],
+            'senha' => ['regex_match' => 'A senha deve conter letras e números.', 'min_length' => 'A senha precisa ter pelo menos 8 caracteres.'],
+        ];
+
+        if (! $this->validateData($dados, $rules, $messages)) {
+            return $this->respondError('Dados inválidos.', 422, $this->validator->getErrors());
+        }
+
+        try {
+            $this->authService->redefinirSenha($dados['token'], $dados['senha']);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 422);
+        }
+
+        return $this->response->setJSON(['status' => 'success', 'message' => 'Senha alterada. Entre com a senha nova.']);
+    }
+
     public function registrar()
     {
         $dados = $this->request->getJSON(true) ?? [];
@@ -40,7 +83,7 @@ class AuthController extends BaseApiController
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 409);
         } catch (\RuntimeException $e) {
-            return $this->respondError($e->getMessage(), 500);
+            return $this->respondFalha($e, 500);
         }
 
         return $this->respondSuccess(

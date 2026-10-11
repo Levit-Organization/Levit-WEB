@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useLocation, useNavigate, Link } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import api from '../services/api';
 import { Input, Button, Alert } from '../components/ui';
 import AuthLayout from './AuthLayout';
@@ -11,17 +11,17 @@ export default function ResetPassword() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const token = searchParams.get('token') || '';
+  const erroExibido = error || (token ? '' : 'Este link está incompleto. Abra de novo o link do e-mail ou peça um novo.');
 
-  const params = new URLSearchParams(location.search);
-  const token = params.get('token');
-
+  // Depois do sucesso, leva ao login; o timer é limpo se a pessoa sair antes.
   useEffect(() => {
-    if (!token) {
-      setError('Token de recuperação não fornecido na URL.');
-    }
-  }, [token]);
+    if (!message) return undefined;
+    const timer = setTimeout(() => navigate('/login'), 3000);
+    return () => clearTimeout(timer);
+  }, [message, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -40,9 +40,6 @@ export default function ResetPassword() {
       setMessage('');
       const res = await api.post('/auth/reset-password', { token, senha });
       setMessage(res.data.message || 'Senha redefinida com sucesso.');
-      setTimeout(() => {
-        navigate('/login');
-      }, 3000);
     } catch (err) {
       let errorMsg = err.response?.data?.message || 'Ocorreu um erro. Tente novamente.';
       if (err.response?.data?.errors?.senha) {
@@ -56,26 +53,29 @@ export default function ResetPassword() {
 
   return (
     <AuthLayout>
-      <h2 className="text-xl font-bold text-ink mt-2">Redefinir Senha</h2>
-      <p className="text-sm text-light-text mb-6 text-center mt-1">Recuperar conta</p>
+      <h2 className="text-xl font-bold text-ink mt-2">Criar senha nova</h2>
+      <p className="text-sm text-light-text mb-6 text-center mt-1">Escolha uma senha com pelo menos 8 caracteres, misturando letras e números.</p>
 
       {message && (
         <div className="mb-4 w-full">
           <Alert variant="success">{message}</Alert>
         </div>
       )}
-      {error && (
-        <div className="mb-4 w-full">
-          <Alert variant="error">{error}</Alert>
+      {erroExibido && (
+        <div className="mb-4 w-full" role="alert">
+          <Alert variant="error">{erroExibido}</Alert>
         </div>
       )}
 
       <form className="w-full space-y-4" onSubmit={handleSubmit}>
         <div>
           <Input
-            label="Nova Palavra-passe"
+            label="Senha nova"
             type="password"
-            placeholder="Crie sua nova Palavra-passe"
+            name="senha"
+            autoComplete="new-password"
+            required
+            placeholder="Sua senha nova"
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
             className="mb-2"
@@ -91,20 +91,23 @@ export default function ResetPassword() {
         </div>
 
         <Input
-          label="Confirmar palavra-passe"
+          label="Confirmar senha"
           type="password"
-          placeholder="Repita a palavra-passe"
+          name="confirmar_senha"
+          autoComplete="new-password"
+          required
+          placeholder="Repita a senha"
           value={confirmarSenha}
           onChange={(e) => setConfirmarSenha(e.target.value)}
         />
 
         <Button type="submit" loading={loading} disabled={!token} className="w-full justify-center mt-4">
-          {loading ? 'Redefinindo...' : 'Redefinir Senha'}
+          {loading ? 'Salvando...' : 'Salvar senha nova'}
         </Button>
 
         <div className="text-center mt-4">
           <Link to="/login" className="text-sm text-primary hover:underline">
-            Voltar para o Login
+            Voltar para o login
           </Link>
         </div>
       </form>

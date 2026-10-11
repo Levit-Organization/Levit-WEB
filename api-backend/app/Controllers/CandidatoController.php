@@ -38,7 +38,7 @@ class CandidatoController extends BaseApiController
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 409);
         } catch (\RuntimeException $e) {
-            return $this->respondError($e->getMessage(), 500);
+            return $this->respondFalha($e, 500);
         }
 
         return $this->respondSuccess($candidato, 201);

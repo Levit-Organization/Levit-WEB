@@ -15,6 +15,9 @@ class RegistroService
     protected RegistroModel $registroModel;
     protected AutorizacaoModuloService $autorizacaoModuloService;
 
+    /** @var array<string, bool> pessoas já conferidas nesta requisição */
+    private array $pessoasConferidas = [];
+
     public function __construct()
     {
         $this->moduloModel              = new ModuloModel();
@@ -68,7 +71,7 @@ class RegistroService
         $campos = $this->confirmarModuloDaEmpresa($moduloId, $empresaId, true);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
 
-        $dadosValidados = $this->validarDadosDoRegistro($campos, $dados);
+        $dadosValidados = $this->validarDadosDoRegistro($campos, $dados, $moduloId);
 
         $registroId = $this->registroModel->insert([
             'modulo_id'  => $moduloId,
@@ -87,11 +90,11 @@ class RegistroService
 
     public function atualizarRegistro(string $registroId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $usuarioId, array $dados): array
     {
-        $this->buscarRegistro($registroId, $moduloId, $empresaId);
+        $anterior = $this->buscarRegistro($registroId, $moduloId, $empresaId);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
 
         $campos         = $this->confirmarModuloDaEmpresa($moduloId, $empresaId, true);
-        $dadosValidados = $this->validarDadosDoRegistro($campos, $dados);
+        $dadosValidados = $this->validarDadosDoRegistro($campos, $dados, $moduloId);
 
         $this->registroModel->update($registroId, [
             'dados'          => $dadosValidados,
@@ -99,9 +102,10 @@ class RegistroService
         ]);
 
         Events::trigger('registro_atualizado', [
-            'modulo_id'      => $moduloId,
-            'registro_id'    => $registroId,
-            'dados_registro' => $dadosValidados,
+            'modulo_id'        => $moduloId,
+            'registro_id'      => $registroId,
+            'dados_registro'   => $dadosValidados,
+            'dados_anteriores' => $anterior['dados'] ?? [],
         ]);
 
         return $this->buscarRegistro($registroId, $moduloId, $empresaId);
@@ -122,6 +126,82 @@ class RegistroService
     }
 
     /**
+     * Ação "atualizar campo" de uma automação. Sem checagem de permissão (quem
+     * configurou a automação já tinha), mas com a mesma validação de tipos.
+     * Não grava nem dispara nada se o valor já for o mesmo: isso, somado à
+     * `cadeia`, impede que automações fiquem se redisparando.
+     *
+     * @param array<string, mixed> $alteracoes campo_id => valor
+     * @param string[]             $cadeia     automações que levaram a esta alteração
+     *
+     * @return bool se algo mudou
+     */
+    public function atualizarPorAutomacao(string $registroId, string $moduloId, array $alteracoes, array $cadeia): bool
+    {
+        $registro = $this->registroModel->where('id', $registroId)->where('modulo_id', $moduloId)->first();
+        if (! $registro) {
+            throw new NaoEncontradoException('O item não existe mais.');
+        }
+
+        $anteriores = $registro['dados'] ?? [];
+        $campos     = $this->campoModuloModel->where('modulo_id', $moduloId)->findAll();
+        $novos      = $this->validarDadosDoRegistro($campos, ['dados' => $alteracoes + $anteriores], $moduloId);
+
+        // Campo esvaziado pela automação: validar descarta vazios, então remove aqui.
+        foreach ($alteracoes as $campoId => $valor) {
+            if ($valor === null || $valor === '') {
+                unset($novos[$campoId]);
+            }
+        }
+
+        if ($novos == $anteriores) {
+            return false;
+        }
+
+        $this->registroModel->update($registroId, ['dados' => $novos]);
+
+        Events::trigger('registro_atualizado', [
+            'modulo_id'        => $moduloId,
+            'registro_id'      => $registroId,
+            'dados_registro'   => $novos,
+            'dados_anteriores' => $anteriores,
+            'cadeia'           => $cadeia,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Ação "criar registro" de uma automação, em qualquer módulo de dados da
+     * mesma empresa.
+     *
+     * @return string id do registro criado
+     */
+    public function criarPorAutomacao(string $moduloId, array $dados, array $cadeia): string
+    {
+        $campos         = $this->campoModuloModel->where('modulo_id', $moduloId)->findAll();
+        $dadosValidados = $this->validarDadosDoRegistro($campos, ['dados' => $dados], $moduloId);
+
+        if ($dadosValidados === []) {
+            throw new \DomainException('Nenhuma coluna preenchida para o novo item.');
+        }
+
+        $registroId = $this->registroModel->insert([
+            'modulo_id' => $moduloId,
+            'dados'     => $dadosValidados,
+        ]);
+
+        Events::trigger('registro_criado', [
+            'modulo_id'      => $moduloId,
+            'registro_id'    => $registroId,
+            'dados_registro' => $dadosValidados,
+            'cadeia'         => $cadeia,
+        ]);
+
+        return $registroId;
+    }
+
+    /**
      * @throws NaoEncontradoException se o registro não existir, ou não
      *         pertencer ao módulo/empresa informados
      */
@@ -136,7 +216,7 @@ class RegistroService
             ->first();
 
         if (! $registro) {
-            throw new NaoEncontradoException('Registro não encontrado.');
+            throw new NaoEncontradoException('Item não encontrado.');
         }
 
         return $registro;
@@ -150,7 +230,7 @@ class RegistroService
             ->first();
 
         if (! $modulo) {
-            throw new NaoEncontradoException('Módulo não encontrado.');
+            throw new NaoEncontradoException('Tabela não encontrada.');
         }
 
         if (! $comCampos) {
@@ -160,7 +240,7 @@ class RegistroService
         return $this->campoModuloModel->where('modulo_id', $moduloId)->findAll();
     }
 
-    private function validarDadosDoRegistro(array $campos, array $dadosRecebidos): array
+    private function validarDadosDoRegistro(array $campos, array $dadosRecebidos, string $moduloId): array
     {
         $dadosRecebidos = $dadosRecebidos['dados'] ?? [];
         $dadosValidados = [];
@@ -179,28 +259,49 @@ class RegistroService
 
                 case 'numero':
                     if (! is_numeric($valor)) {
-                        throw new \DomainException("O campo '{$campo['nome']}' precisa ser um número.");
+                        throw new \DomainException("A coluna '{$campo['nome']}' precisa ser um número.");
                     }
                     $dadosValidados[$campo['id']] = $valor + 0;
                     break;
 
                 case 'data':
+                case 'prazo':
                     $data = \DateTime::createFromFormat('Y-m-d', $valor);
                     if (! $data || $data->format('Y-m-d') !== $valor) {
-                        throw new \DomainException("O campo '{$campo['nome']}' precisa ser uma data válida (AAAA-MM-DD).");
+                        throw new \DomainException("A coluna '{$campo['nome']}' precisa ser uma data válida (AAAA-MM-DD).");
                     }
                     $dadosValidados[$campo['id']] = $valor;
                     break;
 
                 case 'selecao':
                     if (! in_array($valor, $campo['opcoes'] ?? [], true)) {
-                        throw new \DomainException("O campo '{$campo['nome']}' precisa ser uma das opções válidas.");
+                        throw new \DomainException("A coluna '{$campo['nome']}' precisa ser uma das opções válidas.");
                     }
                     $dadosValidados[$campo['id']] = $valor;
+                    break;
+
+                case 'responsavel':
+                    if (! $this->pessoaDaEmpresaDoModulo((string) $valor, $moduloId)) {
+                        throw new \DomainException("A coluna '{$campo['nome']}' precisa ser uma pessoa da equipe.");
+                    }
+                    $dadosValidados[$campo['id']] = (string) $valor;
                     break;
             }
         }
 
         return $dadosValidados;
+    }
+
+    /** O responsável precisa ser alguém da mesma empresa da tabela. */
+    private function pessoaDaEmpresaDoModulo(string $usuarioId, string $moduloId): bool
+    {
+        if (! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $usuarioId)) {
+            return false;
+        }
+
+        return $this->pessoasConferidas["{$usuarioId}|{$moduloId}"] ??= (bool) db_connect()->query(
+            'SELECT 1 FROM usuario u JOIN modulo m ON m.empresa_id = u.empresa_id WHERE u.id = ? AND m.id = ?',
+            [$usuarioId, $moduloId]
+        )->getRow();
     }
 }

@@ -35,7 +35,7 @@ export default function StatCard({
             VARIANTS[variant] || VARIANTS.primary
           )}
         >
-          <span className="material-icons text-[20px]">{icon}</span>
+          <span className="material-icons text-[20px]" aria-hidden="true">{icon}</span>
         </div>
       )}
       <div className="min-w-0 flex-1">
@@ -50,7 +50,7 @@ export default function StatCard({
                 trendPositive ? 'text-success' : 'text-danger'
               )}
             >
-              <span className="material-icons text-[14px]">
+              <span className="material-icons text-[14px]" aria-hidden="true">
                 {trend.direction === 'down' ? 'trending_down' : 'trending_up'}
               </span>
               {trend.label}

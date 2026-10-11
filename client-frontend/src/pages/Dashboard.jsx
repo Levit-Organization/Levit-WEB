@@ -1,23 +1,23 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import Layout from '../components/Layout';
 import {
   Button,
   Card,
   EmptyState,
+  ErrorState,
   Avatar,
   Skeleton,
   StatCard,
   Badge,
   coresDaFase,
-  tempoRelativo,
   estaParado,
 } from '../components/ui';
-import { useModulos, useVagas, useOutrosModulos } from '../hooks/useModulos';
-import { useEquipe } from '../hooks/useEquipe';
-import { useQuery } from '@tanstack/react-query';
-import { apiGet } from '../services/api';
-import { kanbanKey } from '../hooks/useKanban';
+import { useModulos, useEquipe, useKanban, useAutomacoes, useConvites, usePrazos } from '../hooks/queries';
+import PainelPrazos from '../components/prazos/PainelPrazos';
+import { mensagemDeErro } from '../lib/queryClient';
+import { MODELOS_TABELA } from '../utils/modelosTabela';
 
 function SecaoTitulo({ children, acao }) {
   return (
@@ -28,36 +28,134 @@ function SecaoTitulo({ children, acao }) {
   );
 }
 
+function plural(n, um, varios) {
+  return `${n} ${n === 1 ? um : varios}`;
+}
+
+const SEM_DADOS = [];
+
+/** Destino de cada tipo de tabela (financeiro e vaga têm telas próprias). */
+function destinoDaTabela(modulo) {
+  if (modulo.tipo === 'financeiro') return `/modulos/${modulo.id}/financeiro`;
+  if (modulo.tipo === 'recrutamento') return '/recrutamento';
+  return `/modulos/${modulo.id}/registros`;
+}
+
+/**
+ * Tela inicial: primeiro o que ninguém pode esquecer (prazos e o que pede
+ * atenção), depois as tabelas; recrutamento e equipe como resumo.
+ */
 export default function Dashboard() {
   const { primeiroNome, empresa } = useAuth();
 
-  // ── Dados via TanStack Query ──────────────────────────────────────────────
-  const { data: modulos = [], isLoading: loadingModulos } = useModulos();
-  const vagas   = modulos.filter((m) => m.tipo === 'recrutamento');
-  const outrosModulos = modulos.filter((m) => m.tipo !== 'recrutamento');
+  const modulosQuery = useModulos();
+  const modulos = modulosQuery.data ?? SEM_DADOS;
+  const loadingModulos = modulosQuery.isLoading;
 
-  const vagaDestaque = vagas[vagas.length - 1] ?? null;
+  const equipeQuery = useEquipe();
+  const equipe = equipeQuery.data ?? SEM_DADOS;
+  const equipeIndisponivel = equipeQuery.error?.response?.status === 403;
 
-  const { data: equipe = [], isLoading: loadingEquipe, isError: equipeError, error: equipeErrorObj } = useEquipe();
-  const equipeIndisponivel = equipeErrorObj?.response?.status === 403;
-  const equipeErro = equipeIndisponivel ? '' : (equipeErrorObj?.response?.data?.message || (equipeError ? 'Erro ao carregar a equipe.' : ''));
+  // Convites e automações dependem de permissão: sem acesso, só não aparecem.
+  const convites = useConvites({ retry: false }).data ?? SEM_DADOS;
+  const automacoes = useAutomacoes().data?.automacoes ?? SEM_DADOS;
 
-  const { data: vagaKanban, isLoading: loadingVaga, isError: vagaError, error: vagaErrorObj } = useQuery({
-    queryKey: kanbanKey(vagaDestaque?.id),
-    queryFn: ({ signal }) => apiGet(`/modulos/${vagaDestaque.id}/kanban`, { signal }),
-    enabled: !!vagaDestaque?.id,
-  });
+  const { tabelas, vagas, totalItens } = useMemo(() => {
+    const tabs = modulos.filter((m) => m.tipo !== 'recrutamento');
+    return {
+      tabelas: tabs,
+      vagas: modulos.filter((m) => m.tipo === 'recrutamento'),
+      totalItens: tabs.reduce((soma, m) => soma + Number(m.total_registros || 0), 0),
+    };
+  }, [modulos]);
+  const vagaDestaque = vagas[vagas.length - 1] || null;
 
-  const vagaIndisponivel = vagaErrorObj?.response?.status === 403;
-  const vagaErro = vagaIndisponivel ? '' : (vagaErrorObj?.response?.data?.message || (vagaError ? 'Erro ao carregar os candidatos desta vaga.' : ''));
+  const kanbanQuery = useKanban(vagaDestaque?.id, { enabled: !!vagaDestaque });
+  const vagaKanban = kanbanQuery.data ?? null;
+  const vagaIndisponivel = kanbanQuery.error?.response?.status === 403;
 
-  // ── Métricas derivadas ────────────────────────────────────────────────────
-  const fasesDaVaga = vagaKanban ? Object.entries(vagaKanban) : [];
-  const candidatosDaVaga = fasesDaVaga.flatMap(([, fase]) => fase.candidatos || []);
-  const totalCandidatosVaga = candidatosDaVaga.length;
-  const paradosVaga = candidatosDaVaga.filter((c) => estaParado(c.atualizado_em || c.criado_em)).length;
-  const membrosAtivos = equipe.filter((m) => m.status !== 'Pendente').length;
-  const convitesPendentes = equipe.length - membrosAtivos;
+  const { fasesDaVaga, totalCandidatosVaga, paradosVaga } = useMemo(() => {
+    const fases = vagaKanban ? Object.entries(vagaKanban) : [];
+    const candidatos = fases.flatMap(([, fase]) => fase.candidatos || []);
+    return {
+      fasesDaVaga: fases,
+      totalCandidatosVaga: candidatos.length,
+      paradosVaga: candidatos.filter((c) => estaParado(c.atualizado_em || c.criado_em)).length,
+    };
+  }, [vagaKanban]);
+
+  const resumoAutomacoes = useMemo(
+    () =>
+      automacoes.reduce(
+        (acc, a) => ({
+          ativas: acc.ativas + (a.ativo ? 1 : 0),
+          execucoes: acc.execucoes + (a.estatisticas?.execucoes_7d || 0),
+          falhas: acc.falhas + (a.estatisticas?.falhas_7d || 0),
+          pausadas: a.pausada_por_falhas_em && !a.ativo ? [...acc.pausadas, a] : acc.pausadas,
+        }),
+        { ativas: 0, execucoes: 0, falhas: 0, pausadas: [] }
+      ),
+    [automacoes]
+  );
+
+  const convitesVencidos = convites.filter((c) => c.expirado).length;
+
+  const prazosQuery = usePrazos('todos');
+  const atrasados = prazosQuery.data?.atrasados ?? SEM_DADOS;
+  const meusAtrasados = atrasados.filter((i) => i.meu).length;
+
+  /** O que pede alguém agir agora, em ordem de urgência. */
+  const atencao = [
+    ...(atrasados.length > 0
+      ? [{
+          id: 'atrasados',
+          icone: 'event_busy',
+          cor: 'bg-danger-bg text-danger',
+          titulo: `${plural(atrasados.length, 'item atrasado', 'itens atrasados')}`,
+          texto: meusAtrasados > 0 ? `${plural(meusAtrasados, 'está', 'estão')} com você. Veja em Prazos.` : 'Nenhum com você. Veja em Prazos.',
+          // O mais atrasado primeiro: leva direto à tabela dele.
+          to: `/modulos/${atrasados[0].modulo_id}/registros`,
+        }]
+      : []),
+    ...resumoAutomacoes.pausadas.map((a) => ({
+      id: `aut-${a.id}`,
+      icone: 'pause_circle',
+      cor: 'bg-warning-bg text-warning',
+      titulo: `Automação pausada: ${a.nome}`,
+      texto: 'Falhou várias vezes seguidas. Veja o histórico, corrija e ligue de novo.',
+      to: '/automacoes',
+    })),
+    ...(paradosVaga > 0
+      ? [{
+          id: 'parados',
+          icone: 'schedule',
+          cor: 'bg-warning-bg text-warning',
+          titulo: `${plural(paradosVaga, 'candidato parado', 'candidatos parados')} há mais de 14 dias`,
+          texto: vagaDestaque ? `Em ${vagaDestaque.nome}.` : '',
+          to: '/recrutamento',
+        }]
+      : []),
+    ...(convitesVencidos > 0
+      ? [{
+          id: 'convites-vencidos',
+          icone: 'mail',
+          cor: 'bg-danger-bg text-danger',
+          titulo: `${plural(convitesVencidos, 'convite venceu', 'convites venceram')} sem resposta`,
+          texto: 'Reenvie para a pessoa receber um link novo.',
+          to: '/team',
+        }]
+      : []),
+    ...(convites.length - convitesVencidos > 0
+      ? [{
+          id: 'convites',
+          icone: 'forward_to_inbox',
+          cor: 'bg-info-bg text-info',
+          titulo: `${plural(convites.length - convitesVencidos, 'convite aguardando', 'convites aguardando')} resposta`,
+          texto: 'Quem aceitar entra direto na equipe.',
+          to: '/team',
+        }]
+      : []),
+  ];
 
   const saudacao = (() => {
     const h = new Date().getHours();
@@ -78,9 +176,9 @@ export default function Dashboard() {
         </p>
       </header>
 
-      {/* INDICADORES */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8 shrink-0">
-        {loadingModulos || loadingVaga ? (
+      {/* INDICADORES: a operação inteira */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8 shrink-0" aria-label="Resumo">
+        {loadingModulos ? (
           [1, 2, 3, 4].map((s) => (
             <Card key={s} padding="md" className="flex items-start gap-3.5">
               <Skeleton className="w-10 h-10 rounded-lg shrink-0" />
@@ -93,44 +191,88 @@ export default function Dashboard() {
         ) : (
           <>
             <StatCard
-              value={vagas.length}
-              label={vagas.length === 1 ? 'Vaga aberta' : 'Vagas abertas'}
+              icon="table_chart"
+              value={tabelas.length}
+              label={tabelas.length === 1 ? 'Tabela' : 'Tabelas'}
+              hint={plural(totalItens, 'item guardado', 'itens guardados')}
               variant="primary"
             />
             <StatCard
-              value={totalCandidatosVaga}
-              label="Candidatos no funil"
-              hint={vagaDestaque?.nome}
+              icon="bolt"
+              value={resumoAutomacoes.ativas}
+              label={resumoAutomacoes.ativas === 1 ? 'Automação ligada' : 'Automações ligadas'}
+              hint={`${plural(resumoAutomacoes.execucoes, 'execução', 'execuções')} nesta semana`}
               variant="info"
-            />
-            <StatCard
-              value={membrosAtivos}
-              label={membrosAtivos === 1 ? 'Pessoa na equipe' : 'Pessoas na equipe'}
-              variant="success"
               badge={
-                convitesPendentes > 0 ? (
-                  <Badge variant="warning" size="sm">
-                    +{convitesPendentes} convite{convitesPendentes > 1 ? 's' : ''}
-                  </Badge>
+                resumoAutomacoes.falhas > 0 ? (
+                  <Badge variant="danger" size="sm">{plural(resumoAutomacoes.falhas, 'falha', 'falhas')}</Badge>
                 ) : null
               }
             />
             <StatCard
-              value={paradosVaga}
-              label="Parados há mais de 14 dias"
-              hint={paradosVaga > 0 ? 'Precisam de uma resposta' : 'Funil em dia'}
-              variant={paradosVaga > 0 ? 'warning' : 'default'}
+              icon="groups"
+              value={equipe.length}
+              label={equipe.length === 1 ? 'Pessoa na equipe' : 'Pessoas na equipe'}
+              variant="success"
+              badge={
+                convites.length > 0 ? (
+                  <Badge variant="warning" size="sm">+{plural(convites.length, 'convite', 'convites')}</Badge>
+                ) : null
+              }
+            />
+            <StatCard
+              icon={atencao.length ? 'priority_high' : 'task_alt'}
+              value={atencao.length}
+              label={atencao.length === 1 ? 'Coisa pede atenção' : 'Coisas pedem atenção'}
+              hint={atencao.length ? 'Veja a lista abaixo' : 'Tudo em dia'}
+              variant={atencao.length ? 'warning' : 'default'}
             />
           </>
         )}
       </section>
 
-      {/* MÓDULOS */}
+      {/* PRAZOS E ATENÇÃO: o que ninguém pode esquecer */}
+      <section className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-8 shrink-0">
+        <div className="lg:col-span-3 min-w-0">
+          <PainelPrazos query={prazosQuery} />
+        </div>
+
+        {/* PRECISA DE ATENÇÃO */}
+        <Card className="lg:col-span-2 min-w-0">
+          <SecaoTitulo>Precisa da sua atenção</SecaoTitulo>
+          {atencao.length === 0 ? (
+            <EmptyState
+              size="sm"
+              icon="task_alt"
+              title="Tudo em dia"
+              description="Quando algo atrasar, uma automação falhar ou um convite vencer, aparece aqui."
+              className="py-4"
+            />
+          ) : (
+            <ul className="flex flex-col divide-y divide-divider">
+              {atencao.map((item) => (
+                <li key={item.id}>
+                  <Link to={item.to} className="flex items-start gap-3 py-3 group">
+                    <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${item.cor}`} aria-hidden="true">
+                      <span className="material-icons text-[18px]">{item.icone}</span>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-ink group-hover:text-primary transition-colors">{item.titulo}</span>
+                      {item.texto && <span className="block text-xs text-light-text mt-0.5">{item.texto}</span>}
+                    </span>
+                    <span className="material-icons text-[18px] text-faint mt-2" aria-hidden="true">chevron_right</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </section>
+
+      {/* TABELAS: o centro do trabalho */}
       <section className="mb-8 shrink-0">
-        <SecaoTitulo
-          acao={<Button to="/modulos/novo" size="sm" variant="secondary" icon="add">Novo módulo</Button>}
-        >
-          Seus módulos
+        <SecaoTitulo acao={<Button to="/modulos/novo" size="sm" variant="secondary" icon="add">Nova tabela</Button>}>
+          Suas tabelas
         </SecaoTitulo>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -144,37 +286,47 @@ export default function Dashboard() {
                 </div>
               </Card>
             ))
-          ) : outrosModulos.length === 0 ? (
+          ) : modulosQuery.isError ? (
             <Card className="col-span-full">
-              <EmptyState
-                icon="widgets"
-                title="Nenhum módulo além das vagas"
-                description="Módulos guardam o resto do RH: documentos, avaliações, controle de ponto. Você define os campos."
-                actionLabel="Criar módulo"
-                actionIcon="add"
-                actionTo="/modulos/novo"
+              <ErrorState
+                description={mensagemDeErro(modulosQuery.error, 'Erro ao carregar as tabelas.')}
+                onRetry={() => modulosQuery.refetch()}
               />
             </Card>
+          ) : tabelas.length === 0 ? (
+            <Card className="col-span-full">
+              <p className="text-sm font-semibold text-ink">Comece pela primeira tabela</p>
+              <p className="text-sm text-light-text mt-1">
+                Tudo o que hoje está em planilhas, e-mails e mensagens pode virar uma tabela. Escolha um modelo para começar:
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {MODELOS_TABELA.filter((m) => m.segmento || m.id === 'tarefas').map((m) => (
+                  <Button key={m.id} to="/modulos/novo" variant="secondary" size="sm" icon={m.icone}>
+                    {m.titulo}
+                  </Button>
+                ))}
+              </div>
+            </Card>
           ) : (
-            outrosModulos.slice(0, 6).map((modulo) => (
+            tabelas.slice(0, 6).map((modulo) => (
               <Card
                 key={modulo.id}
                 as={Link}
-                to={modulo.tipo === 'financeiro' ? `/modulos/${modulo.id}/financeiro` : `/modulos/${modulo.id}/registros`}
+                to={destinoDaTabela(modulo)}
                 padding="sm"
                 interactive
                 className="flex items-center gap-3.5 group no-underline"
               >
                 <div className="w-11 h-11 rounded-lg flex items-center justify-center bg-primary-100 text-primary shrink-0">
-                  <span className="material-icons text-[21px]">{modulo.icone || 'extension'}</span>
+                  <span className="material-icons text-[21px]" aria-hidden="true">{modulo.icone || 'extension'}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-sm text-ink truncate">{modulo.nome}</h3>
                   <p className="text-xs text-light-text">
-                    {modulo.total_registros || 0} registro{(modulo.total_registros || 0) != 1 ? 's' : ''}
+                    {modulo.tipo === 'financeiro' ? 'Entradas e saídas' : plural(Number(modulo.total_registros || 0), 'item', 'itens')}
                   </p>
                 </div>
-                <span className="material-icons text-[20px] text-faint opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <span className="material-icons text-[20px] text-faint opacity-0 group-hover:opacity-100 transition-opacity shrink-0" aria-hidden="true">
                   arrow_forward
                 </span>
               </Card>
@@ -182,174 +334,106 @@ export default function Dashboard() {
           )}
         </div>
 
-        {outrosModulos.length > 6 && (
+        {tabelas.length > 6 && (
           <div className="mt-4">
             <Link to="/modulos" className="text-sm text-primary font-semibold hover:underline">
-              Ver todos os {outrosModulos.length} módulos
+              Ver todas as {tabelas.length} tabelas
             </Link>
           </div>
         )}
       </section>
 
-      {/* FUNIL + EQUIPE */}
-      <section className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4 shrink-0">
-        {/* Funil da vaga em destaque */}
-        <Card className="lg:col-span-3 min-w-0">
-          <SecaoTitulo
-            acao={
-              vagaDestaque && (
+      {/* RECRUTAMENTO E EQUIPE (resumo) */}
+      <section className="mb-4 shrink-0">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
+          {/* RECRUTAMENTO (resumo) */}
+          <Card className="min-w-0">
+            <SecaoTitulo
+              acao={
                 <Link to="/recrutamento" className="text-sm text-primary font-semibold hover:underline shrink-0">
-                  Abrir funil
+                  {vagaDestaque ? 'Abrir quadro' : 'Abrir vaga'}
                 </Link>
-              )
-            }
-          >
-            {vagaDestaque ? vagaDestaque.nome : 'Funil de recrutamento'}
-          </SecaoTitulo>
-
-          {loadingModulos || loadingVaga ? (
-            <div className="flex gap-2.5">
-              {[1, 2, 3, 4].map((s) => (
-                <div key={s} className="flex-1">
-                  <Skeleton className="h-3 w-16 mb-2" />
-                  <Skeleton className="h-16 w-full rounded-lg" />
-                </div>
-              ))}
-            </div>
-          ) : !vagaDestaque ? (
-            <EmptyState
-              size="sm"
-              icon="work_outline"
-              title="Nenhuma vaga aberta"
-              description="Crie uma vaga para montar o funil de etapas e começar a receber candidaturas."
-              actionLabel="Criar vaga"
-              actionIcon="add"
-              actionTo="/modulos/novo"
-              className="py-4"
-            />
-          ) : vagaIndisponivel ? (
-            <EmptyState size="sm" icon="lock" title="Sem acesso" description="Seu cargo não tem permissão para ver esta vaga." className="py-4" />
-          ) : vagaErro ? (
-            <EmptyState size="sm" icon="error_outline" title="Não foi possível carregar" description={vagaErro} className="py-4" />
-          ) : totalCandidatosVaga === 0 ? (
-            <EmptyState
-              size="sm"
-              icon="person_search"
-              title="Nenhum candidato ainda"
-              description="Assim que alguém se candidatar, o funil aparece aqui com o avanço por etapa."
-              className="py-4"
-            />
-          ) : (
-            <>
-              <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(fasesDaVaga.length, 5)}, minmax(0, 1fr))` }}>
-                {fasesDaVaga.slice(0, 5).map(([faseId, fase], indice) => {
-                  const cor = coresDaFase(indice, fasesDaVaga.length);
-                  const qtd = fase.candidatos?.length || 0;
-
-                  return (
-                    <div key={faseId} className="min-w-0 bg-background rounded-lg p-3 flex flex-col h-full border border-divider">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className={`h-2 w-2 rounded-full shrink-0 ${cor.dot}`} />
-                          <span className="text-xs font-semibold uppercase tracking-wide text-ink truncate">
-                            {fase.fase}
-                          </span>
-                        </div>
-                        <span className={`text-xs font-bold ${qtd ? cor.text : 'text-faint'}`}>{qtd}</span>
-                      </div>
-
-                      <div className="flex flex-col gap-2 flex-1">
-                        {(fase.candidatos || []).slice(0, 4).map((c) => (
-                          <div key={c.id} className="bg-surface border border-divider p-2 rounded-md shadow-sm flex items-center gap-2">
-                            <Avatar name={c.nome} size="xs" />
-                            <span className="text-xs font-medium text-ink truncate">{c.nome}</span>
-                          </div>
-                        ))}
-                        {qtd > 4 && (
-                          <div className="text-center py-1 mt-auto">
-                            <span className="text-xs text-light-text hover:text-primary cursor-pointer font-medium">
-                              +{qtd - 4} candidatos
-                            </span>
-                          </div>
-                        )}
-                        {qtd === 0 && (
-                          <div className="flex-1 border-2 border-dashed border-divider rounded-md flex items-center justify-center py-4">
-                            <span className="text-2xs text-faint">Vazio</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </Card>
-
-        {/* Equipe */}
-        <Card className="lg:col-span-2 min-w-0">
-          <SecaoTitulo
-            acao={
-              <Link to="/team" className="text-sm text-primary font-semibold hover:underline shrink-0">
-                Ver equipe
-              </Link>
-            }
-          >
-            Equipe
-          </SecaoTitulo>
-
-          {loadingEquipe ? (
-            <div className="flex flex-col gap-3.5">
-              {[1, 2, 3].map((s) => (
-                <div key={s} className="flex items-center gap-3">
-                  <Skeleton className="w-9 h-9 rounded-full shrink-0" />
-                  <div className="flex-1">
-                    <Skeleton className="h-3.5 w-28 mb-1.5" />
-                    <Skeleton className="h-3 w-20" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : equipeIndisponivel ? (
-            <EmptyState size="sm" icon="lock" title="Sem acesso" description="Seu cargo não tem permissão para ver a equipe." className="py-4" />
-          ) : equipeErro ? (
-            <EmptyState size="sm" icon="error_outline" title="Não foi possível carregar" description={equipeErro} className="py-4" />
-          ) : equipe.length === 0 ? (
-            <EmptyState
-              size="sm"
-              icon="group_add"
-              title="Só você por aqui"
-              description="Convide quem participa das contratações para dividir o acompanhamento das vagas."
-              actionLabel="Convidar pessoa"
-              actionIcon="person_add"
-              actionTo="/team"
-              className="py-4"
-            />
-          ) : (
-            <div className="flex flex-col">
-              {equipe.slice(0, 5).map((membro) => (
-                <div key={membro.id} className="flex items-center justify-between gap-3 py-2">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Avatar name={membro.nome} size="md" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-ink truncate">{membro.nome}</p>
-                    </div>
-                  </div>
-                  {membro.status === 'Pendente' ? (
-                    <Badge variant="warning" size="sm">Pendente</Badge>
-                  ) : (
-                    <Badge variant="default" size="sm">{membro.cargo_nome || 'Sem cargo'}</Badge>
-                  )}
-                </div>
-              ))}
-              {equipe.length > 5 && (
-                <p className="text-2xs text-light-text pt-2">
-                  e mais {equipe.length - 5} {equipe.length - 5 === 1 ? 'pessoa' : 'pessoas'}
+              }
+            >
+              Recrutamento
+            </SecaoTitulo>
+            {!vagaDestaque ? (
+              <p className="text-sm text-light-text">
+                Nenhuma vaga aberta. Quando abrir uma, os candidatos se inscrevem por um link e aparecem num quadro de etapas.
+              </p>
+            ) : vagaIndisponivel ? (
+              <p className="text-sm text-light-text">Seu cargo não tem acesso a esta vaga.</p>
+            ) : kanbanQuery.isLoading ? (
+              <Skeleton className="h-12 w-full rounded-lg" />
+            ) : (
+              <>
+                <p className="text-sm text-ink-soft">
+                  <strong className="text-ink">{vagaDestaque.nome}</strong> · {plural(totalCandidatosVaga, 'candidato', 'candidatos')}
+                  {vagas.length > 1 ? ` · ${plural(vagas.length, 'vaga aberta', 'vagas abertas')}` : ''}
                 </p>
-              )}
-            </div>
-          )}
-        </Card>
+                {totalCandidatosVaga > 0 && (
+                  <>
+                    <div className="flex gap-1 mt-3" aria-hidden="true">
+                      {fasesDaVaga.map(([faseId, fase], indice) => {
+                        const qtd = fase.candidatos?.length || 0;
+                        return (
+                          <div
+                            key={faseId}
+                            className={`h-1.5 rounded-full ${qtd ? coresDaFase(indice, fasesDaVaga.length).dot : 'bg-divider'}`}
+                            style={{ flex: Math.max(qtd, 0.35) }}
+                          />
+                        );
+                      })}
+                    </div>
+                    <ul className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
+                      {fasesDaVaga.map(([faseId, fase], indice) => (
+                        <li key={faseId} className="flex items-center gap-1.5 text-xs text-light-text">
+                          <span className={`h-1.5 w-1.5 rounded-full ${coresDaFase(indice, fasesDaVaga.length).dot}`} aria-hidden="true" />
+                          {fase.fase}: <strong className="text-ink tabular">{fase.candidatos?.length || 0}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </>
+            )}
+          </Card>
+
+          {/* EQUIPE (resumo) */}
+          <Card className="min-w-0">
+            <SecaoTitulo
+              acao={
+                <Link to="/team" className="text-sm text-primary font-semibold hover:underline shrink-0">
+                  Ver equipe
+                </Link>
+              }
+            >
+              Equipe
+            </SecaoTitulo>
+            {equipeIndisponivel ? (
+              <p className="text-sm text-light-text">Seu cargo não tem acesso à lista da equipe.</p>
+            ) : equipeQuery.isLoading ? (
+              <Skeleton className="h-9 w-40 rounded-full" />
+            ) : equipe.length <= 1 ? (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-light-text">Só você por aqui. Convide quem trabalha com você.</p>
+                <Button to="/team" size="sm" variant="secondary" icon="person_add">Convidar</Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="flex -space-x-2">
+                  {equipe.slice(0, 6).map((membro) => (
+                    <Avatar key={membro.id} name={membro.nome} size="md" ring />
+                  ))}
+                </div>
+                <p className="text-sm text-light-text">
+                  {plural(equipe.length, 'pessoa', 'pessoas')}
+                  {convites.length > 0 ? ` · ${plural(convites.length, 'convite pendente', 'convites pendentes')}` : ''}
+                </p>
+              </div>
+            )}
+          </Card>
+        </div>
       </section>
     </Layout>
   );

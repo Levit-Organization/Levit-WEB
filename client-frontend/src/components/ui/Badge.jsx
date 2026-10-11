@@ -42,7 +42,7 @@ export default function Badge({
       {...rest}
     >
       {dot && <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', DOTS[variant] || DOTS.default)} />}
-      {icon && !dot && <span className="material-icons text-[14px] leading-none">{icon}</span>}
+      {icon && !dot && <span className="material-icons text-[14px] leading-none" aria-hidden="true">{icon}</span>}
       {children}
     </span>
   );

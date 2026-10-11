@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\CargoService;
 
@@ -40,6 +41,8 @@ class CargoController extends BaseApiController
                 $dados['nome'],
                 $dados['permissoes'] ?? []
             );
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         }
@@ -69,6 +72,8 @@ class CargoController extends BaseApiController
             );
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         }
@@ -82,6 +87,8 @@ class CargoController extends BaseApiController
             $this->cargoService->excluirCargo(service('authenticatedUser')->empresaId, $cargoId);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         }

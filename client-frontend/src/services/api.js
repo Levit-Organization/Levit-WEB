@@ -1,6 +1,9 @@
 import axios from 'axios';
+import { queryClient } from '../lib/queryClient';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1';
+
+export const SESSION_EXPIRED_EVENT = 'levit:session-expired';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -18,45 +21,37 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Interceptor: handle 401 responses globally
+// Qualquer escrita bem-sucedida deixa o cache de leitura desatualizado. As
+// invalidações são agrupadas: um fluxo com várias chamadas seguidas (ex.: criar
+// módulo + campos) gera uma única rodada de refetch das telas ativas.
+let invalidacaoPendente = null;
+function agendarInvalidacao() {
+  if (invalidacaoPendente) return;
+  invalidacaoPendente = setTimeout(() => {
+    invalidacaoPendente = null;
+    queryClient.invalidateQueries();
+  }, 50);
+}
+
+const METODOS_DE_ESCRITA = ['post', 'put', 'patch', 'delete'];
+
 api.interceptors.response.use(
   (response) => {
-    // Normaliza respostas da API: extrai response.data.data quando existir
-    if (response.data?.data !== undefined) {
-      response.data = response.data.data;
+    const metodo = response.config?.method?.toLowerCase();
+    const ehAuth = response.config?.url?.startsWith('/auth/');
+    if (METODOS_DE_ESCRITA.includes(metodo) && !ehAuth && !response.config?.skipInvalidate) {
+      agendarInvalidacao();
     }
     return response;
   },
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('levit_token');
-      localStorage.removeItem('levit_user');
-      localStorage.removeItem('levit_empresa');
-      // Only redirect if not already on auth pages
-      if (
-        !window.location.pathname.startsWith('/login') &&
-        !window.location.pathname.startsWith('/register')
-      ) {
-        window.location.href = '/login';
-      }
+    // 401 com token salvo = sessão expirada. Sem token (ex.: senha errada no
+    // login) é só uma resposta de erro comum e a tela trata.
+    if (error.response?.status === 401 && localStorage.getItem('levit_token')) {
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     }
     return Promise.reject(error);
   }
 );
-
-/**
- * Helper para criar uma função de fetch que repassa o AbortSignal
- * do TanStack Query para o Axios, cancelando requisições obsoletas
- * quando a query é invalidada ou o componente é desmontado.
- *
- * Uso nos hooks:
- *   queryFn: ({ signal }) => apiGet('/rota', { signal })
- *
- * @param {string} url
- * @param {object} [options]  - { params, signal, ...axiosConfig }
- */
-export function apiGet(url, { signal, ...options } = {}) {
-  return api.get(url, { signal, ...options }).then((r) => r.data);
-}
 
 export default api;

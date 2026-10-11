@@ -1,9 +1,10 @@
 import api from './api';
 
 export const registroService = {
-  getAll: async (moduloId, busca) => {
+  getAll: async (moduloId, busca, signal) => {
     const response = await api.get(`/modulos/${moduloId}/registros`, {
-      params: busca ? { busca } : {}
+      params: busca ? { busca } : {},
+      signal,
     });
     return response.data?.data || response.data;
   },
@@ -13,8 +14,8 @@ export const registroService = {
     return response.data?.data || response.data;
   },
 
-  update: async (moduloId, registroId, data) => {
-    const response = await api.put(`/modulos/${moduloId}/registros/${registroId}`, data);
+  update: async (moduloId, registroId, data, config) => {
+    const response = await api.put(`/modulos/${moduloId}/registros/${registroId}`, data, config);
     return response.data?.data || response.data;
   },
 

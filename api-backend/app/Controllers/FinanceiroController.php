@@ -40,6 +40,8 @@ class FinanceiroController extends BaseApiController
 
         try {
             $categoria = $this->financeiroService->criarCategoria(service('authenticatedUser')->empresaId, $dados['nome']);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         }
@@ -53,6 +55,8 @@ class FinanceiroController extends BaseApiController
             $this->financeiroService->excluirCategoria(service('authenticatedUser')->empresaId, $categoriaId);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->respondSuccess(null, 200);

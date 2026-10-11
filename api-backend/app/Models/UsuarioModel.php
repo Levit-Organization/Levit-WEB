@@ -15,6 +15,8 @@ class UsuarioModel extends BaseModel
         'nome',
         'email',
         'senha_hash',
+        'reset_hash',
+        'reset_expires_at',
     ];
 
     protected $useTimestamps = true;

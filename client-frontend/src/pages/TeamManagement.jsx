@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 import {
   Button,
   Input,
+  Textarea,
   Select,
   Modal,
   Drawer,
@@ -11,16 +12,108 @@ import {
   Avatar,
   Alert,
   EmptyState,
+  ErrorState,
   Skeleton,
   PageHeader,
+  Pagination,
 } from '../components/ui';
+import { usePagination } from '../hooks/usePagination';
+import { useAuth } from '../hooks/useAuth';
 
-/** Status é estado, não etiqueta: cada um tem a sua cor. */
-const STATUS_VARIANT = {
-  Ativo: 'success',
-  Pendente: 'warning',
-  Inativo: 'default',
-};
+const formatoData = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+
+/** "12 de out. de 2026" a partir do criado_em do backend ("AAAA-MM-DD HH:MM:SS"). */
+function desde(valor) {
+  const data = new Date(String(valor || '').replace(' ', 'T'));
+  return Number.isNaN(data.getTime()) ? null : formatoData.format(data);
+}
+
+const MAX_MENSAGEM = 500;
+
+function diasAte(valor) {
+  const data = new Date(String(valor || '').replace(' ', 'T'));
+  if (Number.isNaN(data.getTime())) return null;
+  return Math.ceil((data.getTime() - Date.now()) / 86400000);
+}
+
+/** Convites enviados e ainda não aceitos, com reenviar e cancelar. */
+function ConvitesPendentes({ convites, onReenviar, onCancelar }) {
+  const [ocupado, setOcupado] = useState(null);
+  if (!convites.length) return null;
+
+  const agir = async (convite, acao) => {
+    setOcupado(`${acao}-${convite.id}`);
+    try {
+      await (acao === 'reenviar' ? onReenviar(convite) : onCancelar(convite));
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  return (
+    <Card padding="none" className="mb-5 overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-divider">
+        <span className="material-icons text-[18px] text-warning" aria-hidden="true">forward_to_inbox</span>
+        <h2 className="text-sm font-semibold text-ink">Convites aguardando resposta</h2>
+        <Badge variant="warning" size="sm">{convites.length}</Badge>
+      </div>
+      <ul className="divide-y divide-divider">
+        {convites.map((convite) => {
+          const dias = diasAte(convite.expira_em);
+          return (
+            <li key={convite.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <span className="w-9 h-9 rounded-full bg-warning-bg text-warning flex items-center justify-center shrink-0" aria-hidden="true">
+                  <span className="material-icons text-[18px]">mail</span>
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-ink truncate">{convite.email}</p>
+                  <p className="text-2xs text-light-text truncate">
+                    {convite.cargo_nome || 'Sem cargo'}
+                    {convite.convidado_por_nome ? ` · convidado por ${convite.convidado_por_nome}` : ''}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 sm:justify-end">
+                {convite.expirado ? (
+                  <Badge variant="danger" size="sm" dot>Expirado</Badge>
+                ) : (
+                  <Badge variant="warning" size="sm" dot>
+                    {dias !== null && dias <= 1 ? 'Vence hoje' : `Vence em ${dias} dias`}
+                  </Badge>
+                )}
+                {onReenviar && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon="send"
+                    loading={ocupado === `reenviar-${convite.id}`}
+                    onClick={() => agir(convite, 'reenviar')}
+                    aria-label={`Reenviar convite para ${convite.email}`}
+                  >
+                    Reenviar
+                  </Button>
+                )}
+                {onCancelar && (
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    icon="close"
+                    loading={ocupado === `cancelar-${convite.id}`}
+                    onClick={() => agir(convite, 'cancelar')}
+                    title="Cancelar convite"
+                    aria-label={`Cancelar convite para ${convite.email}`}
+                    className="text-danger hover:bg-danger-bg hover:border-danger"
+                  />
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
 
 export default function TeamManagement({
   members = [],
@@ -28,7 +121,12 @@ export default function TeamManagement({
   modules = [],
   permissions = [],
   loading = false,
+  error = '',
+  onRetry,
   onInviteMember,
+  invites = [],
+  onResendInvite,
+  onCancelInvite,
   onUpdateMember,
   onDeleteMember,
   onCreateRole,
@@ -40,6 +138,7 @@ export default function TeamManagement({
   onSetModuloNivel,
   onRemoveModuloNivel,
 }) {
+  const { usuario } = useAuth();
   const [activeTab, setActiveTab] = useState('members');
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
@@ -50,8 +149,18 @@ export default function TeamManagement({
     nome: '',
     email: '',
     cargo: '',
-    status: '',
+    mensagem: '',
   });
+
+  const [memberErrors, setMemberErrors] = useState({});
+  const [memberError, setMemberError] = useState('');
+  const [savingMember, setSavingMember] = useState(false);
+  const [memberInitial, setMemberInitial] = useState(null);
+
+  const [roleError, setRoleError] = useState('');
+  const [roleFormError, setRoleFormError] = useState('');
+  const [savingRole, setSavingRole] = useState(false);
+  const [roleInitial, setRoleInitial] = useState(null);
 
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState(null);
@@ -61,22 +170,20 @@ export default function TeamManagement({
   });
 
   const openInviteModal = (member = null) => {
+    const inicial = member
+      ? {
+          nome: member.nome || '',
+          email: member.email || '',
+          cargo: member.cargo_id ?? '',
+          mensagem: '',
+        }
+      : { nome: '', email: '', cargo: '', mensagem: '' };
+
     setEditingMember(member);
-    setMemberForm(
-      member
-        ? {
-            nome: member.nome || '',
-            email: member.email || '',
-            cargo: member.cargo || '',
-            status: member.status || '',
-          }
-        : {
-            nome: '',
-            email: '',
-            cargo: '',
-            status: '',
-          }
-    );
+    setMemberForm(inicial);
+    setMemberInitial(inicial);
+    setMemberErrors({});
+    setMemberError('');
     setInviteOpen(true);
   };
 
@@ -108,80 +215,96 @@ export default function TeamManagement({
     }
   };
 
-  const closeInviteModal = () => {
-    setInviteOpen(false);
-    setEditingMember(null);
-    setMemberForm({ nome: '', email: '', cargo: '', status: '' });
+  // Só limpa o formulário depois da animação de saída (o estado fica enquanto fecha).
+  const closeInviteModal = () => setInviteOpen(false);
+
+  const memberDirty = !!memberInitial && JSON.stringify(memberForm) !== JSON.stringify(memberInitial);
+
+  const changeMember = (campo, valor) => {
+    setMemberForm((current) => ({ ...current, [campo]: valor }));
+    setMemberErrors((current) => (current[campo] ? { ...current, [campo]: undefined } : current));
   };
 
-  const submitMember = (event) => {
+  const submitMember = async (event) => {
     event?.preventDefault?.();
 
-    if (!memberForm.email.trim()) return;
-    if (!memberForm.cargo) {
-      alert('Por favor, selecione um cargo para o colaborador.');
-      return;
-    }
+    const erros = {};
+    if (!memberForm.email.trim()) erros.email = 'Informe o e-mail.';
+    else if (!/^\S+@\S+\.\S+$/.test(memberForm.email.trim())) erros.email = 'Esse e-mail não parece válido.';
+    if (!memberForm.cargo) erros.cargo = 'Selecione um cargo para o colaborador.';
+    if (memberForm.mensagem.length > MAX_MENSAGEM) erros.mensagem = `Use no máximo ${MAX_MENSAGEM} caracteres.`;
+    setMemberErrors(erros);
+    if (Object.keys(erros).length > 0) return;
 
     if (editingMember && !onUpdateMember) return;
     if (!editingMember && !onInviteMember) return;
 
-    if (editingMember) {
-      onUpdateMember?.(editingMember.id, { ...memberForm });
-    } else {
-      onInviteMember?.({ ...memberForm });
+    try {
+      setSavingMember(true);
+      setMemberError('');
+      if (editingMember) {
+        await onUpdateMember(editingMember.id, { ...memberForm });
+      } else {
+        await onInviteMember({ ...memberForm });
+      }
+      closeInviteModal();
+    } catch (err) {
+      // O painel continua aberto com o que foi digitado.
+      setMemberError(err.message);
+    } finally {
+      setSavingMember(false);
     }
-
-    closeInviteModal();
   };
 
   const openRoleModal = (role = null) => {
+    const inicial = role
+      ? { nome: role.nome || '', permissoes: [...(role.permissoes || [])] }
+      : { nome: '', permissoes: [] };
+
     setEditingRole(role);
-    setRoleForm(
-      role
-        ? {
-            nome: role.nome || '',
-            permissoes: [...(role.permissoes || [])],
-          }
-        : {
-            nome: '',
-            permissoes: [],
-          }
-    );
+    setRoleForm(inicial);
+    setRoleInitial(inicial);
+    setRoleError('');
+    setRoleFormError('');
     setRoleModalOpen(true);
   };
 
-  const closeRoleModal = () => {
-    setRoleModalOpen(false);
-    setEditingRole(null);
-    setRoleForm({ nome: '', permissoes: [] });
-  };
+  const closeRoleModal = () => setRoleModalOpen(false);
 
-  const submitRole = (event) => {
+  const roleDirty = !!roleInitial && JSON.stringify(roleForm) !== JSON.stringify(roleInitial);
+
+  const submitRole = async (event) => {
     event?.preventDefault?.();
 
-    if (!roleForm.nome.trim()) return;
+    if (!roleForm.nome.trim()) {
+      setRoleError('Informe o nome do cargo.');
+      return;
+    }
 
     if (editingRole && !onUpdateRole) return;
     if (!editingRole && !onCreateRole) return;
 
-    if (editingRole) {
-      onUpdateRole?.(editingRole.id, {
-        nome: roleForm.nome.trim(),
-        permissoes: roleForm.permissoes,
-      });
-    } else {
-      onCreateRole?.({
-        nome: roleForm.nome.trim(),
-        permissoes: roleForm.permissoes,
-      });
-    }
+    const dados = { nome: roleForm.nome.trim(), permissoes: roleForm.permissoes };
 
-    closeRoleModal();
+    try {
+      setSavingRole(true);
+      setRoleError('');
+      setRoleFormError('');
+      if (editingRole) {
+        await onUpdateRole(editingRole.id, dados);
+      } else {
+        await onCreateRole(dados);
+      }
+      closeRoleModal();
+    } catch (err) {
+      setRoleFormError(err.message);
+    } finally {
+      setSavingRole(false);
+    }
   };
 
   const handleDeleteMember = (member) => {
-    onDeleteMember?.(member.id);
+    onDeleteMember?.(member);
   };
 
   const handleDeleteRole = (role) => {
@@ -189,7 +312,7 @@ export default function TeamManagement({
   };
 
   const normalizedSearch = searchTerm.trim().toLowerCase();
-  const filteredMembers = members.filter((member) => {
+  const filteredMembers = useMemo(() => members.filter((member) => {
     const matchesSearch =
       !normalizedSearch ||
       (member.nome || '').toLowerCase().includes(normalizedSearch) ||
@@ -218,7 +341,9 @@ export default function TeamManagement({
         memberRoleName.toLowerCase();
 
     return matchesSearch && matchesRole;
-  });
+  }), [members, roles, normalizedSearch, roleFilter]);
+
+  const paginacao = usePagination(filteredMembers, 25);
 
   const abas = [
     { id: 'members', label: 'Colaboradores', count: members.length },
@@ -240,13 +365,17 @@ export default function TeamManagement({
         />
 
         <div>
-          <div className="border-b border-divider flex gap-6 mb-6">
+          <div role="tablist" aria-label="Seções da equipe" className="border-b border-divider flex gap-6 mb-6 overflow-x-auto">
             {abas.map((aba) => (
               <button
                 key={aba.id}
+                id={`aba-${aba.id}`}
                 type="button"
+                role="tab"
+                aria-selected={activeTab === aba.id}
+                aria-controls={`painel-${aba.id}`}
                 onClick={() => setActiveTab(aba.id)}
-                className={`flex items-center gap-2 pb-3 -mb-px text-sm font-semibold border-b-2 transition-colors ${
+                className={`flex items-center gap-2 pb-3 -mb-px text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
                   activeTab === aba.id
                     ? 'text-primary border-primary'
                     : 'text-light-text border-transparent hover:text-ink-soft'
@@ -266,15 +395,25 @@ export default function TeamManagement({
             ))}
           </div>
 
-          {activeTab === 'members' ? (
-            <section>
+          {error && !loading ? (
+            <Card padding="lg" className="py-12">
+              <ErrorState size="lg" description={error} onRetry={onRetry} />
+            </Card>
+          ) : activeTab === 'members' ? (
+            <section id="painel-members" role="tabpanel" aria-labelledby="aba-members">
+              <ConvitesPendentes convites={invites} onReenviar={onResendInvite} onCancelar={onCancelInvite} />
               <div className="mb-5 flex flex-col md:flex-row md:items-center gap-3">
                 <div className="flex-1">
                   <Input
                     type="search"
                     icon="search"
                     value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
+                    onChange={(event) => {
+                      setSearchTerm(event.target.value);
+                      paginacao.setPage(1);
+                    }}
+                    name="busca"
+                    autoComplete="off"
                     placeholder="Buscar por nome ou e-mail"
                     aria-label="Buscar colaborador"
                   />
@@ -284,7 +423,10 @@ export default function TeamManagement({
                   <Select
                     icon="filter_list"
                     value={roleFilter}
-                    onChange={(event) => setRoleFilter(event.target.value)}
+                    onChange={(event) => {
+                      setRoleFilter(event.target.value);
+                      paginacao.setPage(1);
+                    }}
                     aria-label="Filtrar por cargo"
                     options={[{ value: '', label: 'Todos os cargos' }, ...roles.map((role) => ({ value: role.id, label: role.nome }))]}
                   />
@@ -309,7 +451,7 @@ export default function TeamManagement({
                         Cargo Atual
                       </th>
                       <th className="px-4 text-left text-[11px] font-bold tracking-[0.03em] text-light-text uppercase">
-                        Status
+                        Na equipe desde
                       </th>
                       <th className="px-4 text-right text-[11px] font-bold tracking-[0.03em] text-light-text uppercase">
                         Ações
@@ -349,7 +491,7 @@ export default function TeamManagement({
                             description={
                               normalizedSearch || roleFilter
                                 ? 'Tente outro nome, e-mail ou cargo.'
-                                : 'Convide quem participa das contratações. Cada pessoa entra com um cargo, e o cargo define o que ela enxerga.'
+                                : 'Convide quem trabalha com você. Cada pessoa entra com um cargo, e o cargo define o que ela enxerga.'
                             }
                             actionLabel={normalizedSearch || roleFilter ? undefined : 'Convidar pessoa'}
                             actionIcon="person_add"
@@ -358,7 +500,7 @@ export default function TeamManagement({
                         </td>
                       </tr>
                     ) : (
-                      filteredMembers.map((member) => (
+                      paginacao.pageItems.map((member) => (
                         <tr
                           key={member.id}
                           className="h-[56px] border-b last:border-b-0 border-divider hover:bg-background/60 transition-colors"
@@ -386,13 +528,7 @@ export default function TeamManagement({
                           </td>
 
                           <td className="px-4">
-                            {member.status ? (
-                              <Badge variant={STATUS_VARIANT[member.status] || 'default'} size="sm" dot>
-                                {member.status}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-light-text">—</span>
-                            )}
+                            <span className="text-xs text-ink-soft tabular">{desde(member.criado_em) || '—'}</span>
                           </td>
 
                           <td className="px-4">
@@ -403,6 +539,7 @@ export default function TeamManagement({
                                   size="icon"
                                   onClick={() => openInviteModal(member)}
                                   title="Editar colaborador"
+                                  aria-label={`Editar ${member.nome || 'colaborador'}`}
                                   icon="edit"
                                   className="hover:text-primary hover:border-primary"
                                 />
@@ -413,6 +550,7 @@ export default function TeamManagement({
                                 size="icon"
                                 onClick={() => handleDeleteMember(member)}
                                 title="Excluir colaborador"
+                                aria-label={`Excluir ${member.nome || 'colaborador'}`}
                                 icon="delete_outline"
                                 className="text-danger hover:bg-danger-bg hover:border-danger"
                               />
@@ -445,12 +583,12 @@ export default function TeamManagement({
                       description={
                         normalizedSearch || roleFilter
                           ? 'Tente outro nome, e-mail ou cargo.'
-                          : 'Convide quem participa das contratações.'
+                          : 'Convide quem trabalha com você.'
                       }
                     />
                   </Card>
                 ) : (
-                  filteredMembers.map((member) => (
+                  paginacao.pageItems.map((member) => (
                     <Card key={member.id} as="article" padding="sm">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
@@ -465,10 +603,8 @@ export default function TeamManagement({
                           </div>
                         </div>
 
-                        {member.status && (
-                          <Badge variant={STATUS_VARIANT[member.status] || 'default'} size="sm" dot>
-                            {member.status}
-                          </Badge>
+                        {desde(member.criado_em) && (
+                          <span className="text-2xs text-light-text tabular shrink-0">desde {desde(member.criado_em)}</span>
                         )}
                       </div>
 
@@ -481,13 +617,20 @@ export default function TeamManagement({
 
                         <div className="flex gap-2">
                           {onUpdateMember && (
-                            <Button variant="secondary" size="icon" onClick={() => openInviteModal(member)} icon="edit" />
+                            <Button
+                              variant="secondary"
+                              size="icon"
+                              onClick={() => openInviteModal(member)}
+                              icon="edit"
+                              aria-label={`Editar ${member.nome || 'colaborador'}`}
+                            />
                           )}
                           <Button
                             variant="secondary"
                             size="icon"
                             onClick={() => handleDeleteMember(member)}
                             icon="delete_outline"
+                            aria-label={`Excluir ${member.nome || 'colaborador'}`}
                             className="text-danger"
                           />
                         </div>
@@ -496,9 +639,15 @@ export default function TeamManagement({
                   ))
                 )}
               </div>
+
+              {!loading && (
+                <Card padding="none" className="mt-3 overflow-hidden">
+                  <Pagination {...paginacao} onPageChange={paginacao.setPage} label="colaboradores" />
+                </Card>
+              )}
             </section>
           ) : (
-            <section>
+            <section id="painel-roles" role="tabpanel" aria-labelledby="aba-roles">
               <div className="flex items-center justify-between mb-5 gap-4">
                 <p className="text-sm text-light-text">
                   Defina modelos de acesso para vincular à sua equipe.
@@ -527,7 +676,7 @@ export default function TeamManagement({
                   <EmptyState
                     icon="badge"
                     title="Nenhum cargo criado"
-                    description="Cargo é o que define o acesso: quem é de recrutamento vê as vagas, quem é de admissão vê os documentos. Cada pessoa da equipe recebe um."
+                    description="Cargo é o que define o acesso: quem é de vendas vê os clientes, quem é do financeiro vê as contas. Cada pessoa da equipe recebe um."
                     actionLabel="Criar cargo"
                     actionIcon="add"
                     onAction={() => openRoleModal()}
@@ -564,9 +713,10 @@ export default function TeamManagement({
                             type="button"
                             onClick={() => openModuleAccessModal(role)}
                             className="w-7 h-7 rounded-md text-light-text hover:bg-background hover:text-primary flex items-center justify-center"
-                            title="Acesso por módulo"
+                            title="Acesso por tabela"
+                            aria-label={`Acesso por tabela do cargo ${role.nome}`}
                           >
-                            <span className="material-icons text-[16px]">tune</span>
+                            <span className="material-icons text-[16px]" aria-hidden="true">tune</span>
                           </button>
                           {(onUpdateRole || onDeleteRole) && (
                             <>
@@ -576,8 +726,9 @@ export default function TeamManagement({
                                 onClick={() => openRoleModal(role)}
                                 className="w-7 h-7 rounded-md text-light-text hover:bg-background hover:text-primary flex items-center justify-center"
                                 title="Editar cargo"
+                                aria-label={`Editar cargo ${role.nome}`}
                               >
-                                <span className="material-icons text-[16px]">edit</span>
+                                <span className="material-icons text-[16px]" aria-hidden="true">edit</span>
                               </button>
                             )}
                             {onDeleteRole && (
@@ -586,8 +737,9 @@ export default function TeamManagement({
                                 onClick={() => handleDeleteRole(role)}
                                 className="w-7 h-7 rounded-md text-danger hover:bg-danger-bg flex items-center justify-center"
                                 title="Excluir cargo"
+                                aria-label={`Excluir cargo ${role.nome}`}
                               >
-                                <span className="material-icons text-[16px]">delete_outline</span>
+                                <span className="material-icons text-[16px]" aria-hidden="true">delete_outline</span>
                               </button>
                             )}
                             </>
@@ -614,12 +766,15 @@ export default function TeamManagement({
       <Drawer
         open={inviteOpen}
         onClose={closeInviteModal}
+        dirty={memberDirty}
         title={editingMember ? 'Editar colaborador' : 'Convidar para a equipe'}
         footer={
           <>
             <Button variant="secondary" onClick={closeInviteModal}>Cancelar</Button>
             <Button
-              onClick={submitMember}
+              type="submit"
+              form="member-form"
+              loading={savingMember}
               disabled={editingMember ? !onUpdateMember : !onInviteMember}
             >
               {editingMember ? 'Salvar Alterações' : 'Enviar Convite'}
@@ -627,59 +782,80 @@ export default function TeamManagement({
           </>
         }
       >
+        {memberError && (
+          <div className="mb-4">
+            <Alert variant="error">{memberError}</Alert>
+          </div>
+        )}
+
         {!editingMember && (
           <div className="mb-5">
             <Alert variant="info" icon="forward_to_inbox">
-              A pessoa recebe um link exclusivo por e-mail, define a própria senha e entra já vinculada
-              ao cargo escolhido aqui.
+              A pessoa recebe um e-mail com o seu nome e a sua mensagem. Ao clicar em aceitar, ela cria a senha e
+              já entra na equipe com o cargo escolhido aqui.
             </Alert>
           </div>
         )}
 
-        <div className="flex flex-col gap-4">
+        <form id="member-form" onSubmit={submitMember} noValidate className="flex flex-col gap-4">
           {editingMember && (
             <Input
               label="Nome do colaborador"
+              name="nome"
+              autoComplete="off"
               value={memberForm.nome}
-              onChange={(event) => setMemberForm((current) => ({ ...current, nome: event.target.value }))}
+              onChange={(event) => changeMember('nome', event.target.value)}
             />
           )}
 
           <Input
             label="E-mail do colaborador"
+            name="email"
             type="email"
+            inputMode="email"
+            autoComplete="off"
             value={memberForm.email}
-            onChange={(event) => setMemberForm((current) => ({ ...current, email: event.target.value }))}
+            onChange={(event) => changeMember('email', event.target.value)}
             placeholder="exemplo@empresa.com"
+            error={memberErrors.email}
+            required
           />
 
           <Select
             label="Cargo / Permissão de Acesso"
+            name="cargo"
             value={memberForm.cargo}
-            onChange={(event) => setMemberForm((current) => ({ ...current, cargo: event.target.value }))}
+            onChange={(event) => changeMember('cargo', event.target.value)}
             placeholder="Selecione um cargo"
             options={roles.map((role) => ({ value: role.id, label: role.nome }))}
+            error={memberErrors.cargo}
+            // A API não deixa ninguém mudar o próprio cargo (evita alguém se dar mais acesso).
+            disabled={!!editingMember && editingMember.id === usuario?.id}
+            hint={editingMember && editingMember.id === usuario?.id ? 'Você não pode mudar o seu próprio cargo. Peça a alguém com acesso total.' : undefined}
+            required
           />
 
-          {editingMember && (
-            <Select
-              label="Status"
-              value={memberForm.status}
-              onChange={(event) => setMemberForm((current) => ({ ...current, status: event.target.value }))}
-              placeholder="Selecione um status"
-              options={[
-                { value: 'Ativo', label: 'Ativo' },
-                { value: 'Inativo', label: 'Inativo' },
-                { value: 'Pendente', label: 'Pendente' },
-              ]}
+          {!editingMember && (
+            <Textarea
+              label="Mensagem para a pessoa (opcional)"
+              name="mensagem"
+              rows={4}
+              maxLength={MAX_MENSAGEM}
+              value={memberForm.mensagem}
+              onChange={(event) => changeMember('mensagem', event.target.value)}
+              placeholder="Ex: Oi, Ana! Vamos organizar o trabalho da equipe por aqui. Qualquer dúvida, me chama."
+              hint={`Aparece no e-mail e na página do convite. ${memberForm.mensagem.length}/${MAX_MENSAGEM}`}
+              error={memberErrors.mensagem}
             />
           )}
-        </div>
+
+        </form>
       </Drawer>
 
       <Modal
         open={roleModalOpen}
         onClose={closeRoleModal}
+        dirty={roleDirty}
         title={editingRole ? 'Editar Cargo' : 'Criar Cargo'}
         footer={
           <>
@@ -687,6 +863,7 @@ export default function TeamManagement({
             <Button
               type="submit"
               form="role-form"
+              loading={savingRole}
               disabled={editingRole ? !onUpdateRole : !onCreateRole}
             >
               {editingRole ? 'Salvar' : 'Criar Cargo'}
@@ -694,18 +871,31 @@ export default function TeamManagement({
           </>
         }
       >
-        <form id="role-form" onSubmit={submitRole}>
+        <form id="role-form" onSubmit={submitRole} noValidate>
+          {roleFormError && (
+            <div className="mb-4">
+              <Alert variant="error">{roleFormError}</Alert>
+            </div>
+          )}
+
           <div className="mb-5">
             <Input
               label="Nome do cargo"
+              name="nome_cargo"
+              autoComplete="off"
               value={roleForm.nome}
-              onChange={(event) => setRoleForm((current) => ({ ...current, nome: event.target.value }))}
+              onChange={(event) => {
+                setRoleForm((current) => ({ ...current, nome: event.target.value }));
+                setRoleError('');
+              }}
               placeholder="Digite o nome do cargo"
+              error={roleError}
+              required
             />
           </div>
 
           <div>
-            <p className="text-[12px] font-semibold mb-3">Permissões</p>
+            <p className="text-xs font-semibold mb-3 text-ink">Permissões</p>
             {permissions.length === 0 ? (
               <p className="text-xs text-light-text border border-dashed border-divider rounded-md p-4">
                 Nenhuma permissão disponível.
@@ -750,7 +940,7 @@ export default function TeamManagement({
       <Modal
         open={!!moduleAccessRole}
         onClose={closeModuleAccessModal}
-        title="Acesso por módulo"
+        title="Acesso por tabela"
         footer={<Button onClick={closeModuleAccessModal}>Concluído</Button>}
       >
         {moduleAccessRole && (
@@ -759,11 +949,11 @@ export default function TeamManagement({
 
             {moduleAccessRole.acesso_total ? (
               <p className="text-sm text-light-text border border-dashed border-divider rounded-md p-4">
-                Este cargo tem acesso total e já enxerga todos os módulos automaticamente.
+                Este cargo tem acesso total e já enxerga todas as tabelas automaticamente.
               </p>
             ) : modules.length === 0 ? (
               <p className="text-sm text-light-text border border-dashed border-divider rounded-md p-4">
-                Nenhum módulo cadastrado ainda.
+                Nenhuma tabela criada ainda.
               </p>
             ) : (
               <div className="space-y-2">
@@ -777,6 +967,7 @@ export default function TeamManagement({
                       value={moduloNivelPorId[modulo.id] || ''}
                       disabled={moduloNiveisLoading}
                       onChange={(event) => handleModuloNivelChange(modulo.id, event.target.value)}
+                      aria-label={`Acesso à tabela ${modulo.nome}`}
                       className="h-9 w-40"
                       options={[
                         { value: '', label: 'Sem acesso' },

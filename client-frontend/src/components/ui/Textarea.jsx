@@ -1,13 +1,17 @@
 import { cn } from './cn';
-import { fieldClasses, FieldShell } from './Input';
+import { useId } from 'react';
+import { fieldClasses, fieldA11y } from './fieldUtils';
+import { FieldShell } from './Field';
 
 export default function Textarea({ label, hint, error, className = '', id, rows = 3, ...rest }) {
-  const inputId = id || rest.name;
+  const generatedId = useId();
+  const inputId = id || rest.name || generatedId;
 
   return (
-    <FieldShell label={label} hint={hint} error={error} htmlFor={inputId}>
+    <FieldShell label={label} hint={hint} error={error} htmlFor={inputId} required={rest.required}>
       <textarea
         id={inputId}
+        {...fieldA11y(inputId, { error, hint })}
         rows={rows}
         className={cn(
           fieldClasses,

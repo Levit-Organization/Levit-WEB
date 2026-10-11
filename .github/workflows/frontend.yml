@@ -1,0 +1,40 @@
+name: Frontend
+
+on:
+  push:
+    branches: [main, master]
+    paths: ['client-frontend/**', '.github/workflows/frontend.yml']
+  pull_request:
+    paths: ['client-frontend/**', '.github/workflows/frontend.yml']
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: client-frontend
+
+jobs:
+  qualidade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client-frontend/package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Testes
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Vulnerabilidades (dependências de produção)
+        run: npm audit --omit=dev --audit-level=high

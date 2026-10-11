@@ -1,50 +1,56 @@
-import React from 'react';
+import { Component } from 'react';
 
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false };
-  }
+/**
+ * Um erro de render numa tela não derruba o app inteiro em branco: mostra uma
+ * saída (recarregar / voltar ao início). `resetKey` limpa o erro ao navegar.
+ */
+export default class ErrorBoundary extends Component {
+  state = { error: null };
 
   static getDerivedStateFromError(error) {
-    return { hasError: true };
+    return { error };
   }
 
   componentDidCatch(error, info) {
-    console.error('[ErrorBoundary]', error, info);
+    console.error('Erro de renderização:', error, info?.componentStack);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (this.state.error && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ error: null });
+    }
   }
 
   render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 px-4">
-          <div className="text-red-500 mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+    if (!this.state.error) return this.props.children;
+
+    return (
+      <div role="alert" className="min-h-screen flex items-center justify-center bg-background px-4">
+        <div className="max-w-md text-center flex flex-col items-center">
+          <div className="w-14 h-14 rounded-xl bg-danger-bg text-danger flex items-center justify-center mb-4">
+            <span className="material-icons text-[26px]" aria-hidden="true">error_outline</span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Algo deu errado</h1>
-          <p className="text-gray-600 mb-8 text-center">Ocorreu um erro inesperado. Tente recarregar a página.</p>
-          <div className="flex space-x-4">
+          <h1 className="text-xl font-bold text-ink">Algo deu errado nesta tela</h1>
+          <p className="text-sm text-light-text mt-2 leading-relaxed">
+            Ocorreu um erro inesperado. Seus dados não foram perdidos — recarregue a página ou volte ao início.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3 mt-6">
             <button
+              type="button"
               onClick={() => window.location.reload()}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors"
+              className="h-11 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-600 transition-colors"
             >
               Recarregar página
             </button>
-            <button
-              onClick={() => window.location.href = '/'}
-              className="bg-white hover:bg-gray-100 text-gray-800 font-medium py-2 px-6 rounded-lg border border-gray-300 transition-colors"
+            <a
+              href="/"
+              className="h-11 px-5 inline-flex items-center rounded-lg border border-divider-strong bg-surface text-ink text-sm font-semibold hover:bg-background transition-colors"
             >
-              Voltar ao início
-            </button>
+              Ir para o início
+            </a>
           </div>
         </div>
-      );
-    }
-
-    return this.props.children;
+      </div>
+    );
   }
 }
-
-export default ErrorBoundary;

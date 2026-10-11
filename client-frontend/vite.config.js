@@ -1,48 +1,57 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
+import { loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
+/**
+ * Content-Security-Policy do build de produção. Só scripts do próprio site
+ * rodam e a página só conversa com a API, o que limita o estrago de uma
+ * eventual falha de XSS (o token de sessão fica no localStorage).
+ * Fica fora do `vite dev`, que precisa de scripts inline e websocket.
+ */
+function politicaDeSeguranca(apiUrl) {
+  const api = new URL(apiUrl).origin
+  const diretivas = {
+    'default-src': ["'self'"],
+    'script-src': ["'self'"],
+    'style-src': ["'self'", "'unsafe-inline'"],
+    'img-src': ["'self'", 'data:', 'blob:', 'https://github.com', 'https://avatars.githubusercontent.com'],
+    'font-src': ["'self'", 'data:'],
+    'connect-src': ["'self'", api],
+    'object-src': ["'none'"],
+    'base-uri': ["'self'"],
+    'form-action': ["'self'"],
+  }
+  const conteudo = Object.entries(diretivas).map(([nome, fontes]) => `${nome} ${fontes.join(' ')}`).join('; ')
+  return {
+    name: 'levit-csp',
+    apply: 'build',
+    transformIndexHtml: () => [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: conteudo }, injectTo: 'head-prepend' }],
+  }
+}
 
+// https://vite.dev/config/
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), politicaDeSeguranca(loadEnv(mode, process.cwd()).VITE_API_URL || 'http://localhost:8080/api/v1')],
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.js'],
+    include: ['src/**/*.test.{js,jsx}'],
+    css: false,
+  },
   build: {
-    /**
-     * Vite 8 usa o Rolldown como bundler. A opção `manualChunks` do Rollup
-     * não é suportada; a API equivalente é `rolldownOptions.output.codeSplitting`.
-     *
-     * Grupos de chunks definidos:
-     *
-     *  vendor            – React, Router e Axios (invariantes entre páginas)
-     *  firebase_core     – firebase/app + firebase/auth (fluxo de autenticação)
-     *  firebase_realtime – firebase/firestore + firebase/messaging
-     *                      (carregados somente após o login)
-     *
-     * Resultado esperado: o bundle inicial da Landing/Login NÃO inclui
-     * nenhum código Firebase; ele só é baixado quando a rota que o usa
-     * é navegada pela primeira vez (lazy import em App.jsx + Suspense).
-     */
-    rolldownOptions: {
+    rollupOptions: {
       output: {
-        codeSplitting: {
-          groups: [
-            {
-              name: 'firebase_realtime',
-              test: /node_modules\/firebase\/(firestore|messaging)/,
-              priority: 20,
-            },
-            {
-              name: 'firebase_core',
-              test: /node_modules\/firebase\//,
-              priority: 10,
-            },
-            {
-              name: 'vendor',
-              test: /node_modules\/(react|react-dom|react-router|axios)\//,
-              priority: 5,
-            },
-          ],
+        // Bibliotecas estáveis em chunks próprios: ficam em cache entre deploys
+        // e não pesam no chunk de cada página.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'vendor-react';
+          if (/node_modules\/(react-router|react-router-dom)\//.test(id)) return 'vendor-router';
+          if (/node_modules\/@tanstack\//.test(id)) return 'vendor-query';
+          if (/node_modules\/(axios)\//.test(id)) return 'vendor-http';
+          return undefined;
         },
       },
     },
   },
-})
+}))

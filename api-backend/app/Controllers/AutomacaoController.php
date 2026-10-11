@@ -20,9 +20,8 @@ class AutomacaoController extends BaseApiController
         $dados = $this->request->getJSON(true) ?? [];
 
         $rules = [
-            'nome'    => ['required', 'min_length[2]', 'max_length[100]'],
-            'gatilho' => ['required'],
-            'acoes'   => ['required'],
+            'nome'  => ['required', 'min_length[2]', 'max_length[100]'],
+            'acoes' => ['required'],
         ];
 
         if (! $this->validateData($dados, $rules)) {
@@ -40,7 +39,7 @@ class AutomacaoController extends BaseApiController
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
-            return $this->respondError($e->getMessage(), 500);
+            return $this->respondFalha($e, 500);
         }
 
         return $this->respondSuccess($automacao, 201);
@@ -90,5 +89,74 @@ class AutomacaoController extends BaseApiController
         }
 
         return $this->respondSuccess(null, 200);
+    }
+
+    public function listarTodas()
+    {
+        $user = service('authenticatedUser');
+
+        return $this->responder(fn () => $this->automacaoService->listarTodas($user->empresaId, $user->cargoId, $user->acessoTotal));
+    }
+
+    public function atualizar($moduloId, $automacaoId)
+    {
+        $dados = $this->request->getJSON(true) ?? [];
+        $user  = service('authenticatedUser');
+
+        return $this->responder(fn () => $this->automacaoService->atualizarAutomacao(
+            $automacaoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados
+        ));
+    }
+
+    public function execucoes($moduloId, $automacaoId)
+    {
+        $user = service('authenticatedUser');
+
+        return $this->responder(fn () => $this->automacaoService->listarExecucoes(
+            $automacaoId,
+            $moduloId,
+            $user->empresaId,
+            $user->cargoId,
+            $user->acessoTotal,
+            $this->request->getGet('antes_de') ?: null,
+            (int) ($this->request->getGet('limite') ?: 20)
+        ));
+    }
+
+    public function simular($moduloId)
+    {
+        $dados = $this->request->getJSON(true) ?? [];
+        $user  = service('authenticatedUser');
+
+        return $this->responder(fn () => $this->automacaoService->simular(
+            $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados
+        ));
+    }
+
+    public function reexecutar($moduloId, $automacaoId, $execucaoId)
+    {
+        $user = service('authenticatedUser');
+
+        return $this->responder(function () use ($moduloId, $automacaoId, $execucaoId, $user) {
+            $this->automacaoService->reexecutar($execucaoId, $automacaoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+
+            return null;
+        }, 202);
+    }
+
+    /** Traduz as exceções do service para as respostas HTTP padrão da API. */
+    private function responder(callable $acao, int $status = 200)
+    {
+        try {
+            return $this->respondSuccess($acao(), $status);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            return $this->respondFalha($e, 500);
+        }
     }
 }

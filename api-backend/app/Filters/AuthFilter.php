@@ -30,17 +30,15 @@ class AuthFilter implements FilterInterface
                 ->setJSON(['status' => 'error', 'message' => 'Token inválido ou expirado.']);
         }
 
-        $authService = new AuthService();
+        // Revogação, cargo e permissões numa única consulta.
+        $dadosAutorizacao = (new AuthService())->contextoDeAutenticacao($claims->sub, $claims->jti);
 
-        if ($authService->tokenRevogado($claims->jti)) {
-            return service('response')
-                ->setStatusCode(401)
-                ->setJSON(['status' => 'error', 'message' => 'Token inválido ou expirado.']);
-        }
+        // Senha trocada depois que o token foi emitido: sessão antiga não vale mais.
+        $senhaTrocadaDepois = $dadosAutorizacao !== null
+            && $dadosAutorizacao['senha_alterada_em'] !== null
+            && (int) $claims->iat < strtotime($dadosAutorizacao['senha_alterada_em']);
 
-        $dadosAutorizacao = $authService->dadosDeAutorizacao($claims->sub);
-
-        if ($dadosAutorizacao === null) {
+        if ($dadosAutorizacao === null || $dadosAutorizacao['revogado'] || $senhaTrocadaDepois) {
             return service('response')
                 ->setStatusCode(401)
                 ->setJSON(['status' => 'error', 'message' => 'Token inválido ou expirado.']);
@@ -53,7 +51,8 @@ class AuthFilter implements FilterInterface
             $claims->jti,
             $claims->exp,
             $dadosAutorizacao['permissoes'],
-            $dadosAutorizacao['acesso_total']
+            $dadosAutorizacao['acesso_total'],
+            $dadosAutorizacao['niveis']
         );
 
         if (! empty($arguments)) {
