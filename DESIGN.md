@@ -6,15 +6,16 @@ explica as decisões; o código executa.
 
 ## Direção
 
-Plataforma de RH acolhedora, com pessoas em primeiro plano. Referência de
-categoria: Gupy, BambooHR. O oposto do que se busca: um CRUD genérico de
-tabelas, que é o que a interface parecia antes.
+O Levit centraliza o trabalho da equipe num lugar só (ver identidade e glossário
+no `PRODUCT.md`). Acolhedor, com pessoas em primeiro plano, mas não é uma
+plataforma só de RH: recrutamento é um dos quadros possíveis. O oposto do que se
+busca: um CRUD genérico e frio de tabelas.
 
-O que carrega a leitura de "RH":
+O que dá a leitura de "trabalho de gente" (vale para qualquer tabela ou quadro):
 
 1. **Pessoa é o objeto principal.** Avatar com cor própria em toda lista de
    gente, nome como chave visual, e-mail e cargo como apoio.
-2. **Funil tem semântica.** A cor da etapa vem da posição no pipeline e cresce
+2. **Quadro tem semântica.** A cor da etapa vem da posição no quadro e cresce
    em intensidade até fechar em verde na última. Tempo parado na etapa aparece
    no cartão, porque é isso que faz alguém agir.
 3. **Estado tem vocabulário.** Ativo, pendente, inativo, parado, acesso total:
