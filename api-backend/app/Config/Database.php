@@ -32,7 +32,10 @@ class Database extends Config
         'database'     => '',
         'DBDriver'     => 'MySQLi',
         'DBPrefix'     => '',
-        'pConnect'     => false,
+        // O banco é remoto: abrir uma conexão nova (com SSL) custa ~1,5 s.
+        // Persistente, cada processo PHP reaproveita a conexão já aberta.
+        // Dá para desligar por ambiente com database.default.pConnect = false.
+        'pConnect'     => true,
         'DBDebug'      => true,
         'charset'      => 'utf8mb4',
         'DBCollat'     => 'utf8mb4_general_ci',
