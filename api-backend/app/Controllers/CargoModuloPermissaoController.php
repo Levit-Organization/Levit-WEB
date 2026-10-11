@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\AutorizacaoModuloService;
 
@@ -39,6 +40,8 @@ class CargoModuloPermissaoController extends BaseApiController
             $niveis = $this->autorizacaoModuloService->definirNivel(service('authenticatedUser')->empresaId, $cargoId, $moduloId, $dados['nivel']);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 422);
         }
@@ -52,6 +55,8 @@ class CargoModuloPermissaoController extends BaseApiController
             $this->autorizacaoModuloService->removerNivel(service('authenticatedUser')->empresaId, $cargoId, $moduloId);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
         }
 
         return $this->respondSuccess(null, 200);

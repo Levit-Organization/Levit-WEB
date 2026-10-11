@@ -11,11 +11,11 @@ class PermissaoSeeder extends Seeder
         helper('uuid');
 
         $permissoes = [
-            ['codigo' => 'criar_modulos',     'descricao' => 'Criar novos módulos'],
+            ['codigo' => 'criar_modulos',     'descricao' => 'Criar novas tabelas'],
             ['codigo' => 'visualizar_equipe', 'descricao' => 'Ver a lista de membros da equipe'],
             ['codigo' => 'gerenciar_equipe',  'descricao' => 'Convidar e remover membros da equipe'],
             ['codigo' => 'gerenciar_cargos',  'descricao' => 'Criar e configurar cargos e suas permissões'],
-            ['codigo' => 'exportar_dados',    'descricao' => 'Exportar backup e CSV dos módulos'],
+            ['codigo' => 'exportar_dados',    'descricao' => 'Exportar backup e CSV das tabelas'],
             ['codigo' => 'resetar_dados',     'descricao' => 'Resetar os dados da empresa (exige também ser administrador principal)'],
             ['codigo' => 'ver_relatorios',    'descricao' => 'Visualizar relatórios e exportações'],
         ];

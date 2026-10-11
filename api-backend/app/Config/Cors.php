@@ -42,4 +42,24 @@ class Cors extends BaseConfig
         'allowedMethods' => ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
         'maxAge' => 7200,
     ];
+
+    /**
+     * A origem do front vem do .env (FRONTEND_URL, aceita várias separadas por
+     * vírgula), para o mesmo código servir em produção sem editar este arquivo.
+     * Em desenvolvimento, o Vite local continua liberado.
+     */
+    public function __construct()
+    {
+        parent::__construct();
+
+        $origens = array_filter(array_map(
+            static fn ($o) => rtrim(trim($o), '/'),
+            explode(',', (string) env('FRONTEND_URL', ''))
+        ));
+        if (ENVIRONMENT !== 'production' || $origens === []) {
+            $origens[] = 'http://localhost:5173';
+        }
+
+        $this->default['allowedOrigins'] = array_values(array_unique($origens));
+    }
 }

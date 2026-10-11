@@ -103,7 +103,7 @@ class BackupService
         $modulo = $this->moduloModel->where('id', $moduloId)->where('empresa_id', $empresaId)->first();
 
         if (! $modulo) {
-            throw new NaoEncontradoException('Módulo não encontrado.');
+            throw new NaoEncontradoException('Tabela não encontrada.');
         }
 
         $campos    = $this->campoModuloModel->where('modulo_id', $moduloId)->orderBy('ordem', 'ASC')->findAll();
@@ -111,7 +111,7 @@ class BackupService
 
         $cabecalho = ['Criado em'];
         foreach ($campos as $campo) {
-            $cabecalho[] = $campo['nome'];
+            $cabecalho[] = self::celulaSegura($campo['nome']);
         }
 
         $linhas = [];
@@ -119,7 +119,7 @@ class BackupService
             $linha = [$registro['criado_em']];
             foreach ($campos as $campo) {
                 $valor    = $registro['dados'][$campo['id']] ?? '';
-                $linha[]  = is_array($valor) ? json_encode($valor) : (string) $valor;
+                $linha[]  = self::celulaSegura(is_array($valor) ? json_encode($valor) : (string) $valor);
             }
             $linhas[] = $linha;
         }
@@ -158,5 +158,20 @@ class BackupService
         }
 
         $this->moduloModel->where('empresa_id', $empresaId)->delete();
+    }
+
+    /**
+     * Excel e LibreOffice executam células que começam com = + - @ (ex.:
+     * =HYPERLINK(...) ou =cmd|...). Como os valores vêm de quem preenche a
+     * tabela (inclusive do formulário público de candidatura), essas células
+     * ganham um apóstrofo na frente e abrem como texto. Números ficam como estão.
+     */
+    public static function celulaSegura(string $valor): string
+    {
+        if ($valor === '' || is_numeric($valor)) {
+            return $valor; // número negativo continua número
+        }
+
+        return in_array($valor[0], ['=', '+', '-', '@', "\t", "\r"], true) ? "'" . $valor : $valor;
     }
 }

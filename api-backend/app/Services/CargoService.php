@@ -72,6 +72,8 @@ class CargoService
             throw new \DomainException('Uma ou mais permissões informadas não existem.');
         }
 
+        (new LimiteDeAcesso())->exigirPodeConcederPermissoes($codigosPermissoes);
+
         $db = db_connect();
         $db->transStart();
 
@@ -96,6 +98,8 @@ class CargoService
         $cargo = $this->cargoModel->find($cargoId);
         $cargo['permissoes'] = array_column($permissoesValidas, 'codigo');
 
+        AtividadeService::registrar('cargo_criado', "Criou o cargo “{$nome}”");
+
         return $cargo;
     }
 
@@ -118,6 +122,11 @@ class CargoService
         if (! $cargo) {
             throw new NaoEncontradoException('Cargo não encontrado.');
         }
+
+        $limite = new LimiteDeAcesso();
+        $limite->exigirQueNaoSejaOProprioCargo($cargoId);
+        $limite->exigirPodeAtuarNoCargo($cargoId);
+        $limite->exigirPodeConcederPermissoes($codigosPermissoes);
 
         $conflito = $this->cargoModel
             ->where('empresa_id', $empresaId)
@@ -160,6 +169,8 @@ class CargoService
         $cargoAtualizado = $this->cargoModel->find($cargoId);
         $cargoAtualizado['permissoes'] = array_column($permissoesValidas, 'codigo');
 
+        AtividadeService::registrar('cargo_alterado', "Alterou o cargo “{$nome}”");
+
         return $cargoAtualizado;
     }
 
@@ -178,6 +189,8 @@ class CargoService
             throw new NaoEncontradoException('Cargo não encontrado.');
         }
 
+        (new LimiteDeAcesso())->exigirPodeAtuarNoCargo($cargoId);
+
         $totalMembros = $this->usuarioModel->where('cargo_id', $cargoId)->countAllResults();
 
         if ($totalMembros > 0) {
@@ -187,5 +200,6 @@ class CargoService
         // cargo_permissao e cargo_modulo_permissao têm ON DELETE CASCADE
         // para cargo_id — não precisam de limpeza manual aqui.
         $this->cargoModel->delete($cargoId);
+        AtividadeService::registrar('cargo_excluido', "Excluiu o cargo “{$cargo['nome']}”");
     }
 }

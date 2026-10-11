@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Models\CategoriaFinanceiraModel;
 use App\Models\LancamentoFinanceiroModel;
@@ -50,6 +51,8 @@ class FinanceiroService
             throw new \DomainException('O nome da categoria não pode ficar vazio.');
         }
 
+        $this->exigirQuemEditaFinanceiro($empresaId);
+
         $existente = $this->categoriaModel
             ->where('empresa_id', $empresaId)
             ->where('nome', $nome)
@@ -88,7 +91,36 @@ class FinanceiroService
             throw new NaoEncontradoException('Categoria não encontrada.');
         }
 
+        $this->exigirQuemEditaFinanceiro($empresaId);
+
         $this->categoriaModel->delete($categoriaId);
+    }
+
+    /**
+     * Categorias valem para a empresa toda: só quem pode editar alguma tabela
+     * financeira (ou tem acesso total) cria ou exclui.
+     *
+     * @throws AcessoNegadoException
+     */
+    private function exigirQuemEditaFinanceiro(string $empresaId): void
+    {
+        $usuario = service('authenticatedUser');
+        if (! $usuario->autenticado() || $usuario->acessoTotal) {
+            return;
+        }
+
+        $pode = db_connect()->query(
+            "SELECT 1 FROM cargo_modulo_permissao cmp
+               JOIN modulo m ON m.id = cmp.modulo_id
+              WHERE cmp.cargo_id = ? AND m.empresa_id = ? AND m.tipo = 'financeiro'
+                AND cmp.nivel IN ('editar', 'gerenciar')
+              LIMIT 1",
+            [$usuario->cargoId, $empresaId]
+        )->getRow();
+
+        if (! $pode) {
+            throw new AcessoNegadoException('Só quem pode editar uma tabela financeira cria ou exclui categorias.');
+        }
     }
 
     // ==========================================================
@@ -272,7 +304,7 @@ class FinanceiroService
             ->first();
 
         if (! $modulo) {
-            throw new NaoEncontradoException('Módulo financeiro não encontrado.');
+            throw new NaoEncontradoException('Financeiro não encontrado.');
         }
     }
 

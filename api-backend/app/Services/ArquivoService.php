@@ -35,7 +35,7 @@ class ArquivoService
             ->first();
 
         if (! $modulo) {
-            throw new NaoEncontradoException('Módulo de arquivo não encontrado.');
+            throw new NaoEncontradoException('Tabela de arquivos não encontrada.');
         }
 
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
@@ -79,6 +79,8 @@ class ArquivoService
             service('storage')->excluir($chave);
             throw new \RuntimeException('Não foi possível concluir o upload. Tente novamente.');
         }
+
+        AtividadeService::registrar('arquivo_enviado', 'Enviou o arquivo “' . $arquivo->getClientName() . '”', $moduloId);
 
         return $this->buscarArquivo($registroId, $moduloId, $empresaId);
     }
@@ -125,5 +127,6 @@ class ArquivoService
         service('storage')->excluir($arquivo['chave_armazenamento']);
 
         $this->registroModel->delete($registroId);
+        AtividadeService::registrar('arquivo_excluido', 'Excluiu o arquivo “' . ($arquivo['nome_original'] ?? '') . '”', $moduloId);
     }
 }
