@@ -10,8 +10,10 @@ $routes->group('api/v1', function ($routes) {
 
     $routes->set404Override('App\Controllers\Home::naoEncontrado');
 
-    $routes->post('auth/registrar', 'AuthController::registrar');
-    $routes->post('auth/login', 'AuthController::login');
+    $routes->post('auth/registrar', 'AuthController::registrar', ['filter' => 'ratelimit:registro,10']);
+    $routes->post('auth/login', 'AuthController::login', ['filter' => 'ratelimit:login,30,10']);
+    $routes->post('auth/forgot-password', 'AuthController::esqueciSenha', ['filter' => 'ratelimit:senha,5,3']);
+    $routes->post('auth/reset-password', 'AuthController::redefinirSenha', ['filter' => 'ratelimit:senha_nova,10']);
     $routes->post('auth/logout', 'AuthController::logout', ['filter' => 'auth']);
 
     $routes->get('modulos', 'ModuloController::listar', ['filter' => 'auth']);
@@ -64,10 +66,38 @@ $routes->group('api/v1', function ($routes) {
     $routes->get('equipe', 'EquipeController::listarMembros', ['filter' => 'auth:visualizar_equipe']);
     $routes->put("equipe/({$uuid})", 'EquipeController::atualizarMembro/$1', ['filter' => 'auth:gerenciar_equipe']);
     $routes->delete("equipe/({$uuid})", 'EquipeController::removerMembro/$1', ['filter' => 'auth:gerenciar_equipe']);
-    $routes->post('publico/convite/aceitar', 'EquipeController::aceitarConvite', ['filter' => 'ratelimit']);
+    // Relatórios agendados em PDF (acesso total; conferido no controller).
+    $routes->get('relatorios', 'RelatorioController::listar', ['filter' => 'auth']);
+    $routes->post('relatorios', 'RelatorioController::criar', ['filter' => 'auth']);
+    $routes->get('relatorios/pdf', 'RelatorioController::pdf', ['filter' => 'auth']);
+    $routes->put("relatorios/({$uuid})", 'RelatorioController::atualizar/$1', ['filter' => 'auth']);
+    $routes->delete("relatorios/({$uuid})", 'RelatorioController::excluir/$1', ['filter' => 'auth']);
+    $routes->get("relatorios/({$uuid})/envios", 'RelatorioController::envios/$1', ['filter' => 'auth']);
+    $routes->post("relatorios/({$uuid})/enviar-agora", 'RelatorioController::enviarAgora/$1', ['filter' => 'auth']);
+
+    // Nomes da equipe para escolher o responsável de um item (sem e-mail; não exige ver a equipe).
+    $routes->get('equipe/pessoas', 'EquipeController::listarPessoas', ['filter' => 'auth']);
+    // Prazos de todas as tabelas visíveis: atrasados, hoje e próximos 7 dias.
+    $routes->get('itens/prazos', 'PrazoController::listar', ['filter' => 'auth']);
+    $routes->get('equipe/convites', 'EquipeController::listarConvites', ['filter' => 'auth:visualizar_equipe']);
+    $routes->post("equipe/convites/({$uuid})/reenviar", 'EquipeController::reenviarConvite/$1', ['filter' => 'auth:gerenciar_equipe']);
+    $routes->delete("equipe/convites/({$uuid})", 'EquipeController::cancelarConvite/$1', ['filter' => 'auth:gerenciar_equipe']);
+    $routes->get('publico/convite/([0-9a-f]{64})', 'EquipeController::detalhesDoConvite/$1', ['filter' => 'ratelimit:convite,60']);
+    $routes->post('publico/convite/aceitar', 'EquipeController::aceitarConvite', ['filter' => 'ratelimit:convite_aceite,10']);
 
     $routes->post("modulos/({$uuid})/automacoes", 'AutomacaoController::criar/$1', ['filter' => 'auth']);
     $routes->get("modulos/({$uuid})/automacoes", 'AutomacaoController::listar/$1', ['filter' => 'auth']);
+    $routes->get('notificacoes', 'NotificacaoController::listar', ['filter' => 'auth']);
+    $routes->get('notificacoes/contagem', 'NotificacaoController::contagem', ['filter' => 'auth']);
+    $routes->put('notificacoes/lidas', 'NotificacaoController::marcarTodasLidas', ['filter' => 'auth']);
+    $routes->put("notificacoes/({$uuid})/lida", 'NotificacaoController::marcarLida/$1', ['filter' => 'auth']);
+    $routes->delete("notificacoes/({$uuid})", 'NotificacaoController::excluir/$1', ['filter' => 'auth']);
+
+    $routes->get('automacoes', 'AutomacaoController::listarTodas', ['filter' => 'auth']);
+    $routes->post("modulos/({$uuid})/automacoes/simular", 'AutomacaoController::simular/$1', ['filter' => 'auth']);
+    $routes->put("modulos/({$uuid})/automacoes/({$uuid})", 'AutomacaoController::atualizar/$1/$2', ['filter' => 'auth']);
+    $routes->get("modulos/({$uuid})/automacoes/({$uuid})/execucoes", 'AutomacaoController::execucoes/$1/$2', ['filter' => 'auth']);
+    $routes->post("modulos/({$uuid})/automacoes/({$uuid})/execucoes/({$uuid})/reexecutar", 'AutomacaoController::reexecutar/$1/$2/$3', ['filter' => 'auth']);
     $routes->put("modulos/({$uuid})/automacoes/({$uuid})/ativo", 'AutomacaoController::alternarAtivo/$1/$2', ['filter' => 'auth']);
     $routes->delete("modulos/({$uuid})/automacoes/({$uuid})", 'AutomacaoController::excluir/$1/$2', ['filter' => 'auth']);
 
