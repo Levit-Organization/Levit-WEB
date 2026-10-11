@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Exceptions\NaoEncontradoException;
 use App\Libraries\Relogio;
+use App\Services\IndicadoresService;
 use App\Services\RelatorioService;
 
 /**
@@ -103,6 +104,64 @@ class RelatorioController extends BaseApiController
             : $this->respondError('Não foi possível enviar: ' . ($envio['erro'] ?? 'erro desconhecido'), 502);
     }
 
+    /**
+     * Lê `inicio` e `fim` (inclusivos, AAAA-MM-DD) da query string.
+     *
+     * @return array{0: \DateTimeImmutable, 1: \DateTimeImmutable}|string período (fim exclusivo) ou a mensagem de erro
+     */
+    private function periodoDaRequisicao(): array|string
+    {
+        $inicio = (string) $this->request->getGet('inicio');
+        $fim    = (string) $this->request->getGet('fim');
+        $valida = static fn ($d) => preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && \DateTimeImmutable::createFromFormat('Y-m-d', $d)?->format('Y-m-d') === $d;
+        if (! $valida($inicio) || ! $valida($fim) || $inicio > $fim) {
+            return 'Escolha um período válido (início antes do fim).';
+        }
+
+        $de  = new \DateTimeImmutable($inicio . ' 00:00:00', Relogio::fuso());
+        $ate = (new \DateTimeImmutable($fim . ' 00:00:00', Relogio::fuso()))->modify('+1 day');
+        if ($de->diff($ate)->days > 366) {
+            return 'O período pode ter no máximo um ano.';
+        }
+
+        return [$de, $ate];
+    }
+
+    /** Indicadores do período (recrutamento, financeiro, prazos), com o período anterior para comparar. */
+    public function indicadores()
+    {
+        if ($r = $this->semAcesso()) {
+            return $r;
+        }
+        $periodo = $this->periodoDaRequisicao();
+        if (is_string($periodo)) {
+            return $this->respondError($periodo, 422);
+        }
+
+        return $this->respondSuccess((new IndicadoresService())->painel(service('authenticatedUser')->empresaId, ...$periodo));
+    }
+
+    /** Tabelas e colunas disponíveis para montar um relatório. */
+    public function tabelas()
+    {
+        return $this->semAcesso() ?? $this->respondSuccess((new IndicadoresService())->tabelas(service('authenticatedUser')->empresaId));
+    }
+
+    /** Relatório montado: uma tabela agrupada por uma coluna. */
+    public function agrupar()
+    {
+        if ($r = $this->semAcesso()) {
+            return $r;
+        }
+        try {
+            return $this->respondSuccess((new IndicadoresService())->agrupar(service('authenticatedUser')->empresaId, $this->request->getGet() ?? []));
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 422);
+        }
+    }
+
     /** PDF de um período qualquer (`inicio` e `fim` inclusivos, AAAA-MM-DD). */
     public function pdf()
     {
@@ -110,21 +169,15 @@ class RelatorioController extends BaseApiController
             return $r;
         }
 
-        $inicio = (string) $this->request->getGet('inicio');
-        $fim    = (string) $this->request->getGet('fim');
-        $valida = static fn ($d) => preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && \DateTimeImmutable::createFromFormat('Y-m-d', $d)?->format('Y-m-d') === $d;
-        if (! $valida($inicio) || ! $valida($fim) || $inicio > $fim) {
-            return $this->respondError('Escolha um período válido (início antes do fim).', 422);
+        $periodo = $this->periodoDaRequisicao();
+        if (is_string($periodo)) {
+            return $this->respondError($periodo, 422);
         }
-
-        $de  = new \DateTimeImmutable($inicio . ' 00:00:00', Relogio::fuso());
-        $ate = (new \DateTimeImmutable($fim . ' 00:00:00', Relogio::fuso()))->modify('+1 day');
-        if ($de->diff($ate)->days > 366) {
-            return $this->respondError('O período pode ter no máximo um ano.', 422);
-        }
+        [$de, $ate] = $periodo;
 
         $titulo = (string) ($this->request->getGet('titulo') ?: 'Relatório de atividades');
-        $pdf    = $this->relatorios->gerarPdf(service('authenticatedUser')->empresaId, $de, $ate, mb_substr($titulo, 0, 100));
+        $secoes = RelatorioService::secoesValidas(explode(',', (string) $this->request->getGet('secoes')));
+        $pdf    = $this->relatorios->gerarPdf(service('authenticatedUser')->empresaId, $de, $ate, mb_substr($titulo, 0, 100), $secoes);
 
         return $this->response
             ->setContentType('application/pdf')

@@ -24,10 +24,18 @@ export const relatorioService = {
   envios: async (id) => dados(await api.get(`/relatorios/${id}/envios`)),
   enviarAgora: async (id) => dados(await api.post(`/relatorios/${id}/enviar-agora`)),
 
-  /** PDF de um período (datas AAAA-MM-DD, inclusivas). */
-  baixarPdf: async ({ inicio, fim, titulo = 'Relatório de atividades' }) => {
+  /** Indicadores do período (recrutamento, financeiro, prazos), com o período anterior. */
+  indicadores: async ({ inicio, fim, signal }) => dados(await api.get('/relatorios/indicadores', { params: { inicio, fim }, signal })),
+  /** Tabelas e colunas que dá para agrupar e somar. */
+  tabelas: async () => dados(await api.get('/relatorios/tabelas')),
+  /** Uma tabela agrupada por uma coluna (contar, somar ou média). */
+  agrupar: async (params, signal) => dados(await api.get('/relatorios/agrupar', { params, signal })),
+
+  /** PDF de um período (datas AAAA-MM-DD, inclusivas). `secoes`: partes do PDF (vazio = padrão). */
+  baixarPdf: async ({ inicio, fim, titulo = 'Relatório de atividades', secoes }) => {
     try {
-      const response = await api.get('/relatorios/pdf', { params: { inicio, fim, titulo }, responseType: 'blob' });
+      const params = { inicio, fim, titulo, ...(secoes?.length ? { secoes: secoes.join(',') } : {}) };
+      const response = await api.get('/relatorios/pdf', { params, responseType: 'blob' });
       salvarArquivo(new Blob([response.data], { type: 'application/pdf' }), `relatorio-${inicio}-a-${fim}.pdf`);
     } catch (erro) {
       // Erros vêm como blob: converte para a mensagem da API aparecer na tela.

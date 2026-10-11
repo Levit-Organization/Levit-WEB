@@ -17,7 +17,20 @@ use Dompdf\Options;
  */
 class RelatorioService
 {
-    public const FREQUENCIAS = ['semanal', 'mensal'];
+    public const FREQUENCIAS = ['diario', 'semanal', 'mensal'];
+
+    /**
+     * Partes que podem entrar no PDF, na ordem em que aparecem. As quatro
+     * primeiras vêm do IndicadoresService (dados das tabelas); as outras, do
+     * histórico de atividades.
+     */
+    public const SECOES = ['resumo', 'recrutamento', 'financeiro', 'prazos', 'atrasados', 'ranking', 'atividades'];
+
+    /** Relatórios novos: tudo menos o ranking por pessoa (que soa como vigilância). */
+    public const SECOES_PADRAO = ['resumo', 'recrutamento', 'financeiro', 'prazos', 'atrasados', 'atividades'];
+
+    /** Relatórios criados antes da escolha de seções continuam como eram. */
+    private const SECOES_LEGADO = ['atrasados', 'ranking', 'atividades'];
 
     private const DIAS_SEMANA = [1 => 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado', 'domingo'];
 
@@ -114,10 +127,10 @@ class RelatorioService
 
         $frequencia = $dados['frequencia'] ?? '';
         if (! in_array($frequencia, self::FREQUENCIAS, true)) {
-            throw new \DomainException('Escolha se o relatório é semanal ou mensal.');
+            throw new \DomainException('Escolha se o relatório é diário, semanal ou mensal.');
         }
 
-        $dia = (int) ($dados['dia'] ?? 0);
+        $dia = $frequencia === 'diario' ? 1 : (int) ($dados['dia'] ?? 0);
         if ($frequencia === 'semanal' && ($dia < 1 || $dia > 7)) {
             throw new \DomainException('Escolha o dia da semana do envio.');
         }
@@ -137,13 +150,36 @@ class RelatorioService
             throw new \DomainException('Algum destinatário não é da equipe.');
         }
 
+        if (array_key_exists('secoes', $dados) && array_filter((array) $dados['secoes'], static fn ($s) => in_array($s, self::SECOES, true)) === []) {
+            throw new \DomainException('Escolha ao menos uma parte para o relatório.');
+        }
+        $secoes = self::secoesValidas($dados['secoes'] ?? self::SECOES_PADRAO);
+
         return [
             'nome'          => $nome,
             'frequencia'    => $frequencia,
             'dia'           => $dia,
             'destinatarios' => json_encode($destinatarios),
+            'secoes'        => json_encode($secoes),
             'ativo'         => ! array_key_exists('ativo', $dados) || (bool) $dados['ativo'],
         ];
+    }
+
+    /** Filtra e ordena as seções pedidas; lista vazia ou inválida vira o padrão. */
+    public static function secoesValidas(mixed $secoes): array
+    {
+        $pedidas = array_filter((array) $secoes, 'is_string');
+        $validas = array_values(array_filter(self::SECOES, static fn ($s) => in_array($s, $pedidas, true)));
+
+        return $validas === [] ? self::SECOES_PADRAO : $validas;
+    }
+
+    /** Seções gravadas no relatório agendado (nulo = criado antes da escolha de seções). */
+    public static function secoesDoRelatorio(array $r): array
+    {
+        $gravadas = is_string($r['secoes'] ?? null) ? json_decode($r['secoes'], true) : ($r['secoes'] ?? null);
+
+        return is_array($gravadas) && $gravadas !== [] ? self::secoesValidas($gravadas) : self::SECOES_LEGADO;
     }
 
     private function formatar(array $r, ?array $ultimoEnvio): array
@@ -151,6 +187,7 @@ class RelatorioService
         $r['destinatarios'] = is_string($r['destinatarios']) ? (json_decode($r['destinatarios'], true) ?: []) : ($r['destinatarios'] ?? []);
         $r['ativo']         = in_array($r['ativo'], [true, 1, '1', 't', 'true'], true);
         $r['dia']           = (int) $r['dia'];
+        $r['secoes']        = self::secoesDoRelatorio($r);
         $r['descricao_agenda'] = self::descreverAgenda($r['frequencia'], $r['dia']);
         $r['proximo_envio']    = $r['ativo'] ? self::proximaData($r['frequencia'], $r['dia'], Relogio::hoje(), $r['ultimo_envio_em'] ?? null) : null;
         $r['ultimo_envio']     = $ultimoEnvio;
@@ -160,15 +197,20 @@ class RelatorioService
 
     public static function descreverAgenda(string $frequencia, int $dia): string
     {
-        return $frequencia === 'semanal'
-            ? 'Toda ' . self::DIAS_SEMANA[$dia]
-            : "Todo dia {$dia} do mês";
+        return match ($frequencia) {
+            'diario'  => 'Todo dia',
+            'semanal' => 'Toda ' . self::DIAS_SEMANA[$dia],
+            default   => "Todo dia {$dia} do mês",
+        };
     }
 
     /** Última data agendada que já chegou (hoje incluso). */
     public static function ultimaDataAgendada(string $frequencia, int $dia, string $hoje): string
     {
         $d = new \DateTimeImmutable($hoje);
+        if ($frequencia === 'diario') {
+            return $hoje;
+        }
         if ($frequencia === 'semanal') {
             $diff = ((int) $d->format('N') - $dia + 7) % 7;
 
@@ -199,14 +241,16 @@ class RelatorioService
             return $hoje;
         }
 
-        return (new \DateTimeImmutable($ultima))->modify($frequencia === 'semanal' ? '+7 days' : '+1 month')->format('Y-m-d');
+        $passo = ['diario' => '+1 day', 'semanal' => '+7 days'][$frequencia] ?? '+1 month';
+
+        return (new \DateTimeImmutable($ultima))->modify($passo)->format('Y-m-d');
     }
 
-    /** Período coberto por um envio na data `$hoje`: os 7 dias (ou o mês) anteriores. */
+    /** Período coberto por um envio na data `$hoje`: o dia, os 7 dias ou o mês anteriores. */
     public static function periodo(string $frequencia, string $hoje): array
     {
         $fim    = new \DateTimeImmutable($hoje . ' 00:00:00', Relogio::fuso());
-        $inicio = $fim->modify($frequencia === 'semanal' ? '-7 days' : '-1 month');
+        $inicio = $fim->modify(['diario' => '-1 day', 'semanal' => '-7 days'][$frequencia] ?? '-1 month');
 
         return [$inicio, $fim];
     }
@@ -227,7 +271,7 @@ class RelatorioService
         ];
 
         try {
-            $pdf     = $this->gerarPdf($relatorio['empresa_id'], $inicio, $fim, $relatorio['nome']);
+            $pdf     = $this->gerarPdf($relatorio['empresa_id'], $inicio, $fim, $relatorio['nome'], self::secoesDoRelatorio($relatorio));
             $ids     = is_string($relatorio['destinatarios']) ? (json_decode($relatorio['destinatarios'], true) ?: []) : $relatorio['destinatarios'];
             $pessoas = $ids === [] ? [] : $db->table('usuario')->select('email')->where('empresa_id', $relatorio['empresa_id'])->whereIn('id', $ids)->get()->getResultArray();
             if ($pessoas === []) {
@@ -265,6 +309,10 @@ class RelatorioService
     public static function textoDoPeriodo(\DateTimeImmutable $inicio, \DateTimeImmutable $fim): string
     {
         // O fim é exclusivo (meia-noite do dia do envio): mostra o dia anterior.
+        if ($inicio->diff($fim)->days === 1) {
+            return $inicio->format('d/m/Y');
+        }
+
         return $inicio->format('d/m/Y') . ' a ' . $fim->modify('-1 day')->format('d/m/Y');
     }
 
@@ -282,8 +330,9 @@ class RelatorioService
     /**
      * @return array{conteudo: string, total: int, pessoas: int, empresa: string}
      */
-    public function gerarPdf(string $empresaId, \DateTimeImmutable $inicio, \DateTimeImmutable $fim, string $titulo): array
+    public function gerarPdf(string $empresaId, \DateTimeImmutable $inicio, \DateTimeImmutable $fim, string $titulo, ?array $secoes = null): array
     {
+        $secoes = $secoes ?? self::SECOES_PADRAO;
         $db  = db_connect();
         $utc = new \DateTimeZone('UTC');
 
@@ -320,6 +369,10 @@ class RelatorioService
             'cortado'    => $cortado,
             'atrasados'  => array_values(array_filter($abertos, static fn ($i) => $i['prazo'] < $hoje)),
             'hoje'       => $hoje,
+            'secoes'     => $secoes,
+            'indicadores' => array_intersect($secoes, ['resumo', 'recrutamento', 'financeiro', 'prazos']) === []
+                ? null
+                : (new IndicadoresService())->painel($empresaId, $inicio, $fim),
         ]);
 
         $conteudo = self::renderizar($html);
@@ -379,15 +432,15 @@ class RelatorioService
         $total   = count($d['atividades']);
         $pessoas = count(array_filter(array_keys($porPessoa), static fn ($p) => ! in_array($p, ['Sistema', 'Automação', 'Formulário de candidatura'], true)));
 
-        $ranking = static function (array $contagem, string $vazio) use ($e): string {
+        $ranking = static function (array $contagem, string $vazio, ?callable $formato = null) use ($e): string {
             if ($contagem === []) {
                 return '<p class="muted">' . $e($vazio) . '</p>';
             }
-            $max    = max($contagem);
+            $max    = max($contagem) ?: 1;
             $linhas = '';
             foreach (array_slice($contagem, 0, 8, true) as $nome => $n) {
                 $largura = max(4, (int) round($n / $max * 100));
-                $linhas .= '<tr><td class="rank-nome">' . $e($nome) . '</td><td class="rank-barra"><div style="width:' . $largura . '%"></div></td><td class="rank-n">' . $n . '</td></tr>';
+                $linhas .= '<tr><td class="rank-nome">' . $e($nome) . '</td><td class="rank-barra"><div style="width:' . $largura . '%"></div></td><td class="rank-n">' . $e($formato ? $formato($n) : $n) . '</td></tr>';
             }
 
             return '<table class="rank">' . $linhas . '</table>';
@@ -422,6 +475,20 @@ class RelatorioService
 
         $aviso = $d['cortado'] ? '<p class="aviso">O período teve mais de ' . self::MAX_ATIVIDADES . ' atividades; o relatório mostra as primeiras.</p>' : '';
 
+        $corpo = '';
+        foreach ($d['secoes'] ?? self::SECOES_LEGADO as $secao) {
+            $corpo .= match ($secao) {
+                'resumo', 'recrutamento', 'financeiro', 'prazos' => isset($d['indicadores']) ? self::htmlDosIndicadores($secao, $d['indicadores'], $ranking) : '',
+                'atrasados'  => '<h2>Itens atrasados agora</h2>' . $blocoPrazos,
+                'ranking'    => '<table class="colunas"><tr>
+  <td><h2>Quem mais fez</h2>' . $ranking($porPessoa, 'Ninguém registrou atividades.') . '</td>
+  <td><h2>Onde mais mexeram</h2>' . $ranking($porTabela, 'Nenhuma tabela movimentada.') . '</td>
+</tr></table>',
+                'atividades' => '<h2>Tudo o que foi feito</h2>' . $aviso . $secoesDias,
+                default      => '',
+            };
+        }
+
         return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>
   @page { margin: 22mm 16mm 18mm; }
   body { font-family: "DejaVu Sans", sans-serif; font-size: 9.5pt; color: #24223A; }
@@ -430,6 +497,7 @@ class RelatorioService
   h1 { font-size: 20pt; margin: 4px 0 2px; color: #15132A; }
   h2 { font-size: 12pt; margin: 22px 0 8px; color: #15132A; border-bottom: 1.5px solid #15132A; padding-bottom: 4px; }
   h3 { font-size: 10pt; margin: 16px 0 6px; color: #15132A; }
+  h2, h3 { page-break-after: avoid; }
   .sub { color: #5D5A72; margin: 0; }
   .muted { color: #8A879C; font-weight: normal; }
   .numeros { width: 100%; border-collapse: separate; border-spacing: 8px 0; margin: 18px -8px 0; }
@@ -442,7 +510,7 @@ class RelatorioService
   .rank td { padding: 3px 0; font-size: 8.5pt; }
   .rank-nome { width: 42%; padding-right: 6px; }
   .rank-barra div { height: 7px; background: #8D86D9; border-radius: 3px; }
-  .rank-n { width: 30px; text-align: right; color: #5D5A72; }
+  .rank-n { width: 90px; text-align: right; color: #5D5A72; }
   .lista { width: 100%; border-collapse: collapse; }
   .lista th { text-align: left; font-size: 7.5pt; color: #8A879C; font-weight: normal; border-bottom: 1px solid #DDDBEA; padding: 4px 6px 4px 0; }
   .lista td { border-bottom: 1px solid #EEEDF5; padding: 5px 6px 5px 0; vertical-align: top; }
@@ -451,6 +519,9 @@ class RelatorioService
   .onde { font-size: 7.5pt; color: #8A879C; margin-top: 1px; }
   .atraso { color: #B42318; font-weight: bold; width: 55px; }
   .aviso { background: #FFF6E5; color: #8A5A00; padding: 6px 8px; border-radius: 4px; }
+  .lista .num { text-align: right; width: 95px; }
+  .bom { color: #067647; font-weight: bold; }
+  .ruim { color: #B42318; font-weight: bold; }
 </style></head><body>
 <div class="rodape">' . $e($d['empresa']) . ' · ' . $e($d['titulo']) . ' · gerado em ' . $e($d['gerado_em']) . '</div>
 <div class="marca">LEVIT</div>
@@ -462,12 +533,119 @@ class RelatorioService
   <td><span class="n">' . count($porTabela) . '</span><span class="r">' . (count($porTabela) === 1 ? 'tabela movimentada' : 'tabelas movimentadas') . '</span></td>
   <td><span class="n">' . count($d['atrasados']) . '</span><span class="r">' . (count($d['atrasados']) === 1 ? 'item atrasado hoje' : 'itens atrasados hoje') . '</span></td>
 </tr></table>
-<table class="colunas"><tr>
-  <td><h2>Quem mais fez</h2>' . $ranking($porPessoa, 'Ninguém registrou atividades.') . '</td>
-  <td><h2>Onde mais mexeram</h2>' . $ranking($porTabela, 'Nenhuma tabela movimentada.') . '</td>
-</tr></table>
-<h2>Itens atrasados agora</h2>' . $blocoPrazos . '
-<h2>Tudo o que foi feito</h2>' . $aviso . $secoesDias . '
+' . $corpo . '
 </body></html>';
+    }
+
+    public static function numero(float|int $n, int $casas = 0): string
+    {
+        return number_format((float) $n, $casas, ',', '.');
+    }
+
+    public static function moeda(float|int $n): string
+    {
+        return ($n < 0 ? '-' : '') . 'R$ ' . number_format(abs((float) $n), 2, ',', '.');
+    }
+
+    /**
+     * "+12%" em verde ou vermelho, conforme subir seja bom ou ruim. Sem base de
+     * comparação (anterior zero), mostra "novo".
+     */
+    public static function htmlDaVariacao(array $comparacao, bool $subirEBom = true): string
+    {
+        $v = $comparacao['variacao'];
+        if ($v === null) {
+            return '<span class="muted">novo</span>';
+        }
+        if ((float) $v === 0.0) {
+            return '<span class="muted">igual</span>';
+        }
+        $classe = ($v > 0) === $subirEBom ? 'bom' : 'ruim';
+
+        return '<span class="' . $classe . '">' . ($v > 0 ? '+' : '') . self::numero($v, abs($v) < 10 && floor($v) != $v ? 1 : 0) . '%</span>';
+    }
+
+    /** Uma seção de indicadores (dados das tabelas) no PDF. */
+    public static function htmlDosIndicadores(string $secao, array $ind, callable $ranking): string
+    {
+        $e     = static fn ($t) => htmlspecialchars((string) $t, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $linha = static fn (string $rotulo, array $c, bool $bom = true, ?callable $f = null) => '<tr><td>' . $e($rotulo) . '</td><td class="num">'
+            . $e($f ? $f($c['atual']) : self::numero($c['atual'])) . '</td><td class="num muted">' . $e($f ? $f($c['anterior']) : self::numero($c['anterior']))
+            . '</td><td class="num">' . self::htmlDaVariacao($c, $bom) . '</td></tr>';
+        $cabecalho = '<table class="lista"><thead><tr><th></th><th class="num">Neste período</th><th class="num">Anterior</th><th class="num">Variação</th></tr></thead><tbody>';
+        $anterior  = (new \DateTimeImmutable($ind['periodo_anterior']['inicio']))->format('d/m/Y') . ' a ' . (new \DateTimeImmutable($ind['periodo_anterior']['fim']))->format('d/m/Y');
+
+        switch ($secao) {
+            case 'resumo':
+                $r = $ind['resumo'];
+
+                return '<h2>Comparado ao período anterior</h2><p class="muted">Período anterior: ' . $e($anterior) . '</p>' . $cabecalho
+                    . $linha('Atividades na plataforma', $r['atividades'])
+                    . $linha('Pessoas ativas', $r['pessoas_ativas'])
+                    . $linha('Itens criados nas tabelas', $r['itens_criados'])
+                    . $linha('Candidatos inscritos', $r['candidatos'])
+                    . '</tbody></table>';
+
+            case 'recrutamento':
+                if ($ind['recrutamento'] === []) {
+                    return '';
+                }
+                $html = '<h2>Recrutamento</h2>';
+                foreach ($ind['recrutamento'] as $vaga) {
+                    $max    = max(1, ...array_map(static fn ($f) => (int) ($f['chegaram'] ?? 0), $vaga['fases'] ?: [['chegaram' => 0]]));
+                    $linhas = '';
+                    foreach ($vaga['fases'] as $f) {
+                        $barra = $f['saida'] ? '<span class="muted">saída</span>'
+                            : '<div style="width:' . max(2, (int) round(($f['chegaram'] ?? 0) / $max * 100)) . '%"></div>';
+                        $linhas .= '<tr><td>' . $e($f['nome']) . '</td><td class="num">' . $f['atual'] . '</td><td class="rank-barra" style="width:30%">' . $barra
+                            . '</td><td class="num">' . ($f['saida'] ? '—' : (int) $f['chegaram']) . '</td><td class="num">'
+                            . ($f['dias_medios'] === null ? '—' : $e(self::numero($f['dias_medios'], 1) . ' dias')) . '</td></tr>';
+                    }
+                    $html .= '<h3>' . $e($vaga['nome']) . ' <span class="muted">· ' . $vaga['total'] . ' candidatos no total</span></h3>'
+                        . $cabecalho
+                        . $linha('Inscritos', $vaga['inscritos'])
+                        . $linha('Chegaram à última etapa', $vaga['concluidos'])
+                        . $linha('Saíram do processo', $vaga['sairam'], false)
+                        . '</tbody></table>'
+                        . ($vaga['parados'] > 0 ? '<p class="aviso">' . $vaga['parados'] . ' candidato(s) parado(s) na mesma etapa há mais de ' . IndicadoresService::DIAS_PARADO . ' dias.</p>' : '')
+                        . '<table class="lista"><thead><tr><th>Etapa</th><th class="num">Agora</th><th colspan="2">Inscritos no período que chegaram até aqui</th><th class="num">Tempo médio</th></tr></thead><tbody>'
+                        . $linhas . '</tbody></table>';
+                }
+
+                return $html;
+
+            case 'financeiro':
+                if ($ind['financeiro'] === []) {
+                    return '';
+                }
+                $html = '<h2>Financeiro</h2>';
+                foreach ($ind['financeiro'] as $fin) {
+                    $html .= '<h3>' . $e($fin['nome']) . '</h3>' . $cabecalho
+                        . $linha('Entradas', $fin['entradas'], true, [self::class, 'moeda'])
+                        . $linha('Saídas', $fin['saidas'], false, [self::class, 'moeda'])
+                        . $linha('Saldo', $fin['saldo'], true, [self::class, 'moeda'])
+                        . '</tbody></table>'
+                        . '<h3>Saídas por categoria</h3>'
+                        . $ranking(array_column($fin['saidas_por_categoria'], 'total', 'categoria'), 'Nenhuma saída no período.', [self::class, 'moeda']);
+                }
+
+                return $html;
+
+            case 'prazos':
+                $p    = $ind['prazos'];
+                $taxa = $p['taxa_conclusao'];
+
+                return '<h2>Prazos</h2>' . $cabecalho
+                    . $linha('Prazos que venceram no período', $p['vencendo'])
+                    . $linha('Desses, já concluídos', $p['concluidos'])
+                    . '</tbody></table>'
+                    . '<p>Taxa de conclusão: <b>' . ($taxa['atual'] === null ? '—' : $taxa['atual'] . '%') . '</b>'
+                    . ($taxa['anterior'] === null ? '' : ' <span class="muted">(período anterior: ' . $taxa['anterior'] . '%)</span>')
+                    . ' · ' . $p['atrasados_agora'] . ' item(ns) atrasado(s) agora.</p>'
+                    . '<h3>Atrasados por responsável</h3>'
+                    . $ranking(array_column($p['atrasados_por_responsavel'], 'total', 'responsavel'), 'Nenhum item atrasado.');
+        }
+
+        return '';
     }
 }

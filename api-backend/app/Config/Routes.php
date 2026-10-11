@@ -71,6 +71,9 @@ $routes->group('api/v1', function ($routes) {
     $routes->get('relatorios', 'RelatorioController::listar', ['filter' => 'auth']);
     $routes->post('relatorios', 'RelatorioController::criar', ['filter' => 'auth']);
     $routes->get('relatorios/pdf', 'RelatorioController::pdf', ['filter' => 'auth']);
+    $routes->get('relatorios/indicadores', 'RelatorioController::indicadores', ['filter' => 'auth']);
+    $routes->get('relatorios/tabelas', 'RelatorioController::tabelas', ['filter' => 'auth']);
+    $routes->get('relatorios/agrupar', 'RelatorioController::agrupar', ['filter' => 'auth']);
     $routes->put("relatorios/({$uuid})", 'RelatorioController::atualizar/$1', ['filter' => 'auth']);
     $routes->delete("relatorios/({$uuid})", 'RelatorioController::excluir/$1', ['filter' => 'auth']);
     $routes->get("relatorios/({$uuid})/envios", 'RelatorioController::envios/$1', ['filter' => 'auth']);

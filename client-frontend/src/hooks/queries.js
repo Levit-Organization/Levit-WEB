@@ -21,6 +21,9 @@ export const queryKeys = {
   prazos: (escopo) => ['prazos', escopo],
   relatorios: ['relatorios'],
   enviosRelatorio: (id) => ['relatorios', 'envios', id],
+  indicadores: (inicio, fim) => ['relatorios', 'indicadores', inicio, fim],
+  tabelasRelatorio: ['relatorios', 'tabelas'],
+  agrupamento: (params) => ['relatorios', 'agrupar', params],
   convites: ['equipe', 'convites'],
   execucoes: (automacaoId) => ['automacoes', 'execucoes', automacaoId],
   simulacao: (moduloId, registroId, definicao) => ['automacoes', 'simulacao', moduloId, registroId || 'recente', definicao],
@@ -129,6 +132,33 @@ export function useRelatorios() {
 
 export function useEnviosRelatorio(id, { enabled }) {
   return useQuery({ queryKey: queryKeys.enviosRelatorio(id), queryFn: () => relatorioService.envios(id), enabled: enabled && !!id });
+}
+
+/** Indicadores do painel de relatórios para o período (datas inclusivas). */
+export function useIndicadores(inicio, fim) {
+  return useQuery({
+    queryKey: queryKeys.indicadores(inicio, fim),
+    queryFn: ({ signal }) => relatorioService.indicadores({ inicio, fim, signal }),
+    enabled: !!inicio && !!fim && inicio <= fim,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+export function useTabelasRelatorio() {
+  return useQuery({ queryKey: queryKeys.tabelasRelatorio, queryFn: () => relatorioService.tabelas(), retry: false });
+}
+
+/** Relatório montado; só busca quando tabela e coluna estão escolhidas. */
+export function useAgrupamento(params) {
+  const pronto = !!params?.modulo_id && !!params?.agrupar_por && (params.operacao === 'contar' || !!params.campo_valor);
+  return useQuery({
+    queryKey: queryKeys.agrupamento(params),
+    queryFn: ({ signal }) => relatorioService.agrupar(params, signal),
+    enabled: pronto,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
 }
 
 export function useEquipe(options) {

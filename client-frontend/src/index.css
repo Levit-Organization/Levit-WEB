@@ -99,6 +99,12 @@
   --color-people-6: oklch(47% 0.13 320);
   --color-people-6-bg: oklch(95% 0.035 320);
 
+  /* Gráficos — duas séries comparadas (entradas × saídas). Validadas para
+     daltonismo (ΔE ≥ 24) e contraste ≥ 3:1 sobre a superfície. Não são cores
+     de status: subir/descer bom ou ruim continua com success/danger + ícone. */
+  --color-serie-1: #534BAF;
+  --color-serie-2: #C2410C;
+
   /* ==========================================================================
      Forma — raios generosos (a "temperatura" do produto vem daqui e do
      espaçamento, não de fonte arredondada).

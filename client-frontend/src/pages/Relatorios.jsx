@@ -21,52 +21,68 @@ import { useConfirm, useToast } from '../hooks/useFeedback';
 import { mensagemDeErro } from '../lib/queryClient';
 import { relatorioService } from '../services/relatorioService';
 import { hojeISO } from '../utils/prazos';
+import { ATALHOS_PERIODO, periodoDoAtalho, SECOES_PADRAO, SECOES_RELATORIO, somarDias } from '../utils/relatorios';
+import PainelIndicadores from '../components/relatorios/PainelIndicadores';
+import MontarRelatorio from '../components/relatorios/MontarRelatorio';
 
 const DIAS_SEMANA = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
-const VAZIO = { nome: '', frequencia: 'semanal', dia: 1, destinatarios: [], ativo: true };
+const VAZIO = { nome: '', frequencia: 'semanal', dia: 1, destinatarios: [], secoes: SECOES_PADRAO, ativo: true };
 
-function somarDias(iso, dias) {
-  const [a, m, d] = iso.split('-').map(Number);
-  return hojeISO(new Date(a, m - 1, d + dias));
+const ABAS = [
+  { valor: 'painel', rotulo: 'Painel', icone: 'insights' },
+  { valor: 'montar', rotulo: 'Montar relatório', icone: 'bar_chart' },
+  { valor: 'pdf', rotulo: 'PDF e envios', icone: 'picture_as_pdf' },
+];
+
+/** Escolha das partes do PDF (caixas de seleção). */
+function EscolhaDeSecoes({ valor, onChange, legenda = 'O que entra no PDF' }) {
+  const alternar = (secao) => onChange(valor.includes(secao) ? valor.filter((s) => s !== secao) : [...valor, secao]);
+  return (
+    <fieldset>
+      <legend className="text-sm font-medium text-ink mb-1.5">{legenda}</legend>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+        {SECOES_RELATORIO.map((s) => (
+          <label key={s.valor} className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={valor.includes(s.valor)} onChange={() => alternar(s.valor)} className="w-4 h-4 mt-0.5 accent-primary shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-sm text-ink">{s.rotulo}</span>
+              <span className="block text-2xs text-light-text">{s.descricao}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
 }
 
-/** Atalhos de período para o PDF sob demanda (datas inclusivas). */
-function periodoDoAtalho(atalho, hoje = hojeISO()) {
-  const [a, m] = hoje.split('-').map(Number);
-  switch (atalho) {
-    case '7d':
-      return [somarDias(hoje, -6), hoje];
-    case '30d':
-      return [somarDias(hoje, -29), hoje];
-    case 'mes':
-      return [hojeISO(new Date(a, m - 1, 1)), hoje];
-    case 'mes-passado':
-      return [hojeISO(new Date(a, m - 2, 1)), hojeISO(new Date(a, m - 1, 0))];
-    default:
-      return null;
-  }
+/** Período usado pelo painel, pelo relatório montado e pelo PDF sob demanda. */
+function SeletorPeriodo({ periodo, onChange }) {
+  const { atalho, inicio, fim } = periodo;
+  const escolher = (valor) => {
+    const datas = periodoDoAtalho(valor);
+    onChange(datas ? { atalho: valor, inicio: datas[0], fim: datas[1] } : { ...periodo, atalho: valor });
+  };
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:max-w-2xl">
+      <Select label="Período" value={atalho} onChange={(e) => escolher(e.target.value)} options={ATALHOS_PERIODO} />
+      <Input label="De" type="date" value={inicio} max={fim} onChange={(e) => onChange({ ...periodo, atalho: 'outro', inicio: e.target.value })} />
+      <Input label="Até" type="date" value={fim} min={inicio} max={hojeISO()} onChange={(e) => onChange({ ...periodo, atalho: 'outro', fim: e.target.value })} />
+    </div>
+  );
 }
 
 const dataCurta = (iso) => (iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('pt-BR') : '');
 const dataHora = (utc) => (utc ? new Date(`${utc.replace(' ', 'T')}Z`).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
 
-function BaixarAgora() {
+function BaixarAgora({ inicio, fim }) {
   const toast = useToast();
-  const [atalho, setAtalho] = useState('7d');
-  const [inicio, setInicio] = useState(somarDias(hojeISO(), -6));
-  const [fim, setFim] = useState(hojeISO());
+  const [secoes, setSecoes] = useState(SECOES_PADRAO);
   const [baixando, setBaixando] = useState(false);
-
-  const escolher = (valor) => {
-    setAtalho(valor);
-    const periodo = periodoDoAtalho(valor);
-    if (periodo) [setInicio, setFim].forEach((set, i) => set(periodo[i]));
-  };
 
   const baixar = async () => {
     setBaixando(true);
     try {
-      await relatorioService.baixarPdf({ inicio, fim });
+      await relatorioService.baixarPdf({ inicio, fim, secoes });
     } catch (erro) {
       toast.error(mensagemDeErro(erro, 'Não foi possível gerar o PDF.'));
     } finally {
@@ -76,28 +92,17 @@ function BaixarAgora() {
 
   return (
     <Card>
-      <h2 className="text-base font-bold text-ink">Baixar agora</h2>
-      <p className="text-sm text-light-text mt-1">Um PDF com tudo o que foi feito no período, por quem, e os itens atrasados.</p>
-      <div className="mt-4 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-3 items-end">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Select
-            label="Período"
-            value={atalho}
-            onChange={(e) => escolher(e.target.value)}
-            options={[
-              { value: '7d', label: 'Últimos 7 dias' },
-              { value: '30d', label: 'Últimos 30 dias' },
-              { value: 'mes', label: 'Este mês' },
-              { value: 'mes-passado', label: 'Mês passado' },
-              { value: 'outro', label: 'Escolher datas' },
-            ]}
-          />
-          <Input label="De" type="date" value={inicio} max={fim} onChange={(e) => { setAtalho('outro'); setInicio(e.target.value); }} />
-          <Input label="Até" type="date" value={fim} min={inicio} max={hojeISO()} onChange={(e) => { setAtalho('outro'); setFim(e.target.value); }} />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-base font-bold text-ink">Baixar agora</h2>
+          <p className="text-sm text-light-text mt-1">Um PDF do período escolhido acima, com as partes que você marcar.</p>
         </div>
-        <Button icon="picture_as_pdf" onClick={baixar} loading={baixando} disabled={!inicio || !fim || inicio > fim}>
+        <Button icon="picture_as_pdf" onClick={baixar} loading={baixando} disabled={!inicio || !fim || inicio > fim || secoes.length === 0}>
           {baixando ? 'Gerando...' : 'Baixar PDF'}
         </Button>
+      </div>
+      <div className="mt-4">
+        <EscolhaDeSecoes valor={secoes} onChange={setSecoes} />
       </div>
     </Card>
   );
@@ -115,6 +120,7 @@ function Historico({ relatorio }) {
         inicio: hojeISO(new Date(`${envio.periodo_inicio.replace(' ', 'T')}Z`)),
         fim: hojeISO(fimUtc),
         titulo: relatorio.nome,
+        secoes: relatorio.secoes,
       });
     } catch (erro) {
       toast.error(mensagemDeErro(erro, 'Não foi possível gerar o PDF.'));
@@ -253,10 +259,11 @@ function FormularioRelatorio({ aberto, inicial, pessoas, onFechar }) {
     e?.preventDefault();
     if (!form.nome.trim()) return setErro('Dê um nome ao relatório.');
     if (form.destinatarios.length === 0) return setErro('Escolha quem recebe o relatório.');
+    if (form.secoes.length === 0) return setErro('Marque ao menos uma parte para o PDF.');
     setSalvando(true);
     setErro('');
     try {
-      const corpo = { nome: form.nome.trim(), frequencia: form.frequencia, dia: Number(form.dia), destinatarios: form.destinatarios, ativo: form.ativo };
+      const corpo = { nome: form.nome.trim(), frequencia: form.frequencia, dia: Number(form.dia), destinatarios: form.destinatarios, secoes: form.secoes, ativo: form.ativo };
       if (editando) await relatorioService.atualizar(inicial.id, corpo);
       else await relatorioService.criar(corpo);
       toast.success(editando ? 'Relatório atualizado.' : 'Relatório agendado.');
@@ -295,6 +302,7 @@ function FormularioRelatorio({ aberto, inicial, pessoas, onFechar }) {
             <span className="block text-sm font-medium text-ink mb-1.5">Frequência</span>
             <div role="group" aria-label="Frequência" className="flex gap-1 rounded-lg bg-sidebar p-1">
               {[
+                ['diario', 'Diário'],
                 ['semanal', 'Semanal'],
                 ['mensal', 'Mensal'],
               ].map(([valor, rotulo]) => (
@@ -313,18 +321,24 @@ function FormularioRelatorio({ aberto, inicial, pessoas, onFechar }) {
               ))}
             </div>
           </div>
-          <Select
-            label={form.frequencia === 'semanal' ? 'Dia da semana' : 'Dia do mês'}
-            value={form.dia}
-            onChange={(e) => mudar({ dia: Number(e.target.value) })}
-            options={opcoesDia}
-          />
+          {form.frequencia !== 'diario' && (
+            <Select
+              label={form.frequencia === 'semanal' ? 'Dia da semana' : 'Dia do mês'}
+              value={form.dia}
+              onChange={(e) => mudar({ dia: Number(e.target.value) })}
+              options={opcoesDia}
+            />
+          )}
         </div>
         <p className="text-xs text-light-text -mt-2">
-          {form.frequencia === 'semanal'
-            ? 'Cobre os 7 dias anteriores ao envio. Chega de manhã.'
-            : 'Cobre o mês anterior ao envio (até o dia 28, para todo mês ter esse dia). Chega de manhã.'}
+          {{
+            diario: 'Cobre o dia anterior. Chega toda manhã.',
+            semanal: 'Cobre os 7 dias anteriores ao envio. Chega de manhã.',
+            mensal: 'Cobre o mês anterior ao envio (até o dia 28, para todo mês ter esse dia). Chega de manhã.',
+          }[form.frequencia]}
         </p>
+
+        <EscolhaDeSecoes valor={form.secoes} onChange={(secoes) => mudar({ secoes })} />
 
         <fieldset>
           <legend className="text-sm font-medium text-ink mb-1.5">Quem recebe</legend>
@@ -345,15 +359,19 @@ function FormularioRelatorio({ aberto, inicial, pessoas, onFechar }) {
 }
 
 /**
- * Relatórios em PDF: tudo o que foi feito na plataforma e por quem. Agendados
- * (semanal ou mensal, chegam por e-mail) ou baixados na hora para qualquer período.
+ * Relatórios: painel com os números do período (comparados ao anterior),
+ * relatório montado pela pessoa (agrupar uma tabela por uma coluna) e PDFs,
+ * baixados na hora ou agendados por e-mail.
  */
 export default function Relatorios() {
   const relatorios = useRelatorios();
   const pessoas = usePessoas();
   const nomes = Object.fromEntries((pessoas.data ?? []).map((p) => [p.id, p.nome]));
   const [form, setForm] = useState(null); // { aberto, inicial }
+  const [aba, setAba] = useState('painel');
+  const [periodo, setPeriodo] = useState(() => ({ atalho: '30d', inicio: somarDias(hojeISO(), -29), fim: hojeISO() }));
   const semAcesso = relatorios.error?.response?.status === 403;
+  const periodoValido = periodo.inicio && periodo.fim && periodo.inicio <= periodo.fim;
 
   const abrir = (relatorio = null) =>
     setForm({ chave: Date.now(), inicial: relatorio ? { ...VAZIO, ...relatorio } : VAZIO });
@@ -361,10 +379,10 @@ export default function Relatorios() {
   return (
     <Layout>
       <PageHeader
-        icon="description"
+        icon="insights"
         title="Relatórios"
-        subtitle="Um PDF com tudo o que foi feito na plataforma e por quem, no dia que você escolher."
-        actions={!semAcesso && <Button icon="add" onClick={() => abrir()}>Novo relatório</Button>}
+        subtitle="Os números da empresa no período, relatórios montados por você e PDFs por e-mail."
+        actions={!semAcesso && aba === 'pdf' && <Button icon="add" onClick={() => abrir()}>Novo relatório</Button>}
       />
 
       {semAcesso ? (
@@ -378,37 +396,69 @@ export default function Relatorios() {
         </Card>
       ) : (
         <div className="flex flex-col gap-6">
-          <BaixarAgora />
+          <div role="tablist" aria-label="Tipo de relatório" className="flex gap-1 rounded-lg bg-sidebar p-1 w-full sm:w-fit overflow-x-auto">
+            {ABAS.map((a) => (
+              <button
+                key={a.valor}
+                type="button"
+                role="tab"
+                id={`aba-${a.valor}`}
+                aria-selected={aba === a.valor}
+                aria-controls={`painel-${a.valor}`}
+                onClick={() => setAba(a.valor)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-md h-9 px-3.5 text-sm font-semibold whitespace-nowrap transition-colors',
+                  aba === a.valor ? 'bg-surface text-ink shadow-xs' : 'text-light-text hover:text-ink'
+                )}
+              >
+                <span className="material-icons text-[18px]" aria-hidden="true">{a.icone}</span>
+                {a.rotulo}
+              </button>
+            ))}
+          </div>
 
-          <section>
-            <h2 className="text-base font-bold text-ink mb-3.5">Agendados</h2>
-            {relatorios.isLoading ? (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                {[1, 2].map((n) => <Skeleton key={n} className="h-40 rounded-2xl" />)}
-              </div>
-            ) : relatorios.isError ? (
-              <Card>
-                <ErrorState description={mensagemDeErro(relatorios.error, 'Erro ao carregar os relatórios.')} onRetry={() => relatorios.refetch()} />
-              </Card>
-            ) : relatorios.data.length === 0 ? (
-              <Card padding="lg" className="py-10">
-                <EmptyState
-                  icon="event_repeat"
-                  title="Nenhum relatório agendado"
-                  description="Escolha um dia da semana ou do mês e quem recebe. O PDF chega por e-mail com o que cada pessoa fez no período."
-                  actionLabel="Agendar o primeiro"
-                  actionIcon="add"
-                  onAction={() => abrir()}
-                />
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                {relatorios.data.map((r) => (
-                  <CartaoRelatorio key={r.id} relatorio={r} nomes={nomes} onEditar={abrir} />
-                ))}
+          <SeletorPeriodo periodo={periodo} onChange={setPeriodo} />
+          {!periodoValido && <p className="text-sm text-danger -mt-3" role="alert">Escolha um período válido (início antes do fim).</p>}
+
+          <div role="tabpanel" id={`painel-${aba}`} aria-labelledby={`aba-${aba}`}>
+            {aba === 'painel' && <PainelIndicadores inicio={periodo.inicio} fim={periodo.fim} />}
+            {aba === 'montar' && <MontarRelatorio inicio={periodo.inicio} fim={periodo.fim} />}
+            {aba === 'pdf' && (
+              <div className="flex flex-col gap-6">
+                <BaixarAgora inicio={periodo.inicio} fim={periodo.fim} />
+
+                <section>
+                  <h2 className="text-base font-bold text-ink mb-3.5">Agendados</h2>
+                  {relatorios.isLoading ? (
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      {[1, 2].map((n) => <Skeleton key={n} className="h-40 rounded-2xl" />)}
+                    </div>
+                  ) : relatorios.isError ? (
+                    <Card>
+                      <ErrorState description={mensagemDeErro(relatorios.error, 'Erro ao carregar os relatórios.')} onRetry={() => relatorios.refetch()} />
+                    </Card>
+                  ) : relatorios.data.length === 0 ? (
+                    <Card padding="lg" className="py-10">
+                      <EmptyState
+                        icon="event_repeat"
+                        title="Nenhum relatório agendado"
+                        description="Escolha a frequência, quem recebe e o que entra no PDF. Ele chega por e-mail, com a comparação com o período anterior."
+                        actionLabel="Agendar o primeiro"
+                        actionIcon="add"
+                        onAction={() => abrir()}
+                      />
+                    </Card>
+                  ) : (
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      {relatorios.data.map((r) => (
+                        <CartaoRelatorio key={r.id} relatorio={r} nomes={nomes} onEditar={abrir} />
+                      ))}
+                    </div>
+                  )}
+                </section>
               </div>
             )}
-          </section>
+          </div>
         </div>
       )}
 
