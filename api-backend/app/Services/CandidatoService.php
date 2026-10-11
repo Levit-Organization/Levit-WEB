@@ -8,6 +8,8 @@ use App\Models\EmpresaModel;
 use App\Models\FaseRecrutamentoModel;
 use App\Models\HistoricoFaseModel;
 use App\Models\ModuloModel;
+use App\Services\Automacao\CamposCandidato;
+use CodeIgniter\Events\Events;
 
 class CandidatoService
 {
@@ -59,6 +61,27 @@ class CandidatoService
             'cargo_desejado' => $dados['cargo_desejado'] ?? null,
             'mensagem'       => $dados['mensagem'] ?? null,
         ]);
+
+        Events::trigger('candidato_criado', [
+            'modulo_id'      => $moduloId,
+            'registro_id'    => null,
+            'dados_registro' => CamposCandidato::dados($dados, $primeiraFase['nome']),
+        ]);
+
+        // Candidaturas seguidas na mesma vaga viram uma notificação só.
+        $notificacoes = new NotificacaoService();
+        $notificacoes->notificarSemFalhar(
+            $notificacoes->usuariosComAcessoAoModulo($moduloId, $modulo['empresa_id']),
+            $modulo['empresa_id'],
+            [
+                'tipo'            => 'candidatura',
+                'titulo'          => "Nova candidatura em {$modulo['nome']}",
+                'titulo_agrupado' => "{n} novas candidaturas em {$modulo['nome']}",
+                'mensagem'        => "{$dados['nome']} se candidatou.",
+                'link'            => '/recrutamento',
+                'agrupador'       => "candidatura:{$moduloId}",
+            ]
+        );
 
         return $this->buscarCandidato($candidatoId, $moduloId, $modulo['empresa_id']);
     }
@@ -181,6 +204,21 @@ class CandidatoService
         if ($db->transStatus() === false) {
             throw new \RuntimeException('Não foi possível mover o candidato. Tente novamente.');
         }
+
+        $nomes = array_column(
+            $this->faseRecrutamentoModel->select('id, nome')->whereIn('id', [$candidato['fase_atual_id'], $novaFaseId])->findAll(),
+            'nome',
+            'id'
+        );
+        $etapaAnterior = $nomes[$candidato['fase_atual_id']] ?? null;
+        $etapaNova     = $nomes[$novaFaseId] ?? null;
+
+        Events::trigger('candidato_mudou_etapa', [
+            'modulo_id'        => $moduloId,
+            'registro_id'      => null,
+            'dados_registro'   => CamposCandidato::dados($candidato, $etapaNova, $etapaAnterior),
+            'dados_anteriores' => CamposCandidato::dados($candidato, $etapaAnterior),
+        ]);
 
         return $this->buscarCandidato($candidatoId, $moduloId, $empresaId);
     }

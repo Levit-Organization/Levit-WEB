@@ -14,6 +14,18 @@ class AutomacaoLogModel extends BaseModel
         'registro_id',
         'status',
         'detalhes',
+        'gatilho',
+        'tentativa',
+        'duracao_ms',
+        'passos',
+        'dados',
+    ];
+
+    protected array $casts = [
+        'tentativa'  => 'int',
+        'duracao_ms' => '?int',
+        'passos'     => '?json-array',
+        'dados'      => '?json-array',
     ];
 
     protected $useTimestamps = false;

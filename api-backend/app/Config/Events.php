@@ -2,6 +2,8 @@
 
 namespace Config;
 
+use App\Services\AtividadeService;
+use App\Services\Automacao\ModulosComAutomacao;
 use CodeIgniter\Events\Events;
 use CodeIgniter\Exceptions\FrameworkException;
 use CodeIgniter\HotReloader\HotReloader;
@@ -56,14 +58,45 @@ Events::on('pre_system', static function (): void {
     }
 });
 
+// Só enfileira quando a tabela tem automação ligada (ver ModulosComAutomacao).
 Events::on('registro_criado', static function (array $payload) {
+    if (! ModulosComAutomacao::temAtiva($payload['modulo_id'])) {
+        return;
+    }
     service('queue')->push('automacoes', 'processar-automacoes', array_merge($payload, ['gatilho' => 'criacao']));
 });
 
 Events::on('registro_atualizado', static function (array $payload) {
+    if (! ModulosComAutomacao::temAtiva($payload['modulo_id'])) {
+        return;
+    }
     service('queue')->push('automacoes', 'processar-automacoes', array_merge($payload, ['gatilho' => 'atualizacao']));
 });
 
 Events::on('registro_excluido', static function (array $payload) {
+    if (! ModulosComAutomacao::temAtiva($payload['modulo_id'])) {
+        return;
+    }
     service('queue')->push('automacoes', 'processar-automacoes', array_merge($payload, ['gatilho' => 'exclusao']));
 });
+
+Events::on('candidato_criado', static function (array $payload) {
+    if (! ModulosComAutomacao::temAtiva($payload['modulo_id'])) {
+        return;
+    }
+    service('queue')->push('automacoes', 'processar-automacoes', array_merge($payload, ['gatilho' => 'candidato_criado']));
+});
+
+Events::on('candidato_mudou_etapa', static function (array $payload) {
+    if (! ModulosComAutomacao::temAtiva($payload['modulo_id'])) {
+        return;
+    }
+    service('queue')->push('automacoes', 'processar-automacoes', array_merge($payload, ['gatilho' => 'candidato_mudou_etapa']));
+});
+
+// Histórico de atividades (base dos relatórios). Gravado depois da resposta.
+Events::on('registro_criado', static fn (array $p) => AtividadeService::registrarItem('item_criado', $p));
+Events::on('registro_atualizado', static fn (array $p) => AtividadeService::registrarItem('item_alterado', $p));
+Events::on('registro_excluido', static fn (array $p) => AtividadeService::registrarItem('item_excluido', $p));
+Events::on('candidato_criado', static fn (array $p) => AtividadeService::registrarCandidato('candidatura_recebida', $p));
+Events::on('candidato_mudou_etapa', static fn (array $p) => AtividadeService::registrarCandidato('candidato_movido', $p));
