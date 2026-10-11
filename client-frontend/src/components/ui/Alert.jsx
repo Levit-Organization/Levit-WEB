@@ -12,7 +12,7 @@ export default function Alert({ variant = 'error', title, icon, children, classN
 
   return (
     <div className={cn('flex items-start gap-3 rounded-lg px-4 py-3 text-sm', info.classes, className)}>
-      <span className="material-icons text-[19px] leading-5 shrink-0">{icon || info.icon}</span>
+      <span className="material-icons text-[19px] leading-5 shrink-0" aria-hidden="true">{icon || info.icon}</span>
       <div className="min-w-0 flex-1">
         {title && <p className="font-semibold mb-0.5">{title}</p>}
         <div className={title ? 'opacity-90' : undefined}>{children}</div>

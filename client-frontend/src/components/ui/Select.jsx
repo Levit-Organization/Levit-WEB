@@ -1,5 +1,7 @@
 import { cn } from './cn';
-import { fieldClasses, FieldShell } from './Input';
+import { useId } from 'react';
+import { fieldClasses, fieldA11y } from './fieldUtils';
+import { FieldShell } from './Field';
 
 /**
  * Select nativo com a seta de material-icon posicionada por cima.
@@ -17,18 +19,20 @@ export default function Select({
   children,
   ...rest
 }) {
-  const inputId = id || rest.name;
+  const generatedId = useId();
+  const inputId = id || rest.name || generatedId;
 
   return (
-    <FieldShell label={label} hint={hint} error={error} htmlFor={inputId}>
+    <FieldShell label={label} hint={hint} error={error} htmlFor={inputId} required={rest.required}>
       <div className="relative">
         {icon && (
-          <span className="material-icons absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px] text-light-text pointer-events-none z-10">
+          <span aria-hidden="true" className="material-icons absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px] text-light-text pointer-events-none z-10">
             {icon}
           </span>
         )}
         <select
           id={inputId}
+          {...fieldA11y(inputId, { error, hint })}
           className={cn(
             fieldClasses,
             'h-11 appearance-none pr-10 cursor-pointer',
@@ -51,7 +55,7 @@ export default function Select({
               ))
             : children}
         </select>
-        <span className="material-icons absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-light-text pointer-events-none">
+        <span aria-hidden="true" className="material-icons absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-light-text pointer-events-none">
           expand_more
         </span>
       </div>

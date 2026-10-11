@@ -15,3 +15,5 @@ export { default as StatCard } from './StatCard';
 export { default as Avatar } from './Avatar';
 export { default as PageHeader } from './PageHeader';
 export { coresDaFase, tempoRelativo, estaParado } from './funil';
+export { default as Pagination } from './Pagination';
+export { default as ErrorState } from './ErrorState';

@@ -125,6 +125,10 @@
   --animate-slide-in: slide-in 0.25s var(--ease-out-expo);
   --animate-page-in: page-in 0.2s var(--ease-out-quart);
   --animate-rise: rise 0.2s var(--ease-out-quart) both;
+  --animate-fall: fall 0.16s var(--ease-out-quart) both;
+  --animate-slide-out: slide-out 0.16s var(--ease-out-quart) both;
+  --animate-fade-in: fade-in 0.2s var(--ease-out-quart) both;
+  --animate-fade-out: fade-out 0.16s var(--ease-out-quart) both;
 
   /* Faixa do item ativo da navegação: varre da direita para a esquerda por
      baixo do rótulo. Mantida no tempo e na curva originais — é assinatura da
@@ -138,6 +142,44 @@
   }
   to {
     transform: translateX(0);
+  }
+}
+
+@keyframes slide-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fall {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px);
   }
 }
 
@@ -207,6 +249,14 @@
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
     border-radius: var(--radius-md);
+  }
+
+  /* Ícone ocupa 1em desde o primeiro frame: enquanto a fonte de ícones carrega,
+     o nome do glifo ("space_dashboard") fica cortado em vez de empurrar o layout. */
+  .material-icons {
+    width: 1em;
+    height: 1em;
+    overflow: hidden;
   }
 
   /* Números em tabela/kanban alinham em coluna. */
