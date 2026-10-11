@@ -7,8 +7,8 @@ export const financeiroService = {
     return response.data?.data || response.data;
   },
 
-  criarCategoria: async (nome) => {
-    const response = await api.post('/financeiro/categorias', { nome });
+  criarCategoria: async (nome, config) => {
+    const response = await api.post('/financeiro/categorias', { nome }, config);
     return response.data?.data || response.data;
   },
 
