@@ -3,15 +3,53 @@ import { Link } from 'react-router-dom';
 import '@fontsource-variable/archivo/wdth.css';
 import './Landing.css';
 import { BotaoCta, Revelar, TituloRevelado } from '../components/landing/primitivos';
-import { useNaTela } from '../components/landing/motion';
+import { useMovimentoReduzido, useNaTela } from '../components/landing/motion';
 
-/** Quem faz o Levit. Nome e foto vêm do perfil público no GitHub. */
+/**
+ * Quem faz o Levit. Nome e foto vêm do perfil público no GitHub.
+ * `cor` é um índice da paleta de pessoas do app (people-1 a people-6).
+ */
 const EQUIPE = [
-  { nome: 'Cauã Rosa do Espírito Santo', papel: 'Front-end e design', github: 'cauaresdev' },
-  { nome: 'Thiago de Aguiar da Silva', papel: 'Front-end', github: 'Thigasprogrammer' },
-  { nome: 'Guilherme Villas Boas Braz', papel: 'Back-end e API', github: 'GuiVillas' },
-  { nome: 'Guilherme Brandão Costa', papel: 'Banco de dados', github: 'gbrandev' },
-  { nome: 'Andriy Gabriel', papel: 'App para celular', github: 'AndriyBrine' },
+  {
+    nome: 'Cauã Rosa do Espírito Santo',
+    papel: 'Front-end e design',
+    github: 'cauaresdev',
+    cor: 5,
+    texto: 'Desenha as telas e cuida de como o Levit parece e se comporta, do sistema visual às animações desta página.',
+    cuida: ['Interface', 'Design system', 'React'],
+  },
+  {
+    nome: 'Thiago de Aguiar da Silva',
+    papel: 'Front-end',
+    github: 'Thigasprogrammer',
+    cor: 4,
+    texto: 'Transforma as telas em componentes que funcionam: os quadros, tabelas e formulários que a equipe usa todo dia.',
+    cuida: ['React', 'Quadros', 'Formulários'],
+  },
+  {
+    nome: 'Guilherme Villas Boas Braz',
+    papel: 'Back-end e API',
+    github: 'GuiVillas',
+    cor: 1,
+    texto: 'Constrói a API que guarda e entrega os dados, com as regras de acesso e as automações por trás de cada aviso.',
+    cuida: ['API', 'Automações', 'Permissões'],
+  },
+  {
+    nome: 'Guilherme Brandão Costa',
+    papel: 'Banco de dados',
+    github: 'gbrandev',
+    cor: 3,
+    texto: 'Modela onde cada informação mora, para que tabelas, quadros e relatórios continuem rápidos conforme a empresa cresce.',
+    cuida: ['Modelagem', 'Migrações', 'Relatórios'],
+  },
+  {
+    nome: 'Andriy Gabriel',
+    papel: 'App para celular',
+    github: 'AndriyBrine',
+    cor: 6,
+    texto: 'Leva o Levit para o bolso: o app para acompanhar o quadro e receber os avisos longe do computador.',
+    cuida: ['Mobile', 'Notificações', 'Quadros'],
+  },
 ];
 
 const PRINCIPIOS = [
@@ -31,30 +69,104 @@ function iniciais(nome) {
   return (partes[0][0] + (partes.length > 1 ? partes[partes.length - 1][0] : '')).toUpperCase();
 }
 
-function Pessoa({ nome, papel, github, atraso }) {
+function corDaPessoa(cor) {
+  return { '--cor': `var(--color-people-${cor})`, '--cor-fundo': `var(--color-people-${cor}-bg)` };
+}
+
+/** Foto que segue levemente o ponteiro (só mouse, e nunca com movimento reduzido). */
+function FotoMembro({ nome, github, numero }) {
+  const ref = useRef(null);
+  const reduzido = useMovimentoReduzido();
   const [semFoto, setSemFoto] = useState(false);
+
+  const mover = (e) => {
+    if (reduzido || e.pointerType !== 'mouse') return;
+    const r = ref.current.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5;
+    const y = (e.clientY - r.top) / r.height - 0.5;
+    ref.current.style.setProperty('--rx', `${(-y * 8).toFixed(2)}deg`);
+    ref.current.style.setProperty('--ry', `${(x * 10).toFixed(2)}deg`);
+  };
+  const soltar = () => {
+    ref.current?.style.setProperty('--rx', '0deg');
+    ref.current?.style.setProperty('--ry', '0deg');
+  };
+
   return (
-    <Revelar as="li" atraso={atraso} className="lp-pessoa">
-      <div className="lp-pessoa-foto">
+    <div className="lp-membro-palco" onPointerMove={mover} onPointerLeave={soltar}>
+      <span className="lp-membro-num" aria-hidden="true">{numero}</span>
+      <div ref={ref} className="lp-membro-foto">
         {semFoto ? (
-          <span aria-hidden="true">{iniciais(nome)}</span>
+          <span className="lp-membro-iniciais" aria-hidden="true">{iniciais(nome)}</span>
         ) : (
           <img
-            src={`https://github.com/${github}.png?size=320`}
+            src={`https://github.com/${github}.png?size=640`}
             alt=""
-            width="160"
-            height="160"
+            width="420"
+            height="525"
             loading="lazy"
             onError={() => setSemFoto(true)}
           />
         )}
       </div>
-      <p className="lp-pessoa-nome">{nome}</p>
-      <p className="lp-pessoa-papel">{papel}</p>
-      <a className="lp-pessoa-link" href={`https://github.com/${github}`} target="_blank" rel="noreferrer">
-        @{github}
-        <span className="sr-only"> no GitHub (abre em nova aba)</span>
-      </a>
+    </div>
+  );
+}
+
+function Membro({ nome, papel, github, cor, texto, cuida, indice }) {
+  const [primeiro, ...resto] = nome.split(' ');
+  const numero = String(indice + 1).padStart(2, '0');
+  return (
+    <li id={`membro-${github}`} className="lp-membro" style={corDaPessoa(cor)}>
+      <Revelar className="lp-membro-visual">
+        <FotoMembro nome={nome} github={github} numero={numero} />
+      </Revelar>
+      <Revelar className="lp-membro-texto" atraso={140}>
+        <span className="lp-membro-papel">{papel}</span>
+        <h3 className="lp-membro-nome">
+          <span className="lp-membro-primeiro">{primeiro}</span>
+          {resto.length > 0 && <span className="lp-membro-resto"> {resto.join(' ')}</span>}
+        </h3>
+        <p className="lp-membro-descricao">{texto}</p>
+        <ul className="lp-membro-cuida" aria-label="Cuida de">
+          {cuida.map((c) => <li key={c}>{c}</li>)}
+        </ul>
+        <a className="lp-membro-link" href={`https://github.com/${github}`} target="_blank" rel="noreferrer">
+          <span className="lp-membro-link-icone" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+            </svg>
+          </span>
+          @{github}
+          <span className="material-icons lp-membro-link-seta" aria-hidden="true">arrow_outward</span>
+          <span className="sr-only"> no GitHub (abre em nova aba)</span>
+        </a>
+      </Revelar>
+    </li>
+  );
+}
+
+/** Fileira de rostos no topo da seção: atalho para cada membro. */
+function Rostos() {
+  return (
+    <Revelar as="nav" atraso={240} className="lp-rostos" aria-label="Pular para um membro">
+      <ul>
+        {EQUIPE.map((p) => (
+          <li key={p.github} style={corDaPessoa(p.cor)}>
+            <a href={`#membro-${p.github}`}>
+              <img
+                src={`https://github.com/${p.github}.png?size=96`}
+                alt=""
+                width="48"
+                height="48"
+                loading="lazy"
+                onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
+              />
+              <span className="lp-rostos-nome">{p.nome.split(' ')[0]}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
     </Revelar>
   );
 }
@@ -143,9 +255,10 @@ export default function Sobre() {
                 Um time pequeno que cuida de tudo: das telas ao banco de dados, do site ao app para celular.
               </Revelar>
             </div>
-            <ul className="lp-pessoas">
-              {EQUIPE.map((p, i) => <Pessoa key={p.github} {...p} atraso={i * 90} />)}
-            </ul>
+            <Rostos />
+            <ol className="lp-membros">
+              {EQUIPE.map((p, i) => <Membro key={p.github} {...p} indice={i} />)}
+            </ol>
           </div>
         </section>
 

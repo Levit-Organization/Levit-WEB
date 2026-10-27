@@ -10,6 +10,7 @@ import {
   Input,
   Modal,
   PageHeader,
+  Tabs,
   Select,
   Skeleton,
   Toggle,
@@ -29,9 +30,9 @@ const DIAS_SEMANA = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-fe
 const VAZIO = { nome: '', frequencia: 'semanal', dia: 1, destinatarios: [], secoes: SECOES_PADRAO, ativo: true };
 
 const ABAS = [
-  { valor: 'painel', rotulo: 'Painel', icone: 'insights' },
-  { valor: 'montar', rotulo: 'Montar relatório', icone: 'bar_chart' },
-  { valor: 'pdf', rotulo: 'PDF e envios', icone: 'picture_as_pdf' },
+  { id: 'painel', label: 'Painel' },
+  { id: 'montar', label: 'Montar relatório' },
+  { id: 'pdf', label: 'Históricos' },
 ];
 
 /** Escolha das partes do PDF (caixas de seleção). */
@@ -42,12 +43,10 @@ function EscolhaDeSecoes({ valor, onChange, legenda = 'O que entra no PDF' }) {
       <legend className="text-sm font-medium text-ink mb-1.5">{legenda}</legend>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
         {SECOES_RELATORIO.map((s) => (
-          <label key={s.valor} className="flex items-start gap-2.5 cursor-pointer">
-            <input type="checkbox" checked={valor.includes(s.valor)} onChange={() => alternar(s.valor)} className="w-4 h-4 mt-0.5 accent-primary shrink-0" />
-            <span className="min-w-0">
-              <span className="block text-sm text-ink">{s.rotulo}</span>
-              <span className="block text-2xs text-light-text">{s.descricao}</span>
-            </span>
+          // O rótulo já diz o que é; o detalhe fica para quem passar o mouse.
+          <label key={s.valor} title={s.descricao} className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={valor.includes(s.valor)} onChange={() => alternar(s.valor)} className="w-4 h-4 accent-primary shrink-0" />
+            <span className="text-sm text-ink">{s.rotulo}</span>
           </label>
         ))}
       </div>
@@ -92,12 +91,9 @@ function BaixarAgora({ inicio, fim }) {
 
   return (
     <Card>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-base font-bold text-ink">Baixar agora</h2>
-          <p className="text-sm text-light-text mt-1">Um PDF do período escolhido acima, com as partes que você marcar.</p>
-        </div>
-        <Button icon="picture_as_pdf" onClick={baixar} loading={baixando} disabled={!inicio || !fim || inicio > fim || secoes.length === 0}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-bold text-ink">Baixar agora</h2>
+        <Button variant="secondary" icon="picture_as_pdf" onClick={baixar} loading={baixando} disabled={!inicio || !fim || inicio > fim || secoes.length === 0}>
           {baixando ? 'Gerando...' : 'Baixar PDF'}
         </Button>
       </div>
@@ -199,9 +195,6 @@ function CartaoRelatorio({ relatorio, nomes, onEditar }) {
   return (
     <Card className={cn('min-w-0', !relatorio.ativo && 'opacity-80')}>
       <div className="flex items-start gap-3">
-        <span className="w-10 h-10 rounded-xl bg-primary-100 text-primary flex items-center justify-center shrink-0" aria-hidden="true">
-          <span className="material-icons text-[20px]">description</span>
-        </span>
         <div className="min-w-0 flex-1">
           <h3 className="font-semibold text-ink truncate">{relatorio.nome}</h3>
           <p className="text-sm text-light-text">
@@ -228,14 +221,14 @@ function CartaoRelatorio({ relatorio, nomes, onEditar }) {
         </p>
       )}
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button size="sm" variant="secondary" icon="send" onClick={enviarAgora} loading={enviando}>Enviar agora</Button>
-        <Button size="sm" variant="secondary" icon="history" onClick={() => setHistorico((v) => !v)} aria-expanded={historico}>
+      <div className="mt-3 flex items-center gap-1">
+        <Button size="sm" variant="ghost" icon="history" onClick={() => setHistorico((v) => !v)} aria-expanded={historico} className="-ml-3.5">
           Histórico
         </Button>
-        <span className="ml-auto flex gap-1">
-          <Button size="sm" variant="ghost" icon="edit" onClick={() => onEditar(relatorio)}>Editar</Button>
-          <Button size="sm" variant="ghost" icon="delete_outline" onClick={excluir} aria-label="Excluir relatório" />
+        <span className="ml-auto flex gap-0.5">
+          <Button size="icon-sm" variant="ghost" icon="send" onClick={enviarAgora} loading={enviando} aria-label="Enviar agora" title="Enviar agora" />
+          <Button size="icon-sm" variant="ghost" icon="edit" onClick={() => onEditar(relatorio)} aria-label="Editar relatório" title="Editar" />
+          <Button size="icon-sm" variant="ghost" icon="delete_outline" onClick={excluir} aria-label="Excluir relatório" title="Excluir" />
         </span>
       </div>
 
@@ -285,7 +278,7 @@ function FormularioRelatorio({ aberto, inicial, pessoas, onFechar }) {
       onClose={onFechar}
       dirty={JSON.stringify(form) !== JSON.stringify(inicial)}
       title={editando ? 'Editar relatório' : 'Novo relatório'}
-      subtitle="O PDF chega por e-mail no dia escolhido."
+      subtitle="O PDF chega por e-mail de manhã, no dia escolhido."
       footer={
         <>
           <Button variant="secondary" onClick={onFechar}>Cancelar</Button>
@@ -332,9 +325,9 @@ function FormularioRelatorio({ aberto, inicial, pessoas, onFechar }) {
         </div>
         <p className="text-xs text-light-text -mt-2">
           {{
-            diario: 'Cobre o dia anterior. Chega toda manhã.',
-            semanal: 'Cobre os 7 dias anteriores ao envio. Chega de manhã.',
-            mensal: 'Cobre o mês anterior ao envio (até o dia 28, para todo mês ter esse dia). Chega de manhã.',
+            diario: 'Cobre o dia anterior.',
+            semanal: 'Cobre os 7 dias anteriores.',
+            mensal: 'Cobre o mês anterior. Vai até o dia 28 para existir em todo mês.',
           }[form.frequencia]}
         </p>
 
@@ -379,9 +372,8 @@ export default function Relatorios() {
   return (
     <Layout>
       <PageHeader
-        icon="insights"
         title="Relatórios"
-        subtitle="Os números da empresa no período, relatórios montados por você e PDFs por e-mail."
+        subtitle="Números do período e PDFs por e-mail"
         actions={!semAcesso && aba === 'pdf' && <Button icon="add" onClick={() => abrir()}>Novo relatório</Button>}
       />
 
@@ -395,71 +387,53 @@ export default function Relatorios() {
           />
         </Card>
       ) : (
-        <div className="flex flex-col gap-6">
-          <div role="tablist" aria-label="Tipo de relatório" className="flex gap-1 rounded-lg bg-sidebar p-1 w-full sm:w-fit overflow-x-auto">
-            {ABAS.map((a) => (
-              <button
-                key={a.valor}
-                type="button"
-                role="tab"
-                id={`aba-${a.valor}`}
-                aria-selected={aba === a.valor}
-                aria-controls={`painel-${a.valor}`}
-                onClick={() => setAba(a.valor)}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-md h-9 px-3.5 text-sm font-semibold whitespace-nowrap transition-colors',
-                  aba === a.valor ? 'bg-surface text-ink shadow-xs' : 'text-light-text hover:text-ink'
-                )}
-              >
-                <span className="material-icons text-[18px]" aria-hidden="true">{a.icone}</span>
-                {a.rotulo}
-              </button>
-            ))}
+        <>
+          <Tabs abas={ABAS} ativa={aba} onChange={setAba} label="Tipo de relatório" />
+          <div className="flex flex-col gap-6">
+            <SeletorPeriodo periodo={periodo} onChange={setPeriodo} />
+            {!periodoValido && <p className="text-sm text-danger -mt-3" role="alert">Escolha um período válido (início antes do fim).</p>}
+
+            <div role="tabpanel" id={`painel-${aba}`} aria-labelledby={`aba-${aba}`}>
+              {aba === 'painel' && <PainelIndicadores inicio={periodo.inicio} fim={periodo.fim} />}
+              {aba === 'montar' && <MontarRelatorio inicio={periodo.inicio} fim={periodo.fim} />}
+              {aba === 'pdf' && (
+                <div className="flex flex-col gap-6">
+                  <BaixarAgora inicio={periodo.inicio} fim={periodo.fim} />
+
+                  <section>
+                    <h2 className="text-base font-bold text-ink mb-3.5">Agendados</h2>
+                    {relatorios.isLoading ? (
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        {[1, 2].map((n) => <Skeleton key={n} className="h-40 rounded-2xl" />)}
+                      </div>
+                    ) : relatorios.isError ? (
+                      <Card>
+                        <ErrorState description={mensagemDeErro(relatorios.error, 'Erro ao carregar os relatórios.')} onRetry={() => relatorios.refetch()} />
+                      </Card>
+                    ) : relatorios.data.length === 0 ? (
+                      <Card padding="lg" className="py-10">
+                        <EmptyState
+                          icon="event_repeat"
+                          title="Nenhum relatório agendado"
+                          description="Escolha a frequência, quem recebe e o que entra no PDF. Ele chega por e-mail, com a comparação com o período anterior."
+                          actionLabel="Agendar o primeiro"
+                          actionIcon="add"
+                          onAction={() => abrir()}
+                        />
+                      </Card>
+                    ) : (
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        {relatorios.data.map((r) => (
+                          <CartaoRelatorio key={r.id} relatorio={r} nomes={nomes} onEditar={abrir} />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </div>
+              )}
+            </div>
           </div>
-
-          <SeletorPeriodo periodo={periodo} onChange={setPeriodo} />
-          {!periodoValido && <p className="text-sm text-danger -mt-3" role="alert">Escolha um período válido (início antes do fim).</p>}
-
-          <div role="tabpanel" id={`painel-${aba}`} aria-labelledby={`aba-${aba}`}>
-            {aba === 'painel' && <PainelIndicadores inicio={periodo.inicio} fim={periodo.fim} />}
-            {aba === 'montar' && <MontarRelatorio inicio={periodo.inicio} fim={periodo.fim} />}
-            {aba === 'pdf' && (
-              <div className="flex flex-col gap-6">
-                <BaixarAgora inicio={periodo.inicio} fim={periodo.fim} />
-
-                <section>
-                  <h2 className="text-base font-bold text-ink mb-3.5">Agendados</h2>
-                  {relatorios.isLoading ? (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      {[1, 2].map((n) => <Skeleton key={n} className="h-40 rounded-2xl" />)}
-                    </div>
-                  ) : relatorios.isError ? (
-                    <Card>
-                      <ErrorState description={mensagemDeErro(relatorios.error, 'Erro ao carregar os relatórios.')} onRetry={() => relatorios.refetch()} />
-                    </Card>
-                  ) : relatorios.data.length === 0 ? (
-                    <Card padding="lg" className="py-10">
-                      <EmptyState
-                        icon="event_repeat"
-                        title="Nenhum relatório agendado"
-                        description="Escolha a frequência, quem recebe e o que entra no PDF. Ele chega por e-mail, com a comparação com o período anterior."
-                        actionLabel="Agendar o primeiro"
-                        actionIcon="add"
-                        onAction={() => abrir()}
-                      />
-                    </Card>
-                  ) : (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      {relatorios.data.map((r) => (
-                        <CartaoRelatorio key={r.id} relatorio={r} nomes={nomes} onEditar={abrir} />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              </div>
-            )}
-          </div>
-        </div>
+        </>
       )}
 
       {form && (

@@ -490,7 +490,25 @@ class RelatorioService
         }
 
         return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>
-  @page { margin: 22mm 16mm 18mm; }
+' . self::estilo() . '</style></head><body>
+<div class="rodape">' . $e($d['empresa']) . ' · ' . $e($d['titulo']) . ' · gerado em ' . $e($d['gerado_em']) . '</div>
+<div class="marca">LEVIT</div>
+<h1>' . $e($d['titulo']) . '</h1>
+<p class="sub">' . $e($d['empresa']) . ' · ' . $e($d['periodo']) . '</p>
+<table class="numeros"><tr>
+  <td><span class="n">' . $total . '</span><span class="r">atividades no período</span></td>
+  <td><span class="n">' . $pessoas . '</span><span class="r">' . ($pessoas === 1 ? 'pessoa ativa' : 'pessoas ativas') . '</span></td>
+  <td><span class="n">' . count($porTabela) . '</span><span class="r">' . (count($porTabela) === 1 ? 'tabela movimentada' : 'tabelas movimentadas') . '</span></td>
+  <td><span class="n">' . count($d['atrasados']) . '</span><span class="r">' . (count($d['atrasados']) === 1 ? 'item atrasado hoje' : 'itens atrasados hoje') . '</span></td>
+</tr></table>
+' . $corpo . '
+</body></html>';
+    }
+
+    /** CSS comum aos PDFs (atividades e relatório montado). */
+    private static function estilo(): string
+    {
+        return '  @page { margin: 22mm 16mm 18mm; }
   body { font-family: "DejaVu Sans", sans-serif; font-size: 9.5pt; color: #24223A; }
   .rodape { position: fixed; bottom: -11mm; left: 0; right: 30mm; font-size: 7.5pt; color: #8A879C; }
   .marca { font-size: 10pt; font-weight: bold; color: #534BAF; letter-spacing: .5px; }
@@ -522,18 +540,136 @@ class RelatorioService
   .lista .num { text-align: right; width: 95px; }
   .bom { color: #067647; font-weight: bold; }
   .ruim { color: #B42318; font-weight: bold; }
-</style></head><body>
+  .criterios { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .criterios td { padding: 3px 0; vertical-align: top; }
+  .criterios .rotulo { width: 120px; color: #8A879C; }
+  .filtros { margin: 0; padding-left: 14px; }
+  .filtros li { margin: 1px 0; }
+  .grupos { width: 100%; border-collapse: collapse; }
+  .grupos th { text-align: left; font-size: 7.5pt; color: #8A879C; font-weight: normal; border-bottom: 1px solid #DDDBEA; padding: 4px 6px 4px 0; }
+  .grupos td { border-bottom: 1px solid #EEEDF5; padding: 5px 6px 5px 0; vertical-align: middle; }
+  .grupos .barra { width: 34%; }
+  .grupos .barra div { height: 8px; background: #8D86D9; border-radius: 3px; }
+  .grupos .num { text-align: right; width: 80px; white-space: nowrap; }
+  .grupos tfoot td { font-weight: bold; border-top: 1.5px solid #15132A; border-bottom: none; }
+';
+    }
+
+    // ------------------------------------------------------------------
+    // PDF do relatório montado
+    // ------------------------------------------------------------------
+
+    private const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+    /**
+     * PDF do relatório montado: os mesmos parâmetros de IndicadoresService::agrupar
+     * (tabela, coluna, cálculo, período e filtros), com os critérios por extenso.
+     *
+     * @return array{conteudo: string, arquivo: string}
+     */
+    public function pdfDoAgrupamento(string $empresaId, array $params, string $titulo = ''): array
+    {
+        $indicadores = new IndicadoresService();
+        $resultado   = $indicadores->agrupar($empresaId, $params); // valida tudo antes de descrever
+
+        $filtros = is_string($params['filtros'] ?? null) ? json_decode($params['filtros'], true) : null;
+        $inicio  = is_string($params['inicio'] ?? null) ? \DateTimeImmutable::createFromFormat('!Y-m-d', $params['inicio']) : false;
+        $fim     = is_string($params['fim'] ?? null) ? \DateTimeImmutable::createFromFormat('!Y-m-d', $params['fim']) : false;
+        $titulo  = $titulo !== '' ? $titulo : "{$resultado['tabela']} por {$resultado['agrupado_por']}";
+
+        $html = self::htmlDoAgrupamento([
+            'titulo'    => $titulo,
+            'empresa'   => db_connect()->table('empresa')->select('nome')->where('id', $empresaId)->get()->getRowArray()['nome'] ?? '',
+            'gerado_em' => Relogio::agora()->format('d/m/Y \\à\\s H:i'),
+            'periodo'   => $inicio && $fim ? 'Itens criados de ' . $inicio->format('d/m/Y') . ' a ' . $fim->format('d/m/Y') : 'Todos os itens da tabela',
+            'filtros'   => is_array($filtros) ? $indicadores->descreverFiltros($empresaId, $filtros) : [],
+            'logica'    => ($filtros['logica'] ?? 'e') === 'ou' ? 'ou' : 'e',
+            'resultado' => $resultado,
+        ]);
+
+        return [
+            'conteudo' => self::renderizar($html),
+            'arquivo'  => self::nomeDoArquivo($titulo, new \DateTimeImmutable(Relogio::hoje(1))),
+        ];
+    }
+
+    /** HTML do PDF do relatório montado (público para testar sem gerar o arquivo). */
+    public static function htmlDoAgrupamento(array $d): string
+    {
+        $e      = static fn ($t) => htmlspecialchars((string) $t, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $r      = $d['resultado'];
+        $grupos = $r['grupos'];
+        $porMes = in_array($r['tipo_grupo'] ?? null, ['data', 'prazo'], true);
+
+        $rotulo = static fn (string $g) => $porMes && preg_match('/^(\\d{4})-(\\d{2})$/', $g, $m)
+            ? ucfirst(self::MESES[(int) $m[2] - 1]) . " de {$m[1]}"
+            : $g;
+        $formatar = static fn ($v) => $v === null ? '—' : self::numero($v, fmod((float) $v, 1.0) === 0.0 ? 0 : 2);
+
+        $calculo = match ($r['operacao']) {
+            'somar' => "Soma de {$r['coluna_valor']}",
+            'media' => "Média de {$r['coluna_valor']}",
+            default => 'Quantidade de itens',
+        };
+        // Percentual só faz sentido para contagens e somas de valores positivos.
+        $somaGrupos = array_sum(array_map(static fn ($g) => (float) ($g['valor'] ?? 0), $grupos));
+        $comPercent = $r['operacao'] !== 'media' && $somaGrupos > 0;
+        $maximo     = max(array_map(static fn ($g) => abs((float) ($g['valor'] ?? 0)), $grupos) ?: [0]) ?: 1;
+
+        $linhas = '';
+        foreach ($grupos as $g) {
+            $largura = max(2, (int) round(abs((float) ($g['valor'] ?? 0)) / $maximo * 100));
+            $linhas .= '<tr><td>' . $e($rotulo((string) $g['rotulo'])) . '</td>'
+                . '<td class="barra"><div style="width:' . $largura . '%"></div></td>'
+                . '<td class="num">' . $e($formatar($g['valor'])) . '</td>'
+                . ($r['operacao'] !== 'contar' ? '<td class="num">' . $e(self::numero($g['itens'])) . '</td>' : '')
+                . ($comPercent ? '<td class="num">' . $e(self::numero((float) ($g['valor'] ?? 0) / $somaGrupos * 100, 1)) . '%</td>' : '')
+                . '</tr>';
+        }
+        $cabecalho = '<tr><th>' . $e($r['agrupado_por']) . '</th><th></th><th class="num">' . $e($calculo) . '</th>'
+            . ($r['operacao'] !== 'contar' ? '<th class="num">Itens</th>' : '')
+            . ($comPercent ? '<th class="num">% do total</th>' : '') . '</tr>';
+        $rodape = $r['operacao'] === 'media' ? '' : '<tfoot><tr><td>Total dos grupos</td><td></td><td class="num">' . $e($formatar($somaGrupos)) . '</td>'
+            . ($r['operacao'] !== 'contar' ? '<td class="num"></td>' : '') . ($comPercent ? '<td class="num">100%</td>' : '') . '</tr></tfoot>';
+
+        $tabela = $grupos === []
+            ? '<p class="muted">Nenhum item atende aos critérios deste relatório.</p>'
+            : '<table class="grupos"><thead>' . $cabecalho . '</thead><tbody>' . $linhas . '</tbody>' . $rodape . '</table>'
+                . ($r['cortados'] > 0 ? '<p class="aviso">Mostrando os ' . count($grupos) . ' maiores grupos; ' . $r['cortados'] . ' ficaram de fora.</p>' : '');
+
+        $maior = $grupos === [] ? null : array_reduce($grupos, static fn ($a, $g) => $a === null || ($g['valor'] ?? 0) > ($a['valor'] ?? 0) ? $g : $a);
+
+        $filtros = $d['filtros'] === []
+            ? 'Nenhum: entram todos os itens.'
+            : ($d['filtros'] !== [] && count($d['filtros']) > 1 ? 'Itens que atendem a ' . ($d['logica'] === 'ou' ? 'qualquer um' : 'todos') . ' destes:' : '')
+                . '<ul class="filtros"><li>' . implode('</li><li>', array_map($e, $d['filtros'])) . '</li></ul>';
+
+        // Ligação a vários itens põe o mesmo item em mais de um grupo.
+        $nota = $somaGrupos > 0 && $r['operacao'] === 'contar' && (int) $somaGrupos > (int) $r['total_itens']
+            ? '<p class="muted">Itens ligados a mais de um grupo aparecem em cada um deles; o total de itens conta cada um uma vez.</p>'
+            : '';
+
+        return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>
+' . self::estilo() . '</style></head><body>
 <div class="rodape">' . $e($d['empresa']) . ' · ' . $e($d['titulo']) . ' · gerado em ' . $e($d['gerado_em']) . '</div>
 <div class="marca">LEVIT</div>
 <h1>' . $e($d['titulo']) . '</h1>
 <p class="sub">' . $e($d['empresa']) . ' · ' . $e($d['periodo']) . '</p>
 <table class="numeros"><tr>
-  <td><span class="n">' . $total . '</span><span class="r">atividades no período</span></td>
-  <td><span class="n">' . $pessoas . '</span><span class="r">' . ($pessoas === 1 ? 'pessoa ativa' : 'pessoas ativas') . '</span></td>
-  <td><span class="n">' . count($porTabela) . '</span><span class="r">' . (count($porTabela) === 1 ? 'tabela movimentada' : 'tabelas movimentadas') . '</span></td>
-  <td><span class="n">' . count($d['atrasados']) . '</span><span class="r">' . (count($d['atrasados']) === 1 ? 'item atrasado hoje' : 'itens atrasados hoje') . '</span></td>
+  <td><span class="n">' . $e(self::numero($r['total_itens'])) . '</span><span class="r">' . ($r['total_itens'] === 1 ? 'item no relatório' : 'itens no relatório') . '</span></td>
+  <td><span class="n">' . count($grupos) . '</span><span class="r">' . (count($grupos) === 1 ? 'grupo' : 'grupos') . '</span></td>
+  <td><span class="n">' . $e($maior ? $formatar($maior['valor']) : '—') . '</span><span class="r">' . ($maior ? 'maior grupo: ' . $e(mb_strimwidth($rotulo((string) $maior['rotulo']), 0, 34, '…')) : 'sem grupos') . '</span></td>
 </tr></table>
-' . $corpo . '
+<h2>Critérios</h2>
+<table class="criterios">
+  <tr><td class="rotulo">Tabela</td><td>' . $e($r['tabela']) . '</td></tr>
+  <tr><td class="rotulo">Agrupado por</td><td>' . $e($r['agrupado_por']) . ($porMes ? ' (por mês)' : '') . '</td></tr>
+  <tr><td class="rotulo">Cálculo</td><td>' . $e($calculo) . '</td></tr>
+  <tr><td class="rotulo">Período</td><td>' . $e($d['periodo']) . '</td></tr>
+  <tr><td class="rotulo">Filtros</td><td>' . $filtros . '</td></tr>
+</table>
+<h2>' . $e($calculo) . ' por ' . $e($r['agrupado_por']) . '</h2>
+' . $tabela . $nota . '
 </body></html>';
     }
 

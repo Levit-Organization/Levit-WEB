@@ -10,6 +10,7 @@ import {
   Modal,
   Drawer,
   Alert,
+  FileInput,
   Badge,
   Avatar,
   Skeleton,
@@ -26,8 +27,10 @@ import { useToast } from '../hooks/useFeedback';
 import { mensagemDeErro } from '../lib/queryClient';
 import { moverCandidatoNoFunil, localizarCandidato } from '../utils/kanban';
 import { mascararTelefone } from '../utils/masks';
+import { CANDIDATO_VAZIO, CURRICULO_ACCEPT, CURRICULO_DICA, linkDaVaga, validarCandidato } from '../utils/candidato';
 
-const CANDIDATO_VAZIO = { modulo_id: '', nome: '', email: '', telefone: '', cargo_desejado: '', mensagem: '' };
+/** Busca por nome sem ligar para acento nem maiúscula. */
+const normalizar = (texto) => String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
 const SEM_DADOS = [];
 const BORDA_AUTOSCROLL = 100; // px da borda que dispara o auto-scroll durante o arraste
 const VELOCIDADE_AUTOSCROLL = 18;
@@ -73,7 +76,32 @@ export default function RecrutamentoKanban() {
     () => colunas.reduce((acc, [, col]) => acc + (col.candidatos?.length || 0), 0),
     [colunas]
   );
-  const contratados = colunas.length ? colunas[colunas.length - 1][1].candidatos?.length || 0 : 0;
+
+  // --- Busca por nome (na vaga aberta) ---------------------------------------
+  const [busca, setBusca] = useState('');
+  const termo = normalizar(busca.trim());
+  const colunasVisiveis = useMemo(() => {
+    if (!termo) return colunas;
+    return colunas.map(([colId, col]) => {
+      const candidatos = (col.candidatos || []).filter((c) => normalizar(c.nome).includes(termo));
+      return [colId, { ...col, candidatos, total: candidatos.length }];
+    });
+  }, [colunas, termo]);
+  const totalEncontrados = termo ? colunasVisiveis.reduce((acc, [, col]) => acc + col.candidatos.length, 0) : totalCandidatos;
+
+  const trocarVaga = (id) => {
+    setVagaEscolhida(id);
+    setBusca('');
+  };
+
+  const copiarLink = async () => {
+    try {
+      await navigator.clipboard.writeText(linkDaVaga(vagaSelecionada));
+      toast.success('Link copiado. Quem abrir pode se candidatar a esta vaga.');
+    } catch {
+      toast.error('Não foi possível copiar. Copie da barra: ' + linkDaVaga(vagaSelecionada));
+    }
+  };
 
   // --- Arrastar e soltar -----------------------------------------------------
   // O item arrastado fica em ref: iniciar o arraste não precisa re-renderizar nada.
@@ -244,18 +272,19 @@ export default function RecrutamentoKanban() {
   // --- Novo candidato --------------------------------------------------------
   const [showNovoCandidato, setShowNovoCandidato] = useState(false);
   const [salvandoCandidato, setSalvandoCandidato] = useState(false);
-  const [novoCandidatoDados, setNovoCandidatoDados] = useState(CANDIDATO_VAZIO);
+  const [novoCandidatoDados, setNovoCandidatoDados] = useState({ ...CANDIDATO_VAZIO, modulo_id: '' });
+  const [novoCurriculo, setNovoCurriculo] = useState(null);
   const [candidatoErros, setCandidatoErros] = useState({});
   const [candidatoErro, setCandidatoErro] = useState('');
 
-  const candidatoSujo = ['nome', 'email', 'telefone', 'cargo_desejado', 'mensagem'].some(
-    (campo) => novoCandidatoDados[campo].trim() !== ''
-  );
+  const candidatoSujo =
+    !!novoCurriculo || Object.keys(CANDIDATO_VAZIO).some((campo) => novoCandidatoDados[campo].trim() !== '');
 
   const abrirNovoCandidato = () => {
     setCandidatoErros({});
     setCandidatoErro('');
     setNovoCandidatoDados({ ...CANDIDATO_VAZIO, modulo_id: modoSomenteLeitura ? '' : vagaSelecionada });
+    setNovoCurriculo(null);
     setShowNovoCandidato(true);
   };
 
@@ -268,12 +297,8 @@ export default function RecrutamentoKanban() {
     e?.preventDefault();
     const dados = novoCandidatoDados;
 
-    const erros = {};
+    const erros = validarCandidato(dados, novoCurriculo);
     if (!dados.modulo_id) erros.modulo_id = 'Selecione a vaga.';
-    if (!dados.nome.trim()) erros.nome = 'Informe o nome.';
-    if (!dados.email.trim()) erros.email = 'Informe o e-mail.';
-    else if (!/^\S+@\S+\.\S+$/.test(dados.email.trim())) erros.email = 'Esse e-mail não parece válido.';
-    if (dados.telefone && dados.telefone.replace(/\D/g, '').length < 10) erros.telefone = 'Telefone incompleto.';
 
     setCandidatoErros(erros);
     if (Object.keys(erros).length > 0) return;
@@ -281,11 +306,7 @@ export default function RecrutamentoKanban() {
     try {
       setSalvandoCandidato(true);
       setCandidatoErro('');
-      await recrutamentoService.adicionarCandidato(dados.modulo_id, {
-        ...dados,
-        nome: dados.nome.trim(),
-        email: dados.email.trim(),
-      });
+      await recrutamentoService.adicionarCandidato(dados.modulo_id, dados, novoCurriculo);
       setShowNovoCandidato(false);
       toast.success('Candidato adicionado com sucesso.');
     } catch (err) {
@@ -304,20 +325,45 @@ export default function RecrutamentoKanban() {
         <PageHeader
           title="Recrutamento"
           subtitle={
-            loading
-              ? 'Carregando quadro...'
-              : `${totalCandidatos} ${totalCandidatos === 1 ? 'candidato' : 'candidatos'} no quadro · ${contratados} na etapa final`
+            loading ? (
+              'Carregando quadro...'
+            ) : (
+              <>
+                {`${totalCandidatos} ${totalCandidatos === 1 ? 'candidato' : 'candidatos'} no quadro`}
+                {!modoSomenteLeitura && (
+                  <>
+                    {' · '}
+                    <button type="button" onClick={copiarLink} className="font-semibold text-primary hover:underline">
+                      Copiar link de candidatura
+                    </button>
+                  </>
+                )}
+              </>
+            )
           }
           actions={
             <>
               <div className="w-full sm:w-52">
                 <Select
                   value={vagaSelecionada}
-                  onChange={(e) => setVagaEscolhida(e.target.value)}
+                  onChange={(e) => trocarVaga(e.target.value)}
                   disabled={vagas.length === 0}
                   icon="work_outline"
                   aria-label="Vaga"
                   options={vagas.length === 0 ? [{ value: 'all', label: 'Nenhuma vaga criada' }] : opcoesVaga}
+                />
+              </div>
+              <div className="w-full sm:w-56">
+                <Input
+                  type="search"
+                  icon="search"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  name="busca"
+                  autoComplete="off"
+                  placeholder="Buscar candidato..."
+                  aria-label="Buscar candidato pelo nome nesta vaga"
+                  disabled={totalCandidatos === 0}
                 />
               </div>
               <Button variant="secondary" icon="add" onClick={abrirNovaEtapa} disabled={vagas.length === 0}>
@@ -396,8 +442,15 @@ export default function RecrutamentoKanban() {
               className="h-full overflow-x-auto overflow-y-hidden pb-6"
               onDragOver={handleContainerDragOver}
             >
+              {termo && (
+                <p className="mb-3 text-sm text-light-text" role="status">
+                  {totalEncontrados === 0
+                    ? `Ninguém com “${busca.trim()}” nesta vaga.`
+                    : `${totalEncontrados} ${totalEncontrados === 1 ? 'candidato encontrado' : 'candidatos encontrados'}`}
+                </p>
+              )}
               <div className="flex h-full min-w-max gap-5 items-start">
-                {colunas.map(([colId, coluna], indice) => (
+                {colunasVisiveis.map(([colId, coluna], indice) => (
                   <KanbanColumn
                     key={colId}
                     colId={colId}
@@ -476,7 +529,7 @@ export default function RecrutamentoKanban() {
           open={perfilAberto && !!perfil}
           onClose={() => setPerfilAberto(false)}
           title={perfil?.candidato.nome || 'Candidato'}
-          subtitle={perfil?.candidato.cargo_desejado || perfil?.candidato.vaga || undefined}
+          subtitle={perfil?.candidato.vaga || vagas.find((v) => v.id === perfil?.candidato.modulo_id)?.nome || undefined}
           maxWidth="lg"
           footer={
             perfil?.candidato.email ? (
@@ -571,13 +624,17 @@ export default function RecrutamentoKanban() {
               placeholder="(11) 90000-0000"
               error={candidatoErros.telefone}
             />
-            <Input
-              label="Cargo desejado"
-              name="cargo_desejado"
-              autoComplete="off"
-              value={novoCandidatoDados.cargo_desejado}
-              onChange={(e) => alterarCandidato('cargo_desejado', e.target.value)}
-              placeholder="Ex: Pessoa Desenvolvedora Back-end"
+            <FileInput
+              label="Currículo"
+              name="curriculo"
+              accept={CURRICULO_ACCEPT}
+              hint={CURRICULO_DICA}
+              value={novoCurriculo}
+              onChange={(arquivo) => {
+                setNovoCurriculo(arquivo);
+                setCandidatoErros((atual) => ({ ...atual, curriculo: undefined }));
+              }}
+              error={candidatoErros.curriculo}
             />
             <Textarea
               label="Mensagem"
@@ -596,6 +653,19 @@ export default function RecrutamentoKanban() {
 function PerfilCandidato({ perfil, cor, colunas, podeMover, onMover }) {
   const { candidato, colId, fase } = perfil;
   const referencia = candidato.atualizado_em || candidato.criado_em;
+  const toast = useToast();
+  const [baixando, setBaixando] = useState(false);
+
+  const baixarCurriculo = async () => {
+    setBaixando(true);
+    try {
+      await recrutamentoService.baixarCurriculo(candidato.modulo_id, candidato);
+    } catch (err) {
+      toast.error(mensagemDeErro(err, 'Não foi possível baixar o currículo.'));
+    } finally {
+      setBaixando(false);
+    }
+  };
 
   const campos = [
     { label: 'E-mail', value: candidato.email, icon: 'mail_outline', href: candidato.email ? `mailto:${candidato.email}` : null },
@@ -605,7 +675,6 @@ function PerfilCandidato({ perfil, cor, colunas, podeMover, onMover }) {
       icon: 'call',
       href: candidato.telefone ? `tel:${candidato.telefone.replace(/[^\d+]/g, '')}` : null,
     },
-    { label: 'Cargo desejado', value: candidato.cargo_desejado, icon: 'work_outline' },
   ];
 
   return (
@@ -663,6 +732,22 @@ function PerfilCandidato({ perfil, cor, colunas, podeMover, onMover }) {
             </dd>
           </div>
         ))}
+        <div className="flex items-center gap-3 py-3">
+          <span className="material-icons text-[18px] text-light-text shrink-0" aria-hidden="true">description</span>
+          <dt className="text-xs text-light-text w-32 shrink-0">Currículo</dt>
+          <dd className="text-sm text-ink min-w-0 flex-1 flex items-center gap-3">
+            {candidato.tem_curriculo ? (
+              <>
+                <span className="truncate min-w-0">{candidato.curriculo_nome || 'Currículo'}</span>
+                <Button variant="subtle" size="sm" icon="download" onClick={baixarCurriculo} loading={baixando} className="ml-auto">
+                  Baixar
+                </Button>
+              </>
+            ) : (
+              <span className="text-light-text">Não enviado</span>
+            )}
+          </dd>
+        </div>
       </dl>
 
       {candidato.mensagem && (

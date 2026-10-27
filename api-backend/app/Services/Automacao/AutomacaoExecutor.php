@@ -28,6 +28,9 @@ class AutomacaoExecutor
     /** @var array<string, array<string, string>> id do campo => tipo, por módulo */
     private array $tipos = [];
 
+    /** @var array<string, array<string, ?string>> id do campo => tabela ligada, por módulo */
+    private array $ligadas = [];
+
     /** @var array<string, ?array{id: string, nome: string, email: string}> */
     private array $pessoas = [];
 
@@ -128,7 +131,7 @@ class AutomacaoExecutor
         foreach ($acoes as $indice => $acao) {
             try {
                 // Ids internos não vão para a prévia: ela só mostra o que a pessoa precisa ver.
-                $previa   = array_diff_key($this->preparar($acao, $dados, $automacao['modulo_id']), array_flip(['usuario_ids', 'empresa_id', 'campo_id', 'modulo_destino_id', 'valores']));
+                $previa   = array_diff_key($this->preparar($acao, $dados, $automacao['modulo_id']), array_flip(['usuario_ids', 'empresa_id', 'campo_id', 'modulo_destino_id', 'valores', 'ligar_campo_id']));
                 $passos[] = ['indice' => $indice, 'tipo' => $acao['tipo'], 'status' => 'ok', 'previa' => $previa];
             } catch (\Throwable $e) {
                 $passos[] = ['indice' => $indice, 'tipo' => $acao['tipo'], 'status' => 'erro', 'mensagem' => $e->getMessage()];
@@ -267,7 +270,14 @@ class AutomacaoExecutor
             $legiveis[$camposDestino[$campoId]] = $valor;
         }
 
-        if ($valores === []) {
+        // Coluna de ligação que recebe o item que disparou (some se a coluna foi excluída).
+        $ligar = $config['ligar_campo_id'] ?? null;
+        $ligar = is_string($ligar) && isset($camposDestino[$ligar]) ? $ligar : null;
+        if ($ligar !== null) {
+            $legiveis[$camposDestino[$ligar]] = '(o item que disparou a automação)';
+        }
+
+        if ($valores === [] && $ligar === null) {
             throw new FalhaPermanenteException('Nenhuma coluna do novo item ficou preenchida.');
         }
 
@@ -276,6 +286,7 @@ class AutomacaoExecutor
             'modulo_destino_id' => $destinoId,
             'modulo'            => $destino['nome'],
             'valores'           => $valores,
+            'ligar_campo_id'    => $ligar,
             'dados'             => $legiveis,
         ];
     }
@@ -320,7 +331,14 @@ class AutomacaoExecutor
                 return $mudou ? null : "A coluna {$preparada['campo']} já estava com esse valor.";
 
             case 'criar_registro':
-                $this->comDadosValidos(fn () => $this->registros()->criarPorAutomacao($preparada['modulo_destino_id'], $preparada['valores'], $cadeia));
+                $valores = $preparada['valores'];
+                if (! empty($preparada['ligar_campo_id'])) {
+                    if (empty($contexto['registro_id'])) {
+                        throw new FalhaPermanenteException('Não há item para ligar ao novo item (a ação só liga em criação e atualização).');
+                    }
+                    $valores[$preparada['ligar_campo_id']] = $contexto['registro_id'];
+                }
+                $this->comDadosValidos(fn () => $this->registros()->criarPorAutomacao($preparada['modulo_destino_id'], $valores, $cadeia));
 
                 return null;
         }
@@ -403,6 +421,15 @@ class AutomacaoExecutor
             if ($tipo === 'responsavel') {
                 return $this->pessoa((string) $valor)['nome'] ?? '';
             }
+            // {{Cliente}} (ligação) mostra o nome do item ligado, não o identificador.
+            if ($tipo === 'vinculo') {
+                $tabela = $this->ligadas[$moduloId][$chave] ?? null;
+
+                return $tabela === null ? '' : implode(', ', array_filter(
+                    $this->registros()->titulosDosItens($tabela, array_map('strval', (array) $valor)),
+                    static fn ($titulo) => $titulo !== null && $titulo !== ''
+                ));
+            }
             // Datas e prazos no formato brasileiro (o banco guarda AAAA-MM-DD).
             if (in_array($tipo, ['data', 'prazo'], true) && preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', (string) $valor, $d)) {
                 return "{$d[3]}/{$d[2]}/{$d[1]}";
@@ -431,9 +458,10 @@ class AutomacaoExecutor
     private function camposDoModulo(string $moduloId): array
     {
         if (! isset($this->campos[$moduloId])) {
-            $linhas                  = (new CampoModuloModel())->select('id, nome, tipo')->where('modulo_id', $moduloId)->findAll();
-            $this->campos[$moduloId] = array_column($linhas, 'nome', 'id');
-            $this->tipos[$moduloId]  = array_column($linhas, 'tipo', 'id');
+            $linhas                   = (new CampoModuloModel())->select('id, nome, tipo, modulo_vinculado_id')->where('modulo_id', $moduloId)->findAll();
+            $this->campos[$moduloId]  = array_column($linhas, 'nome', 'id');
+            $this->tipos[$moduloId]   = array_column($linhas, 'tipo', 'id');
+            $this->ligadas[$moduloId] = array_column($linhas, 'modulo_vinculado_id', 'id');
         }
 
         return $this->campos[$moduloId];

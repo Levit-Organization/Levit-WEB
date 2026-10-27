@@ -5,6 +5,7 @@ import SeloPrazo from '../prazos/SeloPrazo';
 import PessoaResponsavel from '../prazos/PessoaResponsavel';
 import { itemConcluido } from '../../utils/prazos';
 import { rotuloDaRepeticao } from '../../utils/recorrencia';
+import { rotuloDosLigados } from '../../utils/vinculos';
 
 const SEM_VALOR = '';
 
@@ -79,7 +80,7 @@ const Cartao = memo(function Cartao({ item, titulo, detalhes, prazo, concluido, 
  * Visão em quadro de qualquer tabela: cada opção de uma coluna de lista vira uma
  * coluna do quadro. É o mesmo conceito do quadro de recrutamento, para tudo.
  */
-export default function QuadroItens({ itens, campos, campoGrupo, nomes = {}, onAbrir, onMover }) {
+export default function QuadroItens({ itens, campos, campoGrupo, nomes = {}, titulosLigados = {}, onAbrir, onMover }) {
   const [arrastando, setArrastando] = useState(null);
   const [sobre, setSobre] = useState(null);
 
@@ -97,6 +98,12 @@ export default function QuadroItens({ itens, campos, campoGrupo, nomes = {}, onA
   const especiais = new Set([campoGrupo.id, campoPrazo?.id, campoResponsavel?.id]);
   const campoTitulo = campos.find((c) => c.tipo === 'texto' && !especiais.has(c.id)) || campos.find((c) => !especiais.has(c.id));
   const camposDetalhe = campos.filter((c) => !especiais.has(c.id) && c.id !== campoTitulo?.id).slice(0, 2);
+
+  // Ligação: o nome do item da outra tabela, não o identificador guardado.
+  const texto = (item, campo) =>
+    campo?.tipo === 'vinculo'
+      ? rotuloDosLigados(item.dados?.[campo.id], titulosLigados[campo.modulo_vinculado_id])
+      : formatar(item.dados?.[campo?.id], campo?.tipo);
 
   const porEtapa = new Map(etapas.map((e) => [e.valor, []]));
   itens.forEach((item) => {
@@ -157,9 +164,9 @@ export default function QuadroItens({ itens, campos, campoGrupo, nomes = {}, onA
                     <Cartao
                       key={item.id}
                       item={item}
-                      titulo={formatar(item.dados?.[campoTitulo?.id], campoTitulo?.tipo) || 'Item sem título'}
+                      titulo={texto(item, campoTitulo) || 'Item sem título'}
                       detalhes={camposDetalhe
-                        .map((c) => [c.nome, formatar(item.dados?.[c.id], c.tipo)])
+                        .map((c) => [c.nome, texto(item, c)])
                         .filter(([, v]) => v !== null)}
                       prazo={campoPrazo ? item.dados?.[campoPrazo.id] : null}
                       concluido={itemConcluido(item.dados, campos)}

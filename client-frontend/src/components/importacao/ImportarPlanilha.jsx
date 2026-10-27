@@ -29,7 +29,7 @@ async function lerArquivo(arquivo) {
  * coluna da planilha entra na tabela (com prévia das primeiras linhas) e importar.
  * Não dispara automações.
  */
-export default function ImportarPlanilha({ aberto, onFechar, modulo, campos, pessoas, onImportado }) {
+export default function ImportarPlanilha({ aberto, onFechar, modulo, campos, pessoas, ligados, onImportado }) {
   const [etapa, setEtapa] = useState('arquivo'); // arquivo | conferir | resultado
   const [nomeArquivo, setNomeArquivo] = useState('');
   const [planilha, setPlanilha] = useState(null); // { cabecalho, linhas }
@@ -40,8 +40,8 @@ export default function ImportarPlanilha({ aberto, onFechar, modulo, campos, pes
   const [resultado, setResultado] = useState(null);
 
   const preparo = useMemo(
-    () => (planilha ? prepararItens(planilha.linhas, campos, mapa, pessoas) : { itens: [], problemas: [] }),
-    [planilha, campos, mapa, pessoas]
+    () => (planilha ? prepararItens(planilha.linhas, campos, mapa, pessoas, ligados) : { itens: [], problemas: [] }),
+    [planilha, campos, mapa, pessoas, ligados]
   );
   const colunasUsadas = Object.values(mapa).filter((i) => i >= 0).length;
 
@@ -162,9 +162,9 @@ export default function ImportarPlanilha({ aberto, onFechar, modulo, campos, pes
           <div className="overflow-x-auto rounded-lg border border-divider">
             <table className="w-full text-xs">
               <thead>
-                <tr className="bg-background text-left text-light-text">
-                  <th className="px-3 py-2 font-semibold">Linha</th>
-                  {campos.filter((c) => mapa[c.id] >= 0).map((c) => <th key={c.id} className="px-3 py-2 font-semibold whitespace-nowrap">{c.nome}</th>)}
+                <tr className="bg-background">
+                  <th scope="col" className="th-label text-left px-3 py-2">Linha</th>
+                  {campos.filter((c) => mapa[c.id] >= 0).map((c) => <th key={c.id} scope="col" className="th-label text-left px-3 py-2 whitespace-nowrap">{c.nome}</th>)}
                 </tr>
               </thead>
               <tbody>

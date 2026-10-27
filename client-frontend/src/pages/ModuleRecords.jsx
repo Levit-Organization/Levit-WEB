@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import QuadroItens from '../components/quadro/QuadroItens';
-import { useParams, Navigate } from 'react-router-dom';
+import { useParams, useSearchParams, Navigate, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import Layout from '../components/Layout';
 import {
@@ -16,21 +16,28 @@ import {
   Pagination,
   Skeleton,
 } from '../components/ui';
+import { fieldClasses } from '../components/ui/fieldUtils';
 import { registroService } from '../services/registroService';
 import { arquivoService } from '../services/arquivoService';
-import { useModulo, useRegistros, usePessoas, queryKeys } from '../hooks/queries';
+import { useModulo, useRegistros, usePessoas, useTitulosDasTabelas, queryKeys } from '../hooks/queries';
 import { useAuth } from '../hooks/useAuth';
 import SeloPrazo from '../components/prazos/SeloPrazo';
 import PessoaResponsavel from '../components/prazos/PessoaResponsavel';
 import { itemConcluido, opcaoDeConclusao } from '../utils/prazos';
 import { REPETICOES, rotuloDaRepeticao } from '../utils/recorrencia';
 import ImportarPlanilha from '../components/importacao/ImportarPlanilha';
+import PainelFiltros from '../components/filtros/PainelFiltros';
+import CampoVinculo from '../components/vinculos/CampoVinculo';
+import ItensQueApontam from '../components/vinculos/ItensQueApontam';
+import { alvosDoFiltro, filtrosParaApi, filtrosVazios } from '../utils/filtros';
+import { idsLigados, linkDoItem, rotuloDosLigados, tabelasLigadas, tituloDoItem } from '../utils/vinculos';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { usePagination } from '../hooks/usePagination';
 import { useToast, useConfirm } from '../hooks/useFeedback';
 import { mensagemDeErro } from '../lib/queryClient';
 
 const SEM_DADOS = [];
+const SEM_FILTROS = filtrosVazios();
 const POR_PAGINA = 25;
 const COLATOR = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' });
 
@@ -85,10 +92,25 @@ export default function ModuleRecords() {
   const buscaAtiva = useDebouncedValue(busca.trim());
 
   const moduloQuery = useModulo(id);
-  const registrosQuery = useRegistros(id, buscaAtiva);
   const modulo = moduloQuery.data ?? null;
+
+  // --- Pesquisa avançada --------------------------------------------------------
+  // Por tabela: trocar de tabela mantém esta tela montada (mesma rota, outro id).
+  const [filtrosPorTabela, setFiltrosPorTabela] = useState({});
+  const [mostrarFiltros, setMostrarFiltros] = useState(false);
+  const filtros = filtrosPorTabela[id] ?? SEM_FILTROS;
+  const alvosFiltro = useMemo(() => alvosDoFiltro(modulo), [modulo]);
+  const filtrosApi = useMemo(() => filtrosParaApi(filtros, alvosFiltro), [filtros, alvosFiltro]);
+  // Espera a digitação parar; o id junto evita mandar os filtros de uma tabela para outra.
+  const pedidoFiltros = useMemo(() => ({ tabela: id, filtros: filtrosApi }), [id, filtrosApi]);
+  const filtrosAdiados = useDebouncedValue(pedidoFiltros);
+  const filtrosAtivos = filtrosAdiados.tabela === id ? filtrosAdiados.filtros : null;
+  const totalFiltros = filtrosApi?.regras.length ?? 0;
+
+  const registrosQuery = useRegistros(id, buscaAtiva, filtrosAtivos);
   const registros = registrosQuery.data ?? SEM_DADOS;
   const ehArquivo = modulo?.tipo === 'arquivo';
+  const chaveRegistros = queryKeys.registros(id, buscaAtiva, filtrosAtivos);
 
   // --- Colunas, ordenação e paginação ---------------------------------------
   const campos = useMemo(() => modulo?.campos ?? SEM_DADOS, [modulo]);
@@ -103,6 +125,10 @@ export default function ModuleRecords() {
   );
   const [soMeus, setSoMeus] = useState(false);
   const [importando, setImportando] = useState(false);
+
+  // Ligação: guarda o id do item da outra tabela; a tela mostra o nome dele.
+  const ligadas = useMemo(() => tabelasLigadas(campos), [campos]);
+  const titulosLigados = useTitulosDasTabelas(ligadas);
 
   const colunas = useMemo(() => {
     if (ehArquivo) {
@@ -122,11 +148,17 @@ export default function ModuleRecords() {
         key: campo.id,
         titulo: campo.nome,
         tipo: campo.tipo,
-        ler: campo.tipo === 'responsavel' ? (r) => nomes[r.dados?.[campo.id]] : (r) => r.dados?.[campo.id],
+        campo,
+        ler:
+          campo.tipo === 'responsavel'
+            ? (r) => nomes[r.dados?.[campo.id]]
+            : campo.tipo === 'vinculo'
+              ? (r) => rotuloDosLigados(r.dados?.[campo.id], titulosLigados[campo.modulo_vinculado_id])
+              : (r) => r.dados?.[campo.id],
       })),
       { key: 'criado_em', titulo: 'Criado em', tipo: 'data', ler: (r) => r.criado_em },
     ];
-  }, [campos, ehArquivo, nomes]);
+  }, [campos, ehArquivo, nomes, titulosLigados]);
 
   const [ordem, setOrdem] = useState(null); // { key, direcao }
 
@@ -177,7 +209,7 @@ export default function ModuleRecords() {
    * muda na hora e volta se a API recusar.
    */
   const moverItem = async (item, valor) => {
-    const chave = queryKeys.registros(id, buscaAtiva);
+    const chave = chaveRegistros;
     const aplicar = (dados) =>
       queryClient.setQueryData(chave, (atual) => atual?.map((r) => (r.id === item.id ? { ...r, dados } : r)));
     const novosDados = { ...item.dados, [campoGrupo.id]: valor || null };
@@ -214,7 +246,28 @@ export default function ModuleRecords() {
     setShowForm(true);
   };
 
-  const closeForm = () => setShowForm(false);
+  // Link direto para um item (?item=id), vindo de outra tabela ligada: abre o item
+  // quando a lista desta tabela chega. Ajuste durante a renderização, sem efeito.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const itemDoLink = searchParams.get('item');
+  const [linkTratado, setLinkTratado] = useState(null);
+  if (itemDoLink && itemDoLink !== linkTratado && registrosQuery.data && !registrosQuery.isPlaceholderData && !ehArquivo) {
+    setLinkTratado(itemDoLink);
+    const alvo = registrosQuery.data.find((r) => r.id === itemDoLink);
+    if (alvo) abrirFormulario(alvo);
+  }
+
+  const closeForm = () => {
+    setShowForm(false);
+    if (itemDoLink) {
+      setSearchParams((atual) => {
+        const novos = new URLSearchParams(atual);
+        novos.delete('item');
+        return novos;
+      }, { replace: true });
+      setLinkTratado(null);
+    }
+  };
 
   const handleFieldChange = (campoId, value) => {
     setFormDados((prev) => ({ ...prev, [campoId]: value }));
@@ -264,7 +317,7 @@ export default function ModuleRecords() {
       } else {
         await registroService.delete(id, registro.id);
       }
-      queryClient.setQueryData(queryKeys.registros(id, buscaAtiva), (atual) =>
+      queryClient.setQueryData(chaveRegistros, (atual) =>
         atual?.filter((r) => r.id !== registro.id)
       );
       toast.success(ehArquivo ? 'Arquivo excluído.' : 'Item excluído.');
@@ -321,12 +374,21 @@ export default function ModuleRecords() {
             {...comum}
           />
         );
+      case 'vinculo':
+        return (
+          <CampoVinculo
+            id={comum.id}
+            campo={campo}
+            value={formDados[campo.id]}
+            onChange={(valor) => handleFieldChange(campo.id, valor)}
+          />
+        );
       default:
         return null;
     }
   };
 
-  const TIPOS = { texto: 'Texto', numero: 'Número', data: 'Data', selecao: 'Seleção', responsavel: 'Pessoa da equipe', prazo: 'Data', recorrencia: 'Repetição' };
+  const TIPOS = { texto: 'Texto', numero: 'Número', data: 'Data', selecao: 'Seleção', responsavel: 'Pessoa da equipe', prazo: 'Data', recorrencia: 'Repetição', vinculo: 'Ligação' };
 
   // --- Renderização -----------------------------------------------------------
   if (moduloQuery.isLoading) {
@@ -362,6 +424,11 @@ export default function ModuleRecords() {
 
   const buscando = registrosQuery.isFetching && registrosQuery.isPlaceholderData;
   const termoBusca = buscaAtiva;
+  const filtrando = !!filtrosAtivos;
+  const mudarFiltros = (novos) => {
+    setFiltrosPorTabela((atual) => ({ ...atual, [id]: novos }));
+    paginacao.setPage(1);
+  };
 
   return (
     <Layout>
@@ -410,6 +477,19 @@ export default function ModuleRecords() {
         />
         </div>
 
+        {!ehArquivo && campos.length > 0 && (
+          <Button
+            variant={mostrarFiltros || totalFiltros > 0 ? 'subtle' : 'secondary'}
+            size="sm"
+            icon="filter_list"
+            aria-expanded={mostrarFiltros}
+            aria-controls="painel-filtros"
+            onClick={() => setMostrarFiltros((v) => !v)}
+          >
+            {totalFiltros > 0 ? `Filtros (${totalFiltros})` : 'Filtrar'}
+          </Button>
+        )}
+
         {temResponsavel && (
           <label className="flex items-center gap-2 text-sm text-ink-soft cursor-pointer select-none">
             <input
@@ -430,10 +510,12 @@ export default function ModuleRecords() {
             {visao === 'quadro' && camposLista.length > 1 && (
               <label className="flex items-center gap-2 text-xs text-light-text">
                 Agrupar por
+                {/* O Select do ui só tem a altura de formulário (h-11); aqui, na barra, o
+                    nativo compacto com as mesmas classes de campo. */}
                 <select
                   value={campoGrupo.id}
                   onChange={(e) => mudarPreferencia({ campo: e.target.value })}
-                  className="h-9 rounded-lg border border-divider-strong bg-surface px-2.5 text-sm text-ink"
+                  className={`${fieldClasses.replace('w-full ', '')} h-9 px-2.5 cursor-pointer`}
                 >
                   {camposLista.map((c) => (
                     <option key={c.id} value={c.id}>{c.nome}</option>
@@ -463,6 +545,12 @@ export default function ModuleRecords() {
           </div>
         )}
       </div>
+
+      {mostrarFiltros && !ehArquivo && (
+        <Card id="painel-filtros" className="mb-6">
+          <PainelFiltros alvos={alvosFiltro} filtros={filtros} onChange={mudarFiltros} />
+        </Card>
+      )}
 
       {/* RECORDS TABLE */}
       {registrosQuery.isLoading ? (
@@ -498,22 +586,24 @@ export default function ModuleRecords() {
           <EmptyState
             icon={ehArquivo ? 'folder_open' : 'inbox'}
             size="lg"
-            title={termoBusca ? 'Nenhum resultado' : 'Nenhum item ainda'}
+            title={termoBusca || filtrando ? 'Nenhum resultado' : 'Nenhum item ainda'}
             description={
-              termoBusca
-                ? `Nada bate com "${termoBusca}" nesta tabela. Tente outro termo.`
-                : ehArquivo
-                  ? 'Esta tabela guarda arquivos. Envie o primeiro para começar a organizar os documentos aqui.'
-                  : 'Cada item é uma linha com as colunas que você configurou nesta tabela.'
+              filtrando
+                ? 'Nenhum item atende a todos os filtros. Ajuste ou limpe os filtros.'
+                : termoBusca
+                  ? `Nada bate com "${termoBusca}" nesta tabela. Tente outro termo.`
+                  : ehArquivo
+                    ? 'Esta tabela guarda arquivos. Envie o primeiro para começar a organizar os documentos aqui.'
+                    : 'Cada item é uma linha com as colunas que você configurou nesta tabela.'
             }
-            actionLabel={termoBusca ? undefined : ehArquivo ? 'Enviar arquivo' : 'Criar primeiro item'}
-            actionIcon={termoBusca ? undefined : ehArquivo ? 'upload' : 'add'}
-            onAction={termoBusca ? undefined : () => abrirFormulario(null)}
+            actionLabel={filtrando ? 'Limpar filtros' : termoBusca ? undefined : ehArquivo ? 'Enviar arquivo' : 'Criar primeiro item'}
+            actionIcon={filtrando ? 'filter_list_off' : termoBusca ? undefined : ehArquivo ? 'upload' : 'add'}
+            onAction={filtrando ? () => mudarFiltros(filtrosVazios()) : termoBusca ? undefined : () => abrirFormulario(null)}
           />
         </Card>
       ) : visao === 'quadro' ? (
         <div className={`transition-opacity duration-150 ${buscando ? 'opacity-60' : ''}`} aria-busy={buscando}>
-          <QuadroItens itens={ordenados} campos={campos} campoGrupo={campoGrupo} nomes={nomes} onAbrir={abrirFormulario} onMover={moverItem} />
+          <QuadroItens itens={ordenados} campos={campos} campoGrupo={campoGrupo} nomes={nomes} titulosLigados={titulosLigados} onAbrir={abrirFormulario} onMover={moverItem} />
         </div>
       ) : (
         <Card padding="none" className="overflow-hidden">
@@ -528,12 +618,12 @@ export default function ModuleRecords() {
                         key={coluna.key}
                         scope="col"
                         aria-sort={ativa ? (ordem.direcao === 'asc' ? 'ascending' : 'descending') : 'none'}
-                        className="text-left px-4 py-3 font-semibold text-xs text-light-text uppercase tracking-wider"
+                        className="th-label text-left px-4 py-3"
                       >
                         <button
                           type="button"
                           onClick={() => alternarOrdem(coluna.key)}
-                          className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-ink transition-colors rounded"
+                          className="inline-flex items-center gap-1 hover:text-ink transition-colors rounded"
                         >
                           {coluna.titulo}
                           <span
@@ -546,8 +636,8 @@ export default function ModuleRecords() {
                       </th>
                     );
                   })}
-                  <th scope="col" className="text-right px-4 py-3 font-semibold text-xs text-light-text uppercase tracking-wider">
-                    Ações
+                  <th scope="col" className="th-label text-right px-4 py-3">
+                    <span className="sr-only">Ações</span>
                   </th>
                 </tr>
               </thead>
@@ -567,13 +657,29 @@ export default function ModuleRecords() {
                       if (!textoVazio && coluna.tipo === 'recorrencia') {
                         exibicao = (
                           <span className="inline-flex items-center gap-1 text-ink-soft">
-                            <span className="material-icons text-[15px] text-primary" aria-hidden="true">event_repeat</span>
+                            <span className="material-icons text-[16px] text-primary" aria-hidden="true">event_repeat</span>
                             {rotuloDaRepeticao(valor) ?? valor}
                           </span>
                         );
                       }
                       if (!textoVazio && coluna.tipo === 'responsavel') {
                         exibicao = <PessoaResponsavel nome={valor} />;
+                      }
+                      // Ligação: cada item ligado é um link para ele na tabela dele.
+                      const mapaLigados = coluna.tipo === 'vinculo' ? titulosLigados[coluna.campo.modulo_vinculado_id] : null;
+                      if (!textoVazio && mapaLigados) {
+                        exibicao = idsLigados(registro.dados?.[coluna.key]).map((itemId, i) => (
+                          <Fragment key={itemId}>
+                            {i > 0 && ', '}
+                            {itemId in mapaLigados ? (
+                              <Link to={linkDoItem(coluna.campo.modulo_vinculado_id, itemId)} className="text-primary-700 hover:underline">
+                                {tituloDoItem(mapaLigados[itemId])}
+                              </Link>
+                            ) : (
+                              'Item excluído'
+                            )}
+                          </Fragment>
+                        ));
                       }
 
                       return (
@@ -591,35 +697,33 @@ export default function ModuleRecords() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {ehArquivo ? (
-                          <button
-                            type="button"
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            icon="download"
                             onClick={() => handleDownload(registro)}
-                            className="p-1.5 text-light-text hover:text-primary transition-colors rounded-md hover:bg-primary-100"
                             title="Baixar"
                             aria-label="Baixar arquivo"
-                          >
-                            <span className="material-icons text-lg" aria-hidden="true">download</span>
-                          </button>
+                          />
                         ) : (
-                          <button
-                            type="button"
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            icon="edit"
                             onClick={() => abrirFormulario(registro)}
-                            className="p-1.5 text-light-text hover:text-primary transition-colors rounded-md hover:bg-primary-100"
                             title="Editar"
                             aria-label="Editar item"
-                          >
-                            <span className="material-icons text-lg" aria-hidden="true">edit</span>
-                          </button>
+                          />
                         )}
-                        <button
-                          type="button"
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          icon="delete_outline"
                           onClick={() => handleDelete(registro)}
-                          className="p-1.5 text-light-text hover:text-danger transition-colors rounded hover:bg-danger-bg"
                           title="Excluir"
                           aria-label={ehArquivo ? 'Excluir arquivo' : 'Excluir item'}
-                        >
-                          <span className="material-icons text-lg" aria-hidden="true">delete_outline</span>
-                        </button>
+                          className="hover:bg-danger-bg hover:text-danger"
+                        />
                       </div>
                     </td>
                   </tr>
@@ -687,6 +791,11 @@ export default function ModuleRecords() {
             </>
           )}
         </form>
+        {editingRegistro && !ehArquivo && (
+          <div className="mt-8 pt-6 border-t border-divider">
+            <ItensQueApontam moduloId={id} registroId={editingRegistro.id} onNavegar={() => setShowForm(false)} />
+          </div>
+        )}
       </Drawer>
       {importando && (
         <ImportarPlanilha
@@ -695,6 +804,7 @@ export default function ModuleRecords() {
           modulo={modulo}
           campos={campos}
           pessoas={pessoasQuery.data ?? []}
+          ligados={titulosLigados}
           onImportado={() => queryClient.invalidateQueries({ queryKey: ['registros', id] })}
         />
       )}

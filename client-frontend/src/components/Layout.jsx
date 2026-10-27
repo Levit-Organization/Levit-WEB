@@ -265,7 +265,7 @@ export default function Layout({ children, noPadding = false }) {
             aria-expanded={mobileOpen}
             className="w-10 h-10 -ml-2 flex items-center justify-center rounded-lg text-light-text hover:bg-primary-100 hover:text-primary-700 transition-colors"
           >
-            <span className="material-icons text-[22px]" aria-hidden="true">menu</span>
+            <span className="material-icons text-[24px]" aria-hidden="true">menu</span>
           </button>
           <img src="/Logo.png" alt="" className="h-7 w-7 object-contain" />
           <p className="text-sm font-semibold text-ink truncate">{empresa?.nome || 'Levit'}</p>
@@ -278,7 +278,10 @@ export default function Layout({ children, noPadding = false }) {
           />
         </header>
 
-        <main id="conteudo" tabIndex={-1} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col outline-none">
+        {/* relative: o main é o contêiner dos elementos absolutos das páginas (ex.: o
+            "(obrigatório)" sr-only dos campos). Sem ele, esses elementos se posicionam pela
+            página inteira, esticam o documento e a janela toda rola junto com o menu. */}
+        <main id="conteudo" tabIndex={-1} className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col outline-none">
           <div
             key={location.pathname}
             className={`flex-1 flex flex-col animate-page-in ${noPadding ? '' : 'p-4 sm:p-6 lg:p-8'}`}

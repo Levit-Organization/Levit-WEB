@@ -1,6 +1,7 @@
 import { Button, Input, Select } from '../ui';
 import { cn } from '../ui/cn';
-import { usePessoas } from '../../hooks/queries';
+import { usePessoas, useTitulos } from '../../hooks/queries';
+import { tituloDoItem } from '../../utils/vinculos';
 import { REPETICOES } from '../../utils/recorrencia';
 import {
   MAX_REGRAS,
@@ -25,6 +26,21 @@ function CampoValorPessoa({ label, value, onChange, required }) {
   );
 }
 
+/** Escolha de um item da tabela ligada (colunas de ligação). */
+function CampoValorItemLigado({ label, moduloId, value, onChange, required }) {
+  const itens = useTitulos(moduloId).data ?? [];
+  return (
+    <Select
+      label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      required={required}
+      placeholder="Selecione o item"
+      options={itens.map((i) => ({ value: i.id, label: tituloDoItem(i.titulo) }))}
+    />
+  );
+}
+
 /**
  * Valor de comparação: lista para colunas de seleção/etapa, a equipe para
  * "Responsável", calendário para datas e prazos, texto livre para o resto.
@@ -32,6 +48,10 @@ function CampoValorPessoa({ label, value, onChange, required }) {
 export function CampoValor({ label, campo, opcoesEtapa = [], value, onChange, required, placeholder = 'Valor' }) {
   if (campo?.tipo === 'responsavel') {
     return <CampoValorPessoa label={label} value={value} onChange={onChange} required={required} />;
+  }
+
+  if (campo?.tipo === 'vinculo') {
+    return <CampoValorItemLigado label={label} moduloId={campo.modulo_vinculado_id} value={value} onChange={onChange} required={required} />;
   }
 
   if (campo?.tipo === 'recorrencia') {

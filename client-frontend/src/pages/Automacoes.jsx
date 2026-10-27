@@ -5,7 +5,6 @@ import {
   Button,
   Badge,
   Toggle,
-  StatCard,
   EmptyState,
   ErrorState,
   Card,
@@ -71,7 +70,7 @@ function RowMenu({ automacao, onDelete, onHistorico, onTestar, onOpenChange, isO
         aria-haspopup="menu"
         aria-expanded={isOpen}
       >
-        <span className="material-icons text-[19px]" aria-hidden="true">more_vert</span>
+        <span className="material-icons text-[20px]" aria-hidden="true">more_vert</span>
       </button>
 
       {isOpen && (
@@ -89,7 +88,7 @@ function RowMenu({ automacao, onDelete, onHistorico, onTestar, onOpenChange, isO
             className="absolute right-0 top-9 z-20 w-44 bg-surface border border-divider rounded-lg shadow-lg py-1.5"
           >
             <Link role="menuitem" to={`/automacoes/${automacao.modulo_id}/${automacao.id}/editar`} className={ITEM_MENU}>
-              <span className="material-icons text-[17px] text-light-text" aria-hidden="true">edit</span>
+              <span className="material-icons text-[16px] text-light-text" aria-hidden="true">edit</span>
               Editar
             </Link>
             <button
@@ -101,7 +100,7 @@ function RowMenu({ automacao, onDelete, onHistorico, onTestar, onOpenChange, isO
               }}
               className={ITEM_MENU}
             >
-              <span className="material-icons text-[17px] text-light-text" aria-hidden="true">science</span>
+              <span className="material-icons text-[16px] text-light-text" aria-hidden="true">science</span>
               Testar
             </button>
             <button
@@ -113,7 +112,7 @@ function RowMenu({ automacao, onDelete, onHistorico, onTestar, onOpenChange, isO
               }}
               className={ITEM_MENU}
             >
-              <span className="material-icons text-[17px] text-light-text" aria-hidden="true">history</span>
+              <span className="material-icons text-[16px] text-light-text" aria-hidden="true">history</span>
               Histórico
             </button>
             <button
@@ -125,7 +124,7 @@ function RowMenu({ automacao, onDelete, onHistorico, onTestar, onOpenChange, isO
               }}
               className="w-full flex items-center gap-2 px-3.5 py-2 text-sm text-danger hover:bg-danger-bg transition-colors"
             >
-              <span className="material-icons text-[17px]" aria-hidden="true">delete_outline</span>
+              <span className="material-icons text-[16px]" aria-hidden="true">delete_outline</span>
               Excluir
             </button>
           </div>
@@ -185,7 +184,13 @@ export default function Automacoes({
         subtitle={
           total === 0
             ? 'Avisos, e-mails e tarefas que acontecem sozinhos quando um item muda'
-            : `${ativas} de ${total} ${total === 1 ? 'automação ativa' : 'automações ativas'}`
+            : [
+                `${ativas} de ${total} ${total === 1 ? 'automação ativa' : 'automações ativas'}`,
+                `${execucoes7d} ${execucoes7d === 1 ? 'execução' : 'execuções'} nos últimos 7 dias`,
+                falhas7d > 0 && `${falhas7d} ${falhas7d === 1 ? 'falha' : 'falhas'}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')
         }
         actions={
           <>
@@ -210,18 +215,6 @@ export default function Automacoes({
           </>
         }
       />
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 shrink-0">
-        <StatCard icon="bolt" value={total} label={total === 1 ? 'Automação criada' : 'Automações criadas'} variant="primary" />
-        <StatCard icon="check_circle" value={ativas} label={ativas === 1 ? 'Ativa agora' : 'Ativas agora'} variant="success" />
-        <StatCard
-          icon="insights"
-          value={execucoes7d}
-          label="Execuções nos últimos 7 dias"
-          variant={falhas7d > 0 ? 'warning' : 'info'}
-          badge={falhas7d > 0 ? <Badge variant="danger" size="sm">{falhas7d} {falhas7d === 1 ? 'falha' : 'falhas'}</Badge> : undefined}
-        />
-      </div>
 
       <Card padding="none" className="overflow-hidden flex-1 flex flex-col min-h-0">
         {loading ? (
@@ -253,13 +246,13 @@ export default function Automacoes({
           <div className="overflow-x-auto flex-1">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-divider text-left text-xs text-light-text uppercase tracking-wide">
-                  <th className="px-5 py-3.5 font-medium">Automação</th>
-                  <th className="px-5 py-3.5 font-medium">Fluxo</th>
-                  <th className="px-5 py-3.5 font-medium">Execuções</th>
-                  <th className="px-5 py-3.5 font-medium">Última execução</th>
-                  <th className="px-5 py-3.5 font-medium">Status</th>
-                  <th className="px-5 py-3.5 font-medium w-12"><span className="sr-only">Ações</span></th>
+                <tr className="border-b border-divider">
+                  <th className="th-label text-left px-5 py-3.5">Automação</th>
+                  <th className="th-label text-left px-5 py-3.5">Fluxo</th>
+                  <th className="th-label text-left px-5 py-3.5">Execuções</th>
+                  <th className="th-label text-left px-5 py-3.5">Última execução</th>
+                  <th className="th-label text-left px-5 py-3.5">Status</th>
+                  <th className="th-label text-left px-5 py-3.5 w-12"><span className="sr-only">Ações</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-divider">
@@ -270,6 +263,9 @@ export default function Automacoes({
                   const acaoInfo = primeiraAcao ? ACAO_INFO[primeiraAcao.tipo] : null;
                   const acoesExtras = (automacao.acoes?.length || 0) - 1;
                   const estatisticas = automacao.estatisticas || { execucoes_7d: 0, falhas_7d: 0 };
+                  const totalCondicoes = automacao.condicoes?.regras?.length || 0;
+                  // Um selo de estado por linha: "Pausada por falhas" já conta a notícia das falhas.
+                  const pausada = !automacao.ativo && !!automacao.pausada_por_falhas_em;
 
                   return (
                     <tr key={automacao.id} className="hover:bg-background/40 transition-colors">
@@ -288,15 +284,23 @@ export default function Automacoes({
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2 flex-wrap">
-                          {gatilhos.map((g) => (
-                            <Badge key={g} variant="default">{gatilhoLabel(g)}</Badge>
-                          ))}
-                          {automacao.condicoes?.regras?.length > 0 && (
-                            <Badge variant="outline" icon="filter_alt" title="Só roda quando as condições forem verdadeiras">
-                              {automacao.condicoes.regras.length === 1 ? '1 condição' : `${automacao.condicoes.regras.length} condições`}
-                            </Badge>
+                          {gatilhos.length > 0 && <Badge variant="default">{gatilhoLabel(gatilhos[0])}</Badge>}
+                          {gatilhos.length > 1 && (
+                            <span className="text-2xs text-light-text" title={gatilhos.slice(1).map(gatilhoLabel).join(', ')}>
+                              +{gatilhos.length - 1}
+                            </span>
                           )}
-                          <span className="material-icons text-[15px] text-light-text" aria-hidden="true">arrow_forward</span>
+                          {totalCondicoes > 0 && (
+                            <span
+                              className="material-icons text-[16px] text-light-text"
+                              role="img"
+                              aria-label={totalCondicoes === 1 ? 'Com 1 condição' : `Com ${totalCondicoes} condições`}
+                              title={`Só roda quando ${totalCondicoes === 1 ? 'a condição for verdadeira' : `as ${totalCondicoes} condições forem verdadeiras`}`}
+                            >
+                              filter_alt
+                            </span>
+                          )}
+                          <span className="material-icons text-[16px] text-light-text" aria-hidden="true">arrow_forward</span>
                           <Badge variant="primary">{acaoInfo ? acaoLabel(primeiraAcao.tipo) : '—'}</Badge>
                           {acoesExtras > 0 && (
                             <span className="text-2xs text-light-text">+{acoesExtras}</span>
@@ -312,7 +316,7 @@ export default function Automacoes({
                         >
                           <span className="text-ink tabular">{estatisticas.execucoes_7d}</span>
                           <span className="text-xs text-light-text">em 7 dias</span>
-                          {estatisticas.falhas_7d > 0 && (
+                          {estatisticas.falhas_7d > 0 && !pausada && (
                             <Badge variant="danger" size="sm">{estatisticas.falhas_7d} {estatisticas.falhas_7d === 1 ? 'falha' : 'falhas'}</Badge>
                           )}
                         </button>
@@ -333,7 +337,7 @@ export default function Automacoes({
                             checked={!!automacao.ativo}
                             onChange={(novoValor) => onToggleAtivo(automacao, novoValor)}
                           />
-                          {!automacao.ativo && automacao.pausada_por_falhas_em && (
+                          {pausada && (
                             <Badge
                               variant="warning"
                               size="sm"

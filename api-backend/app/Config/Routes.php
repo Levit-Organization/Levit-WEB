@@ -27,8 +27,10 @@ $routes->group('api/v1', function ($routes) {
     $routes->delete("modulos/({$uuid})/campos/({$uuid})", 'ModuloController::excluirCampo/$1/$2', ['filter' => 'auth']);
 
     $routes->get("modulos/({$uuid})/registros", 'RegistroController::listar/$1', ['filter' => 'auth']);
+    $routes->get("modulos/({$uuid})/titulos", 'RegistroController::titulos/$1', ['filter' => 'auth']);
     $routes->post("modulos/({$uuid})/registros", 'RegistroController::criar/$1', ['filter' => 'auth']);
     $routes->post("modulos/({$uuid})/registros/importar", 'RegistroController::importar/$1', ['filter' => 'auth']);
+    $routes->get("modulos/({$uuid})/registros/({$uuid})/ligados", 'RegistroController::ligados/$1/$2', ['filter' => 'auth']);
     $routes->put("modulos/({$uuid})/registros/({$uuid})", 'RegistroController::atualizar/$1/$2', ['filter' => 'auth']);
     $routes->delete("modulos/({$uuid})/registros/({$uuid})", 'RegistroController::excluir/$1/$2', ['filter' => 'auth']);
 
@@ -36,7 +38,10 @@ $routes->group('api/v1', function ($routes) {
     $routes->get("modulos/({$uuid})/arquivos/({$uuid})", 'ArquivoController::baixar/$1/$2', ['filter' => 'auth']);
     $routes->delete("modulos/({$uuid})/arquivos/({$uuid})", 'ArquivoController::excluir/$1/$2', ['filter' => 'auth']);
 
+    $routes->get("publico/vagas/({$uuid})", 'CandidatoController::vagaPublica/$1', ['filter' => 'ratelimit']);
     $routes->post("publico/candidatura/({$uuid})", 'CandidatoController::candidatar/$1', ['filter' => 'ratelimit']);
+    $routes->post("modulos/({$uuid})/candidatos", 'CandidatoController::adicionar/$1', ['filter' => 'auth']);
+    $routes->get("modulos/({$uuid})/candidatos/({$uuid})/curriculo", 'CandidatoController::curriculo/$1/$2', ['filter' => 'auth']);
     $routes->get("modulos/({$uuid})/kanban", 'CandidatoController::kanban/$1', ['filter' => 'auth']);
     $routes->get("modulos/({$uuid})/candidatos/({$uuid})", 'CandidatoController::detalhes/$1/$2', ['filter' => 'auth']);
     $routes->put("modulos/({$uuid})/candidatos/({$uuid})/fase", 'CandidatoController::moverFase/$1/$2', ['filter' => 'auth']);
@@ -74,6 +79,7 @@ $routes->group('api/v1', function ($routes) {
     $routes->get('relatorios/indicadores', 'RelatorioController::indicadores', ['filter' => 'auth']);
     $routes->get('relatorios/tabelas', 'RelatorioController::tabelas', ['filter' => 'auth']);
     $routes->get('relatorios/agrupar', 'RelatorioController::agrupar', ['filter' => 'auth']);
+    $routes->get('relatorios/agrupar/pdf', 'RelatorioController::agruparPdf', ['filter' => 'auth']);
     $routes->put("relatorios/({$uuid})", 'RelatorioController::atualizar/$1', ['filter' => 'auth']);
     $routes->delete("relatorios/({$uuid})", 'RelatorioController::excluir/$1', ['filter' => 'auth']);
     $routes->get("relatorios/({$uuid})/envios", 'RelatorioController::envios/$1', ['filter' => 'auth']);

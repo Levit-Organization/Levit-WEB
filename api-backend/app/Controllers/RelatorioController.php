@@ -162,6 +162,32 @@ class RelatorioController extends BaseApiController
         }
     }
 
+    /** PDF do relatório montado: mesmos parâmetros de `agrupar`, mais `titulo` (opcional). */
+    public function agruparPdf()
+    {
+        if ($r = $this->semAcesso()) {
+            return $r;
+        }
+
+        $params = $this->request->getGet() ?? [];
+        try {
+            $pdf = $this->relatorios->pdfDoAgrupamento(
+                service('authenticatedUser')->empresaId,
+                $params,
+                mb_substr(trim((string) ($params['titulo'] ?? '')), 0, 100)
+            );
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 422);
+        }
+
+        return $this->response
+            ->setContentType('application/pdf')
+            ->setHeader('Content-Disposition', $this->cabecalhoDeAnexo($pdf['arquivo']))
+            ->setBody($pdf['conteudo']);
+    }
+
     /** PDF de um período qualquer (`inicio` e `fim` inclusivos, AAAA-MM-DD). */
     public function pdf()
     {

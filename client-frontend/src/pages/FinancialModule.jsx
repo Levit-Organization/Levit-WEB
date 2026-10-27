@@ -1,9 +1,9 @@
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { financeiroService } from '../services/financeiroService';
 import Layout from '../components/Layout';
-import { Badge, Card, Input, Select, Button, Alert, Drawer, Toggle, ErrorState, Skeleton } from '../components/ui';
+import { Badge, Card, Input, Select, Button, Alert, Drawer, Toggle, EmptyState, ErrorState, Skeleton, PageHeader } from '../components/ui';
 import { useModulo } from '../hooks/queries';
 import { useToast } from '../hooks/useFeedback';
 import { mensagemDeErro } from '../lib/queryClient';
@@ -39,92 +39,63 @@ function formatDate(dateString) {
 }
 
 
-function SummaryCard({ label, value, tone, icon }) {
-  const tones = {
-    profit: {
-      accent: 'bg-success',
-      iconBox: 'bg-success-bg text-success',
-      value: 'text-success',
-    },
-    expense: {
-      accent: 'bg-danger',
-      iconBox: 'bg-danger-bg text-danger',
-      value: 'text-danger',
-    },
-    balance: {
-      accent: 'bg-primary',
-      iconBox: 'bg-primary-100 text-primary',
-      value: 'text-primary-700',
-    },
+function SummaryCard({ label, value, tone }) {
+  const cores = {
+    profit: 'text-success',
+    expense: 'text-danger',
+    balance: 'text-ink',
   };
 
-  const styles = tones[tone] || tones.balance;
-
   return (
-    <Card padding="none" className="relative overflow-hidden p-5 min-h-[122px]">
-      <span className={`absolute inset-y-0 left-0 w-1 ${styles.accent}`} aria-hidden="true" />
-      <div className="flex items-start justify-between gap-4 pl-1">
-        <div className="min-w-0">
-          <p className="text-2xs font-semibold uppercase tracking-[0.08em] text-light-text">
-            {label}
-          </p>
-          <p className={`mt-3 text-2xl sm:text-3xl font-bold tabular tracking-tight ${styles.value}`}>
-            {BRL.format(value || 0)}
-          </p>
-        </div>
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${styles.iconBox}`}>
-          <span className="material-icons text-[20px]" aria-hidden="true">{icon}</span>
-        </div>
-      </div>
+    <Card padding="md">
+      <p className="text-sm text-light-text">{label}</p>
+      <p className={`mt-1.5 text-2xl font-bold tabular tracking-tight ${cores[tone] || cores.balance}`}>
+        {BRL.format(value || 0)}
+      </p>
     </Card>
   );
 }
 
-function MonthCard({ monthData, selectedYear, monthTransactions, monthTotals, hasTransactions, BRL, formatDate, Badge, Card }) {
-  const [open, setOpen] = useState(hasTransactions);
+function MonthCard({ monthData, selectedYear, monthTransactions, monthTotals }) {
+  const [open, setOpen] = useState(true);
   const [limite, setLimite] = useState(LINHAS_POR_LOTE);
   const visiveis = monthTransactions.length > limite ? monthTransactions.slice(0, limite) : monthTransactions;
   const restantes = monthTransactions.length - visiveis.length;
   const painelId = `mes-${monthData.value}`;
 
   return (
-    <Card padding="none" className={`overflow-hidden transition-all ${hasTransactions ? 'shadow-sm' : 'opacity-70'}`}>
+    <Card padding="none" className="overflow-hidden">
       {/* Header — clicável para expandir/recolher */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={painelId}
-        className={`w-full px-5 py-3.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-left transition-colors
-          ${hasTransactions ? 'bg-background hover:bg-primary-50/40' : 'bg-background/60 hover:bg-background'}`}
+        className="w-full px-5 py-3.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-left bg-background hover:bg-primary-50/40 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <span aria-hidden="true" className={`material-icons text-[18px] transition-transform ${open ? 'rotate-90' : ''} ${hasTransactions ? 'text-primary' : 'text-light-text'}`}>
+          <span aria-hidden="true" className={`material-icons text-[18px] text-primary transition-transform ${open ? 'rotate-90' : ''}`}>
             chevron_right
           </span>
           <div>
-            <h2 className={`text-sm font-bold uppercase tracking-[0.05em] ${hasTransactions ? 'text-ink' : 'text-light-text'}`}>
+            <h2 className="text-sm font-bold text-ink">
               {monthData.label} {selectedYear}
             </h2>
             <p className="text-xs text-light-text mt-0.5">
-              {hasTransactions
-                ? `${monthTransactions.length} lançamento${monthTransactions.length !== 1 ? 's' : ''}`
-                : 'Nenhum lançamento'}
+              {monthTransactions.length} lançamento{monthTransactions.length !== 1 ? 's' : ''}
             </p>
           </div>
         </div>
 
-        {hasTransactions && (
-          <div className="text-xs font-semibold tabular flex items-center gap-2 pl-9 sm:pl-0">
-            <span className="text-success">+{BRL.format(monthTotals.profit)}</span>
-            <span className="text-faint">|</span>
-            <span className="text-danger">-{BRL.format(monthTotals.expenses)}</span>
-            <span className="text-faint">|</span>
-            <span className={`font-bold ${monthTotals.balance >= 0 ? 'text-success' : 'text-danger'}`}>
-              {monthTotals.balance >= 0 ? '+' : ''}{BRL.format(monthTotals.balance)}
-            </span>
-          </div>
-        )}
+        <div className="text-xs font-semibold tabular flex items-center gap-2 pl-9 sm:pl-0">
+          <span className="text-success">+{BRL.format(monthTotals.profit)}</span>
+          <span className="text-faint">|</span>
+          <span className="text-danger">-{BRL.format(monthTotals.expenses)}</span>
+          <span className="text-faint">|</span>
+          <span className={`font-bold ${monthTotals.balance >= 0 ? 'text-success' : 'text-danger'}`}>
+            {monthTotals.balance >= 0 ? '+' : ''}{BRL.format(monthTotals.balance)}
+          </span>
+        </div>
       </button>
 
       {/* Tabela — visível apenas quando expandido */}
@@ -137,7 +108,7 @@ function MonthCard({ monthData, selectedYear, monthTransactions, monthTotals, ha
                   <th
                     key={column}
                     scope="col"
-                    className={`px-5 py-3 text-xs font-semibold uppercase tracking-wider text-light-text ${
+                    className={`th-label px-5 py-3 ${
                       ['Valor', 'Saldo acum.'].includes(column) ? 'text-right' : 'text-left'
                     }`}
                   >
@@ -162,7 +133,7 @@ function MonthCard({ monthData, selectedYear, monthTransactions, monthTotals, ha
                       </Badge>
                     </td>
                     <td className="px-5 py-4">
-                      <Badge variant="default">{item.categoria_nome || 'Sem Categoria'}</Badge>
+                      <Badge variant="default">{item.categoria_nome || 'Sem categoria'}</Badge>
                     </td>
                     <td className={`px-5 py-4 text-right font-semibold tabular whitespace-nowrap ${isIncome ? 'text-success' : 'text-danger'}`}>
                       {isIncome ? '' : '-'}{BRL.format(parseFloat(item.valor))}
@@ -320,6 +291,10 @@ export default function FinancialModule() {
     );
   }, [visibleTransactions]);
 
+  // Mês sem lançamento não aparece: 12 cartões vazios só faziam ruído.
+  const mesesComLancamento = ALL_MONTHS.filter((m) => porMes[m.value].lista.length > 0);
+  const filtrando = selectedCategory !== 'all' || deferredSearch.trim() !== '';
+
   const handleOpenModal = () => {
     const vazio = formularioVazio();
     setFormData(vazio);
@@ -366,39 +341,22 @@ export default function FinancialModule() {
 
   return (
     <Layout>
-      <section className="animate-page-in relative">
-        <header className="mb-7">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-xs text-light-text mb-2">
-                <Link to="/modulos" className="hover:text-primary hover:underline">Minhas tabelas</Link>
-                <span className="material-icons text-[14px]" aria-hidden="true">chevron_right</span>
-                <span className="font-semibold text-ink-soft">Financeiro</span>
-              </div>
-
-              <div className="flex items-start gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-primary-100 text-primary flex items-center justify-center shrink-0">
-                  <span className="material-icons text-[22px]" aria-hidden="true">{moduleIcon}</span>
-                </div>
-                <div className="min-w-0">
-                  <h1 className="text-2xl font-bold text-ink">{moduleName}</h1>
-                  <p className="text-sm text-light-text mt-1">
-                    Acompanhe entradas, saídas e o saldo do período.
-                  </p>
-                </div>
-              </div>
-            </div>
-            
+      <section className="relative">
+        <PageHeader
+          backTo="/modulos"
+          icon={moduleIcon}
+          title={moduleName}
+          actions={
             <Button onClick={handleOpenModal} icon="add">
-              Novo Lançamento
+              Novo lançamento
             </Button>
-          </div>
-        </header>
+          }
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <SummaryCard label="Total de Entradas (Visível)" value={visibleTotals.profit} tone="profit" icon="trending_up" />
-          <SummaryCard label="Total de Saídas (Visível)" value={visibleTotals.expenses} tone="expense" icon="trending_down" />
-          <SummaryCard label="Saldo do Período (Visível)" value={visibleTotals.balance} tone="balance" icon="account_balance" />
+          <SummaryCard label="Entradas" value={visibleTotals.profit} tone="profit" />
+          <SummaryCard label="Saídas" value={visibleTotals.expenses} tone="expense" />
+          <SummaryCard label="Saldo" value={visibleTotals.balance} tone="balance" />
         </div>
 
         <Card padding="md" className="mb-5">
@@ -461,9 +419,25 @@ export default function FinancialModule() {
               onRetry={() => financeiroQuery.refetch()}
             />
           </Card>
+        ) : mesesComLancamento.length === 0 ? (
+          <Card padding="lg" className="py-12">
+            <EmptyState
+              size="lg"
+              icon="account_balance_wallet"
+              title={filtrando ? 'Nenhum lançamento encontrado' : `Nenhum lançamento em ${selectedYear}`}
+              description={
+                filtrando
+                  ? 'Tente outra busca ou outra categoria.'
+                  : 'Registre entradas e saídas para ver o saldo de cada mês.'
+              }
+              actionLabel={filtrando ? undefined : 'Novo lançamento'}
+              actionIcon="add"
+              onAction={handleOpenModal}
+            />
+          </Card>
         ) : (
           <div className="flex flex-col gap-2">
-            {ALL_MONTHS.map((monthData) => {
+            {mesesComLancamento.map((monthData) => {
               const { lista, totais } = porMes[monthData.value];
 
               return (
@@ -473,11 +447,6 @@ export default function FinancialModule() {
                   selectedYear={selectedYear}
                   monthTransactions={lista}
                   monthTotals={totais}
-                  hasTransactions={lista.length > 0}
-                  BRL={BRL}
-                  formatDate={formatDate}
-                  Badge={Badge}
-                  Card={Card}
                 />
               );
             })}
@@ -488,11 +457,11 @@ export default function FinancialModule() {
           open={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           dirty={formSujo}
-          title="Novo Lançamento"
+          title="Novo lançamento"
           footer={
             <>
               <Button variant="secondary" onClick={() => setIsModalOpen(false)} type="button">Cancelar</Button>
-              <Button type="submit" form="lancamento-form" loading={isSaving}>Salvar Lançamento</Button>
+              <Button type="submit" form="lancamento-form" loading={isSaving}>Salvar lançamento</Button>
             </>
           }
         >
@@ -565,7 +534,7 @@ export default function FinancialModule() {
 
             <div className="pt-2">
               <Toggle 
-                label="Lançamento Conciliado"
+                label="Lançamento conciliado"
                 description="Marque se este valor já foi efetivamente pago/recebido na conta."
                 checked={formData.conciliado}
                 onChange={(val) => alterarForm('conciliado', val)}

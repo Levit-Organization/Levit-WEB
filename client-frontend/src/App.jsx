@@ -18,6 +18,7 @@ const {
   ForgotPassword,
   ResetPassword,
   AceitarConvite,
+  Candidatura,
   Dashboard,
   Modules,
   ModuleForm,
@@ -40,6 +41,7 @@ const TITULOS = [
   ['/forgot-password', 'Recuperar senha'],
   ['/reset-password', 'Redefinir senha'],
   ['/convite/:token', 'Convite para a equipe'],
+  ['/vagas/:id', 'Candidatura'],
   ['/dashboard', 'Início'],
   ['/recrutamento', 'Recrutamento'],
   ['/modulos/novo', 'Nova tabela'],
@@ -102,6 +104,7 @@ function AppRoutes() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/convite/:token" element={<AceitarConvite />} />
+          <Route path="/vagas/:id" element={<Candidatura />} />
 
           <Route path="/dashboard" element={protegida(<Dashboard />)} />
           <Route path="/recrutamento" element={protegida(<RecrutamentoKanban />)} />

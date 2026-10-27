@@ -27,7 +27,7 @@ function ItemNotificacao({ notificacao, onAbrir, onExcluir }) {
         )}
       >
         <span className={cn('mt-0.5 w-8 h-8 shrink-0 rounded-lg flex items-center justify-center', icone.classes)}>
-          <span className="material-icons text-[17px]" aria-hidden="true">{icone.icon}</span>
+          <span className="material-icons text-[16px]" aria-hidden="true">{icone.icon}</span>
         </span>
         <span className="min-w-0 flex-1">
           <span className={cn('block text-sm break-words', naoLida ? 'font-semibold text-ink' : 'text-ink-soft')}>

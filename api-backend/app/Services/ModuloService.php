@@ -11,7 +11,7 @@ use App\Models\ModuloModel;
 
 class ModuloService
 {
-    private const TIPOS_VALIDOS = ['texto', 'numero', 'data', 'selecao', 'responsavel', 'prazo', 'recorrencia'];
+    private const TIPOS_VALIDOS = ['texto', 'numero', 'data', 'selecao', 'responsavel', 'prazo', 'recorrencia', 'vinculo'];
 
     protected ModuloModel $moduloModel;
     protected CampoModuloModel $campoModuloModel;
@@ -30,7 +30,7 @@ class ModuloService
         $this->autorizacaoModuloService = new AutorizacaoModuloService();
     }
 
-    public function criarModulo(string $empresaId, string $usuarioId, string $cargoId, array $dados): array
+    public function criarModulo(string $empresaId, string $usuarioId, string $cargoId, array $dados, bool $acessoTotal = false): array
     {
         $tipo   = $dados['tipo'] ?? 'dados';
         $campos = $dados['campos'] ?? [];
@@ -49,7 +49,7 @@ class ModuloService
         }
 
         foreach ($campos as $campo) {
-            $this->validarCampo($campo);
+            $this->validarCampo($campo, $empresaId, $cargoId, $acessoTotal);
         }
 
         foreach ($fases as $nomeFase) {
@@ -70,13 +70,7 @@ class ModuloService
         ]);
 
         foreach ($campos as $ordem => $campo) {
-            $this->campoModuloModel->insert([
-                'modulo_id' => $moduloId,
-                'nome'      => $campo['nome'],
-                'tipo'      => $campo['tipo'],
-                'opcoes'    => $campo['opcoes'] ?? null,
-                'ordem'     => $ordem,
-            ]);
+            $this->campoModuloModel->insert($this->colunaParaGravar($moduloId, $campo, $ordem));
         }
 
         foreach ($fases as $ordem => $nomeFase) {
@@ -101,7 +95,7 @@ class ModuloService
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, true);
     }
 
-    private function validarCampo(array $campo): void
+    private function validarCampo(array $campo, string $empresaId, string $cargoId, bool $acessoTotal): void
     {
         if (empty($campo['nome'])) {
             throw new \DomainException('Toda coluna precisa de um nome.');
@@ -115,6 +109,37 @@ class ModuloService
         if ($campo['tipo'] === 'selecao' && empty($campo['opcoes'])) {
             throw new \DomainException('Colunas do tipo lista de opções precisam de ao menos uma opção.');
         }
+
+        if ($campo['tipo'] === 'vinculo') {
+            $alvoId = $campo['modulo_vinculado_id'] ?? null;
+            $alvo   = is_string($alvoId) && $alvoId !== ''
+                ? $this->moduloModel->where('id', $alvoId)->where('empresa_id', $empresaId)->first()
+                : null;
+
+            if (! $alvo) {
+                throw new \DomainException("Escolha a tabela que a coluna “{$campo['nome']}” vai ligar.");
+            }
+            if ($alvo['tipo'] !== 'dados') {
+                throw new \DomainException('Só dá para ligar a tabelas de lista (não a arquivos, vagas ou entradas e saídas).');
+            }
+            // Ligar a uma tabela que a pessoa não vê exporia os itens dela.
+            $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $alvoId, 'visualizar');
+        }
+    }
+
+    /** Linha de campo_modulo. Ligação: guarda a tabela de destino e se aceita vários itens. */
+    private function colunaParaGravar(string $moduloId, array $campo, int $ordem): array
+    {
+        $vinculo = $campo['tipo'] === 'vinculo';
+
+        return [
+            'modulo_id'           => $moduloId,
+            'nome'                => $campo['nome'],
+            'tipo'                => $campo['tipo'],
+            'opcoes'              => $vinculo ? ['multiplo' => ! empty($campo['opcoes']['multiplo'])] : ($campo['opcoes'] ?? null),
+            'ordem'               => $ordem,
+            'modulo_vinculado_id' => $vinculo ? $campo['modulo_vinculado_id'] : null,
+        ];
     }
 
     /**
@@ -158,11 +183,89 @@ class ModuloService
             ->orderBy('ordem', 'ASC')
             ->findAll();
 
+        $modulo = $this->anexarLigacoes($modulo, $cargoId, $acessoTotal);
+
         if ($modulo['tipo'] === 'recrutamento') {
             $modulo['fases'] = $this->faseRecrutamentoModel
                 ->where('modulo_id', $moduloId)
                 ->orderBy('ordem', 'ASC')
                 ->findAll();
+        }
+
+        return $modulo;
+    }
+
+    /**
+     * Ligações com outras tabelas: em cada coluna "vinculo", a tabela para onde
+     * ela aponta (`modulo_vinculado`); em `ligacoes_recebidas`, as colunas de
+     * outras tabelas que apontam para esta. Vêm com as colunas de cada tabela,
+     * que a tela usa para filtrar pelos dados ligados. Tabela que a pessoa não
+     * vê aparece só com o nome (sem colunas) nas colunas desta, e some das
+     * ligações recebidas.
+     */
+    private function anexarLigacoes(array $modulo, string $cargoId, bool $acessoTotal): array
+    {
+        $recebidas = $this->campoModuloModel
+            ->select('campo_modulo.id, campo_modulo.nome, campo_modulo.modulo_id')
+            ->join('modulo', 'modulo.id = campo_modulo.modulo_id')
+            ->where('campo_modulo.modulo_vinculado_id', $modulo['id'])
+            ->orderBy('modulo.nome', 'ASC')
+            ->orderBy('campo_modulo.ordem', 'ASC')
+            ->findAll();
+
+        $alvos = [];
+        foreach ($modulo['campos'] as $campo) {
+            if ($campo['tipo'] === 'vinculo' && ! empty($campo['modulo_vinculado_id'])) {
+                $alvos[] = $campo['modulo_vinculado_id'];
+            }
+        }
+
+        $envolvidos = array_values(array_unique([...$alvos, ...array_column($recebidas, 'modulo_id')]));
+        if ($envolvidos === []) {
+            $modulo['ligacoes_recebidas'] = [];
+
+            return $modulo;
+        }
+
+        $visiveis = array_flip($this->autorizacaoModuloService->filtrarModulosComNivel($envolvidos, $acessoTotal, $cargoId, 'visualizar'));
+        $modulos  = array_column($this->moduloModel->select('id, nome, icone')->whereIn('id', $envolvidos)->findAll(), null, 'id');
+
+        $camposPorModulo = [];
+        if ($visiveis !== []) {
+            $linhas = $this->campoModuloModel
+                ->select('id, modulo_id, nome, tipo, opcoes, modulo_vinculado_id')
+                ->whereIn('modulo_id', array_keys($visiveis))
+                ->orderBy('ordem', 'ASC')
+                ->findAll();
+            foreach ($linhas as $linha) {
+                $camposPorModulo[$linha['modulo_id']][] = $linha;
+            }
+        }
+
+        $resumo = static fn (string $id): array => [
+            'id'     => $id,
+            'nome'   => $modulos[$id]['nome'] ?? '',
+            'icone'  => $modulos[$id]['icone'] ?? null,
+            'acesso' => isset($visiveis[$id]),
+            'campos' => $camposPorModulo[$id] ?? [],
+        ];
+
+        foreach ($modulo['campos'] as &$campo) {
+            if ($campo['tipo'] === 'vinculo' && ! empty($campo['modulo_vinculado_id'])) {
+                $campo['modulo_vinculado'] = $resumo($campo['modulo_vinculado_id']);
+            }
+        }
+        unset($campo);
+
+        $modulo['ligacoes_recebidas'] = [];
+        foreach ($recebidas as $recebida) {
+            if (isset($visiveis[$recebida['modulo_id']])) {
+                $modulo['ligacoes_recebidas'][] = [
+                    'campo_id'   => $recebida['id'],
+                    'campo_nome' => $recebida['nome'],
+                    'modulo'     => $resumo($recebida['modulo_id']),
+                ];
+            }
         }
 
         return $modulo;
@@ -200,17 +303,11 @@ class ModuloService
         $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
 
-        $this->validarCampo($campo);
+        $this->validarCampo($campo, $empresaId, $cargoId, $acessoTotal);
 
         $proximaOrdem = $this->campoModuloModel->where('modulo_id', $moduloId)->countAllResults();
 
-        $this->campoModuloModel->insert([
-            'modulo_id' => $moduloId,
-            'nome'      => $campo['nome'],
-            'tipo'      => $campo['tipo'],
-            'opcoes'    => $campo['opcoes'] ?? null,
-            'ordem'     => $proximaOrdem,
-        ]);
+        $this->campoModuloModel->insert($this->colunaParaGravar($moduloId, $campo, $proximaOrdem));
 
         AtividadeService::registrar('coluna_criada', "Adicionou a coluna “{$campo['nome']}”", $moduloId);
 
@@ -237,7 +334,7 @@ class ModuloService
     public function atualizarCampo(string $campoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $dados): array
     {
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
-        $this->buscarCampoValidado($campoId, $moduloId, $empresaId);
+        $campo = $this->buscarCampoValidado($campoId, $moduloId, $empresaId);
 
         $camposParaAtualizar = [];
 
@@ -245,7 +342,8 @@ class ModuloService
             $camposParaAtualizar['nome'] = $dados['nome'];
         }
 
-        if (array_key_exists('opcoes', $dados)) {
+        // Ligação: destino e "um ou vários" ficam fixos depois de criada (os itens já guardam nesse formato).
+        if (array_key_exists('opcoes', $dados) && $campo['tipo'] !== 'vinculo') {
             $camposParaAtualizar['opcoes'] = $dados['opcoes'];
         }
 
@@ -315,6 +413,19 @@ class ModuloService
     {
         $modulo = $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
+
+        // Ligações de outras tabelas para esta (as dela mesma somem junto).
+        $dependentes = $this->campoModuloModel
+            ->select('modulo.nome')
+            ->join('modulo', 'modulo.id = campo_modulo.modulo_id')
+            ->where('campo_modulo.modulo_vinculado_id', $moduloId)
+            ->where('campo_modulo.modulo_id !=', $moduloId)
+            ->findAll();
+
+        if ($dependentes !== []) {
+            $nomes = implode('”, “', array_unique(array_column($dependentes, 'nome')));
+            throw new \DomainException("Não é possível excluir: a tabela “{$nomes}” tem uma coluna ligada a esta. Exclua essa coluna antes.");
+        }
 
         $this->moduloModel->delete($moduloId);
         AtividadeService::registrar('tabela_excluida', "Excluiu a tabela “{$modulo['nome']}”", $moduloId, $modulo['nome']);

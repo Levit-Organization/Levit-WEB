@@ -1,0 +1,198 @@
+@startuml fluxo-5-persistencia
+' Fluxo 5 — Convite da equipe, Financeiro e Relatórios.
+' Recorte do diagrama de persistência (docs/diagrama-persistencia.puml).
+' Tabelas em cinza já foram apresentadas nos fluxos anteriores e aparecem
+' só com as colunas usadas aqui.
+
+!pragma layout smetana
+hide circle
+hide empty methods
+skinparam shadowing false
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam packageStyle rectangle
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+  ArrowColor #555555
+  HeaderBackgroundColor #E8EEF7
+}
+skinparam class<<existente>> {
+  BackgroundColor #F2F2F2
+  BorderColor #999999
+  FontColor #555555
+  HeaderBackgroundColor #E0E0E0
+}
+skinparam package {
+  BorderColor #9AA5B1
+  FontStyle bold
+}
+
+title Levit — Fluxo 5: Convite, Financeiro e Relatórios (persistência)
+
+package "Tabelas dos fluxos anteriores" {
+  entity empresa <<existente>> {
+    * id : uuid <<PK>>
+    --
+    * nome : varchar(150)
+  }
+  entity usuario <<existente>> {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * cargo_id : uuid <<FK>>
+    * nome : varchar(150)
+    * email : varchar(150) <<UK>>
+    * senha_hash : varchar(255)
+  }
+  entity cargo <<existente>> {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * nome : varchar(50)
+    * acesso_total : boolean
+  }
+  entity modulo <<existente>> {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * nome : varchar(100)
+    * tipo : varchar(20) = 'financeiro'
+  }
+  entity registro <<existente>> {
+    * id : uuid <<PK>>
+    --
+    * modulo_id : uuid <<FK>>
+    dados : jsonb (campos extras)
+  }
+  entity notificacao <<existente>> {
+    * id : uuid <<PK>>
+    --
+    * usuario_id : uuid <<FK>>
+    * tipo : varchar(30) = 'convite_aceito'
+    * titulo : varchar(200)
+  }
+}
+
+package "Convite da equipe" {
+  entity convite {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * cargo_id : uuid <<FK>>
+    convidado_por : uuid <<FK>>
+    * email_destinatario : varchar(150)
+    * token_hash : varchar(64) <<UK>>
+    mensagem : text
+    * expira_em : timestamp
+    aceito_em : timestamp
+    * criado_em : timestamp
+  }
+}
+
+package "Financeiro" {
+  entity categoria_financeira {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * nome : varchar(50)
+    * criado_em : timestamp
+    ..
+    UK (empresa_id, nome)
+  }
+  entity lancamento_financeiro {
+    * id : uuid <<PK>>
+    --
+    * modulo_id : uuid <<FK>>
+    * registro_id : uuid <<FK>> <<UK>>
+    categoria_id : uuid <<FK>>
+    * descricao : varchar(255)
+    * data_lancamento : date
+    * tipo : varchar(10)
+    * valor : decimal(12,2)
+    * conciliado : boolean = false
+    * criado_em : timestamp
+    atualizado_em : timestamp
+  }
+}
+
+package "Relatórios" {
+  entity relatorio_agendado {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * nome : varchar(100)
+    * frequencia : varchar(10)
+    * dia : smallint
+    * destinatarios : jsonb = '[]'
+    secoes : jsonb
+    * ativo : boolean = true
+    criado_por : uuid
+    ultimo_envio_em : timestamp
+    * criado_em : timestamp
+    atualizado_em : timestamp
+  }
+  entity relatorio_envio {
+    * id : uuid <<PK>>
+    --
+    * relatorio_id : uuid <<FK>>
+    * periodo_inicio : timestamp
+    * periodo_fim : timestamp
+    * total_atividades : integer = 0
+    * status : varchar(10)
+    erro : text
+    * enviado_em : timestamp
+  }
+  entity atividade {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    usuario_id : uuid
+    usuario_nome : varchar(100)
+    * acao : varchar(40)
+    modulo_id : uuid
+    modulo_nome : varchar(100)
+    * descricao : text
+    * criado_em : timestamp
+  }
+  entity rotina_execucao {
+    * rotina : varchar(60) <<PK>>
+    * referencia : varchar(60) <<PK>>
+    --
+    * executada_em : timestamp
+  }
+}
+
+' Convite
+empresa ||--o{ convite : emite
+cargo ||--o{ convite : cargo oferecido
+usuario |o--o{ convite : convidou
+convite ..> usuario : ao aceitar, cria
+usuario ||--o{ notificacao : recebe
+
+' Financeiro
+empresa ||--o{ categoria_financeira : define
+modulo ||--o{ lancamento_financeiro : tabela financeira
+registro ||--o| lancamento_financeiro : espelha 1:1
+categoria_financeira |o--o{ lancamento_financeiro : classifica
+
+' Relatórios
+empresa ||--o{ relatorio_agendado : agenda
+usuario |o..o{ relatorio_agendado : cria
+relatorio_agendado ||--o{ relatorio_envio : gera
+empresa ||--o{ atividade : registra
+usuario |o..o{ atividade
+modulo |o..o{ atividade
+
+legend right
+  **Legenda**
+  ● coluna obrigatória (NOT NULL)
+  <<PK>> chave primária · <<FK>> chave estrangeira · <<UK>> valor único
+  linha contínua: chave estrangeira no banco
+  linha tracejada: referência lógica, sem FK
+  seta tracejada: o aceite do convite cria um usuário
+  em cinza: tabelas apresentadas nos fluxos anteriores
+endlegend
+
+@enduml

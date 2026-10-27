@@ -1,0 +1,417 @@
+@startuml diagrama-persistencia
+' Diagrama de persistência do Levit (PostgreSQL).
+' Reconstruído a partir de api-backend/app/Database/Migrations/
+' (estado após 2026-10-14-120000_AddCurriculoToCandidatoTable).
+'
+' Legenda:
+'   * coluna NOT NULL          <<PK>> chave primária
+'   <<FK>> chave estrangeira   <<UK>> valor único
+'   linha contínua  = FK no banco
+'   linha tracejada = referência lógica, sem FK
+
+!pragma layout smetana
+hide circle
+hide empty methods
+skinparam shadowing false
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam packageStyle rectangle
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+  ArrowColor #555555
+  HeaderBackgroundColor #E8EEF7
+}
+skinparam package {
+  BorderColor #9AA5B1
+  FontStyle bold
+}
+
+title Levit — Diagrama de persistência (PostgreSQL)
+
+package "Empresa e controle de acesso" {
+  entity empresa {
+    * id : uuid <<PK>>
+    --
+    * nome : varchar(150)
+    * cnpj_cpf : varchar(18) <<UK>>
+    setor_atuacao : varchar(50)
+    email_corporativo : varchar(150)
+    logo : varchar(255)
+    administrador_principal_id : uuid <<FK>>
+    * criado_em : timestamp
+    atualizado_em : timestamp
+  }
+
+  entity usuario {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * cargo_id : uuid <<FK>>
+    * nome : varchar(150)
+    * email : varchar(150) <<UK>>
+    * senha_hash : varchar(255)
+    reset_hash : varchar(255)
+    reset_expires_at : timestamp
+    senha_alterada_em : timestamp
+    * criado_em : timestamp
+    atualizado_em : timestamp
+  }
+
+  entity cargo {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * nome : varchar(50)
+    * acesso_total : boolean = false
+    * criado_em : timestamp
+    ..
+    UK (empresa_id, nome)
+  }
+
+  entity permissao {
+    * id : uuid <<PK>>
+    --
+    * codigo : varchar(50) <<UK>>
+    * descricao : varchar(150)
+  }
+
+  entity cargo_permissao {
+    * id : uuid <<PK>>
+    --
+    * cargo_id : uuid <<FK>>
+    * permissao_id : uuid <<FK>>
+    ..
+    UK (cargo_id, permissao_id)
+  }
+
+  entity cargo_modulo_permissao {
+    * id : uuid <<PK>>
+    --
+    * cargo_id : uuid <<FK>>
+    * modulo_id : uuid <<FK>>
+    * nivel : varchar(20)
+    * criado_em : timestamp
+    ..
+    UK (cargo_id, modulo_id)
+  }
+
+  entity convite {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * cargo_id : uuid <<FK>>
+    convidado_por : uuid <<FK>>
+    * email_destinatario : varchar(150)
+    * token_hash : varchar(64) <<UK>>
+    mensagem : text
+    * expira_em : timestamp
+    aceito_em : timestamp
+    * criado_em : timestamp
+  }
+
+  entity token_revogado {
+    * id : uuid <<PK>>
+    --
+    * jti : varchar(36) <<UK>>
+    * usuario_id : uuid <<FK>>
+    * expira_em : timestamp
+    * criado_em : timestamp
+  }
+}
+
+package "Tabelas dinâmicas" {
+  entity modulo {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * nome : varchar(100)
+    icone : varchar(50)
+    * tipo : varchar(20) = 'dados'
+    criado_por : uuid <<FK>>
+    * criado_em : timestamp
+    atualizado_em : timestamp
+  }
+
+  entity campo_modulo {
+    * id : uuid <<PK>>
+    --
+    * modulo_id : uuid <<FK>>
+    * nome : varchar(100)
+    * tipo : varchar(20)
+    opcoes : jsonb
+    * ordem : integer = 0
+    modulo_vinculado_id : uuid <<FK>>
+    * criado_em : timestamp
+    atualizado_em : timestamp
+  }
+
+  entity registro {
+    * id : uuid <<PK>>
+    --
+    * modulo_id : uuid <<FK>>
+    dados : jsonb
+    recorrencia_origem_id : uuid
+    criado_por : uuid <<FK>>
+    atualizado_por : uuid <<FK>>
+    * criado_em : timestamp
+    atualizado_em : timestamp
+  }
+
+  entity arquivo {
+    * id : uuid <<PK>>
+    --
+    * registro_id : uuid <<FK>> <<UK>>
+    * nome_original : varchar(255)
+    * chave_armazenamento : varchar(255) <<UK>>
+    * tipo_mime : varchar(100)
+    * tamanho_bytes : bigint
+    * criado_em : timestamp
+  }
+}
+
+package "Recrutamento" {
+  entity fase_recrutamento {
+    * id : uuid <<PK>>
+    --
+    * modulo_id : uuid <<FK>>
+    * nome : varchar(100)
+    * ordem : integer = 0
+    * criado_em : timestamp
+  }
+
+  entity candidato {
+    * id : uuid <<PK>>
+    --
+    * modulo_id : uuid <<FK>>
+    * fase_atual_id : uuid <<FK>>
+    * nome : varchar(150)
+    * email : varchar(150)
+    telefone : varchar(20)
+    cargo_desejado : varchar(100)
+    mensagem : text
+    curriculo_chave : varchar(255)
+    curriculo_nome : varchar(255)
+    curriculo_mime : varchar(100)
+    curriculo_tamanho : bigint
+    * criado_em : timestamp
+    ..
+    UK (modulo_id, email)
+  }
+
+  entity historico_fase {
+    * id : uuid <<PK>>
+    --
+    * candidato_id : uuid <<FK>>
+    fase_anterior_id : uuid <<FK>>
+    fase_nova_id : uuid <<FK>>
+    alterado_por : uuid <<FK>>
+    * criado_em : timestamp
+  }
+}
+
+package "Automações" {
+  entity automacao {
+    * id : uuid <<PK>>
+    --
+    * modulo_id : uuid <<FK>>
+    * nome : varchar(100)
+    * gatilho : varchar(20)
+    gatilhos : text (JSON)
+    condicoes : text (JSON)
+    campo_condicao_id : uuid <<FK>>
+    condicao_operador : varchar(20)
+    condicao_valor : varchar(255)
+    condicao_valor_de : varchar(255)
+    * ativo : boolean = true
+    pausada_por_falhas_em : timestamp
+    criado_por : uuid <<FK>>
+    * criado_em : timestamp
+    atualizado_em : timestamp
+  }
+
+  entity automacao_acao {
+    * id : uuid <<PK>>
+    --
+    * automacao_id : uuid <<FK>>
+    * tipo : varchar(20)
+    configuracao : jsonb
+    * ordem : integer = 0
+  }
+
+  entity automacao_log {
+    * id : uuid <<PK>>
+    --
+    * automacao_id : uuid <<FK>>
+    registro_id : uuid <<FK>>
+    * status : varchar(20)
+    gatilho : varchar(20)
+    * tentativa : integer = 1
+    duracao_ms : integer
+    detalhes : text
+    passos : text (JSON)
+    dados : text (JSON)
+    * executado_em : timestamp
+  }
+}
+
+package "Financeiro" {
+  entity categoria_financeira {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * nome : varchar(50)
+    * criado_em : timestamp
+    ..
+    UK (empresa_id, nome)
+  }
+
+  entity lancamento_financeiro {
+    * id : uuid <<PK>>
+    --
+    * modulo_id : uuid <<FK>>
+    * registro_id : uuid <<FK>> <<UK>>
+    categoria_id : uuid <<FK>>
+    * descricao : varchar(255)
+    * data_lancamento : date
+    * tipo : varchar(10)
+    * valor : decimal(12,2)
+    * conciliado : boolean = false
+    * criado_em : timestamp
+    atualizado_em : timestamp
+  }
+}
+
+package "Notificações, atividade e relatórios" {
+  entity notificacao {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * usuario_id : uuid <<FK>>
+    * tipo : varchar(30)
+    * titulo : varchar(200)
+    mensagem : text
+    link : varchar(255)
+    agrupador : varchar(120)
+    * contador : integer = 1
+    lida_em : timestamp
+    * criado_em : timestamp
+  }
+
+  entity atividade {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    usuario_id : uuid
+    usuario_nome : varchar(100)
+    * acao : varchar(40)
+    modulo_id : uuid
+    modulo_nome : varchar(100)
+    * descricao : text
+    * criado_em : timestamp
+  }
+
+  entity relatorio_agendado {
+    * id : uuid <<PK>>
+    --
+    * empresa_id : uuid <<FK>>
+    * nome : varchar(100)
+    * frequencia : varchar(10)
+    * dia : smallint
+    * destinatarios : jsonb = '[]'
+    secoes : jsonb
+    * ativo : boolean = true
+    criado_por : uuid
+    ultimo_envio_em : timestamp
+    * criado_em : timestamp
+    atualizado_em : timestamp
+  }
+
+  entity relatorio_envio {
+    * id : uuid <<PK>>
+    --
+    * relatorio_id : uuid <<FK>>
+    * periodo_inicio : timestamp
+    * periodo_fim : timestamp
+    * total_atividades : integer = 0
+    * status : varchar(10)
+    erro : text
+    * enviado_em : timestamp
+  }
+
+  entity rotina_execucao {
+    * rotina : varchar(60) <<PK>>
+    * referencia : varchar(60) <<PK>>
+    --
+    * executada_em : timestamp
+  }
+}
+
+' Empresa e controle de acesso
+empresa ||--o{ usuario
+usuario |o--o| empresa : administrador principal
+empresa ||--o{ cargo
+cargo ||--o{ usuario
+cargo ||--o{ cargo_permissao
+permissao ||--o{ cargo_permissao
+cargo ||--o{ cargo_modulo_permissao
+modulo ||--o{ cargo_modulo_permissao
+empresa ||--o{ convite
+cargo ||--o{ convite
+usuario |o--o{ convite : convida
+usuario ||--o{ token_revogado
+
+' Tabelas dinâmicas
+empresa ||--o{ modulo
+usuario |o--o{ modulo : cria
+modulo ||--o{ campo_modulo
+modulo |o--o{ campo_modulo : ligada por
+modulo ||--o{ registro
+registro }o..o{ registro : vinculo
+usuario |o--o{ registro : cria / atualiza
+registro |o..o{ registro : recorrência
+registro ||--o| arquivo
+
+' Recrutamento
+modulo ||--o{ fase_recrutamento
+modulo ||--o{ candidato
+fase_recrutamento ||--o{ candidato : fase atual
+candidato ||--o{ historico_fase
+fase_recrutamento |o--o{ historico_fase : de / para
+usuario |o--o{ historico_fase : moveu
+
+' Automações
+modulo ||--o{ automacao
+campo_modulo |o--o{ automacao
+usuario |o--o{ automacao : cria
+automacao ||--o{ automacao_acao
+automacao ||--o{ automacao_log
+registro |o--o{ automacao_log
+
+' Financeiro
+empresa ||--o{ categoria_financeira
+modulo ||--o{ lancamento_financeiro
+registro ||--o| lancamento_financeiro
+categoria_financeira |o--o{ lancamento_financeiro
+
+' Notificações, atividade e relatórios
+empresa ||--o{ notificacao
+usuario ||--o{ notificacao
+empresa ||--o{ atividade
+usuario |o..o{ atividade
+modulo |o..o{ atividade
+empresa ||--o{ relatorio_agendado
+usuario |o..o{ relatorio_agendado
+relatorio_agendado ||--o{ relatorio_envio
+
+legend right
+  **Legenda**
+  ● coluna obrigatória (NOT NULL)
+  <<PK>> chave primária · <<FK>> chave estrangeira · <<UK>> valor único
+  linha contínua: chave estrangeira no banco
+  linha tracejada: referência lógica, sem FK
+  Chaves ""uuid"" geradas por uuidv7()
+endlegend
+
+@enduml

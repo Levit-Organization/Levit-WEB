@@ -12,7 +12,6 @@ final class CamposCandidato
         'nome'           => 'Nome',
         'email'          => 'E-mail',
         'telefone'       => 'Telefone',
-        'cargo_desejado' => 'Cargo desejado',
         'mensagem'       => 'Mensagem',
         'etapa'          => 'Etapa',
         'etapa_anterior' => 'Etapa anterior',
@@ -25,14 +24,13 @@ final class CamposCandidato
             'nome'           => $candidato['nome'] ?? '',
             'email'          => $candidato['email'] ?? '',
             'telefone'       => $candidato['telefone'] ?? '',
-            'cargo_desejado' => $candidato['cargo_desejado'] ?? '',
             'mensagem'       => $candidato['mensagem'] ?? '',
             'etapa'          => $etapa ?? '',
             'etapa_anterior' => $etapaAnterior ?? '',
         ];
     }
 
-    /** Nome (minúsculo) e chave → chave, para resolver {{Nome}}, {{Cargo desejado}} etc. */
+    /** Nome (minúsculo) e chave → chave, para resolver {{Nome}}, {{E-mail}} etc. */
     public static function mapaDeVariaveis(): array
     {
         $mapa = [];

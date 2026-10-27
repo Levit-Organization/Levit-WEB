@@ -15,20 +15,64 @@ class RegistroController extends BaseApiController
         $this->registroService = new RegistroService();
     }
 
+    /** `busca`: texto livre. `filtros`: pesquisa avançada em JSON ({ logica, regras }). */
     public function listar($moduloId)
     {
-        $user  = service('authenticatedUser');
-        $busca = $this->request->getGet('busca');
+        $user    = service('authenticatedUser');
+        $busca   = $this->request->getGet('busca');
+        $filtros = null;
+
+        $filtrosJson = $this->request->getGet('filtros');
+        if (is_string($filtrosJson) && $filtrosJson !== '') {
+            $filtros = json_decode($filtrosJson, true);
+            if (! is_array($filtros)) {
+                return $this->respondError('Filtro inválido. Refaça o filtro.', 422);
+            }
+        }
 
         try {
-            $registros = $this->registroService->listarRegistros($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $busca);
+            $registros = $this->registroService->listarRegistros($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $busca, $filtros);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 422);
+        }
+
+        return $this->respondSuccess($registros, 200);
+    }
+
+    /** Itens de outras tabelas que apontam para este (o outro lado das ligações). */
+    public function ligados($moduloId, $registroId)
+    {
+        $user = service('authenticatedUser');
+
+        try {
+            $grupos = $this->registroService->itensQueApontam($registroId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
         } catch (AcessoNegadoException $e) {
             return $this->respondError($e->getMessage(), 403);
         }
 
-        return $this->respondSuccess($registros, 200);
+        return $this->respondSuccess($grupos, 200);
+    }
+
+    /** Nome de cada item ({ id, titulo }), para escolher e mostrar itens ligados. */
+    public function titulos($moduloId)
+    {
+        $user = service('authenticatedUser');
+
+        try {
+            $titulos = $this->registroService->listarTitulos($moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
+        }
+
+        return $this->respondSuccess($titulos, 200);
     }
 
     public function criar($moduloId)
@@ -101,6 +145,8 @@ class RegistroController extends BaseApiController
             return $this->respondError($e->getMessage(), 404);
         } catch (AcessoNegadoException $e) {
             return $this->respondError($e->getMessage(), 403);
+        } catch (\RuntimeException $e) {
+            return $this->respondFalha($e);
         }
 
         return $this->respondSuccess(null, 200);

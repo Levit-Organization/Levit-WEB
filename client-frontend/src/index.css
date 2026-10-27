@@ -271,6 +271,14 @@
   }
 }
 
+/* Rótulo de cabeçalho de tabela: um estilo só em todas as tabelas do app. */
+@utility th-label {
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: 600;
+  color: var(--color-light-text);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

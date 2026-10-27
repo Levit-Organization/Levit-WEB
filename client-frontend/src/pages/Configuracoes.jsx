@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Layout from '../components/Layout';
-import { Button, Input, Textarea, Select, Alert, Card, Skeleton, EmptyState, ErrorState } from '../components/ui';
+import { Button, Input, Textarea, Select, Alert, Card, Skeleton, EmptyState, ErrorState, PageHeader, Tabs } from '../components/ui';
 import { useAuth } from '../hooks/useAuth';
 import { moduloService } from '../services/moduloService';
 import { useModulos, queryKeys } from '../hooks/queries';
@@ -16,8 +16,8 @@ const SEM_DADOS = [];
 
 const TABS = [
   { id: 'perfil', label: 'Perfil' },
-  { id: 'empresa', label: 'Empresa e Tabelas' },
-  { id: 'avancado', label: 'Avançado e Dados' },
+  { id: 'empresa', label: 'Empresa e tabelas' },
+  { id: 'avancado', label: 'Avançado e dados' },
 ];
 
 function ImageUploader({ value, onChange, shape = 'circle', size = 96, fallback, onError }) {
@@ -129,7 +129,6 @@ function PerfilTab() {
           />
           <div className="min-w-0">
             <h2 className="text-base font-semibold">Informações do perfil</h2>
-            <p className="text-xs text-light-text mt-0.5">Como seu nome, foto e contato aparecem para a equipe.</p>
             {foto && (
               <button type="button" onClick={handleRemoverFoto} className="text-xs text-danger hover:underline mt-2 font-medium">
                 Remover foto
@@ -154,10 +153,7 @@ function PerfilTab() {
       </Card>
 
       <Card as="form" onSubmit={salvarSenha} className="flex flex-col gap-5">
-        <div>
-          <h2 className="text-base font-semibold">Segurança</h2>
-          <p className="text-xs text-light-text mt-0.5">Atualize sua senha de acesso.</p>
-        </div>
+        <h2 className="text-base font-semibold">Senha</h2>
 
         <Input label="Senha atual" name="senha_atual" autoComplete="current-password" type="password" value={senhas.atual} onChange={(e) => handleSenhaChange('atual', e.target.value)} />
         <Input label="Nova senha" name="nova_senha" autoComplete="new-password" type="password" hint="Mínimo de 8 caracteres." value={senhas.nova} onChange={(e) => handleSenhaChange('nova', e.target.value)} />
@@ -167,7 +163,7 @@ function PerfilTab() {
         {avisoSenha && <Alert variant="warning">{avisoSenha}</Alert>}
 
         <div className="flex justify-end">
-          <Button type="submit">Atualizar senha</Button>
+          <Button type="submit" variant="secondary">Atualizar senha</Button>
         </div>
       </Card>
     </div>
@@ -234,7 +230,6 @@ function EmpresaModulosTab() {
           />
           <div className="min-w-0">
             <h2 className="text-base font-semibold">Empresa</h2>
-            <p className="text-xs text-light-text mt-0.5">Identidade visual usada por toda a equipe.</p>
             {logo && (
               <button type="button" onClick={handleRemoverLogo} className="text-xs text-danger hover:underline mt-2 font-medium">
                 Remover logo
@@ -277,9 +272,9 @@ function EmpresaModulosTab() {
             className="py-6"
           />
         ) : (
-          <div className="flex flex-col gap-3">
+          <ul className="flex flex-col divide-y divide-divider -mb-3">
             {modulos.map((modulo) => (
-              <div key={modulo.id} className="border border-divider rounded-xl p-3.5">
+              <li key={modulo.id} className="py-3">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-lg bg-primary-100 flex items-center justify-center shrink-0">
                     <span className="material-icons text-primary text-[18px]" aria-hidden="true">{modulo.icone || 'extension'}</span>
@@ -296,7 +291,7 @@ function EmpresaModulosTab() {
                 </div>
 
                 {pickerAbertoId === modulo.id && (
-                  <div className="mt-3 grid grid-cols-8 gap-2 p-3 border border-divider rounded-lg bg-background">
+                  <div className="mt-3 grid grid-cols-8 gap-1.5">
                     {MODULO_ICON_OPTIONS.map((icon) => (
                       <button
                         key={icon}
@@ -308,7 +303,7 @@ function EmpresaModulosTab() {
                         className={`aspect-square rounded-lg flex items-center justify-center transition-colors ${
                           modulo.icone === icon
                             ? 'bg-primary text-white shadow-sm'
-                            : 'bg-surface border border-divider text-light-text hover:border-primary hover:text-primary'
+                            : 'text-light-text hover:bg-primary-100 hover:text-primary-700'
                         }`}
                       >
                         <span className="material-icons text-[18px]" aria-hidden="true">{icon}</span>
@@ -316,9 +311,9 @@ function EmpresaModulosTab() {
                     ))}
                   </div>
                 )}
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </Card>
     </div>
@@ -364,36 +359,25 @@ function AvancadoDadosTab() {
   return (
     <div className="flex flex-col gap-6 w-full">
       <Card>
-        <h2 className="text-base font-semibold mb-0.5">Exportar dados</h2>
-        <p className="text-xs text-light-text mb-4">Baixe uma cópia dos dados da sua empresa.</p>
+        <h2 className="text-base font-semibold mb-1">Exportar dados</h2>
 
-        {erro && <Alert variant="error" className="mb-4">{erro}</Alert>}
+        {erro && <Alert variant="error" className="my-3">{erro}</Alert>}
 
-        <div className="flex flex-col gap-5">
-          <div className="flex items-center justify-between gap-4 p-4 border border-divider rounded-xl">
-            <div className="flex items-center gap-3.5 min-w-0">
-              <div className="w-11 h-11 rounded-xl bg-warning-bg flex items-center justify-center shrink-0">
-                <span className="material-icons text-warning text-[22px]" aria-hidden="true">data_object</span>
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-ink">Backup completo (JSON)</p>
-                <p className="text-xs text-light-text mt-0.5">Todas as tabelas, itens e configurações da empresa.</p>
-              </div>
+        <div className="flex flex-col divide-y divide-divider -mb-1">
+          <div className="flex items-center justify-between gap-4 py-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-ink">Backup completo (JSON)</p>
+              <p className="text-xs text-light-text mt-0.5">Todas as tabelas, itens e configurações da empresa.</p>
             </div>
             <Button variant="secondary" size="sm" icon="download" onClick={handleExportarJson} loading={exportandoJson}>
               {exportandoJson ? 'Exportando...' : 'Exportar JSON'}
             </Button>
           </div>
 
-          <div className="p-4 border border-divider rounded-xl">
-            <div className="flex items-center gap-3.5 mb-3">
-              <div className="w-11 h-11 rounded-xl bg-success-bg flex items-center justify-center shrink-0">
-                <span className="material-icons text-success text-[22px]" aria-hidden="true">table_view</span>
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-ink">Itens de uma tabela (CSV)</p>
-                <p className="text-xs text-light-text mt-0.5">Compatível com Excel e Google Sheets.</p>
-              </div>
+          <div className="pt-4">
+            <div className="mb-3">
+              <p className="text-sm font-medium text-ink">Itens de uma tabela (CSV)</p>
+              <p className="text-xs text-light-text mt-0.5">Abre no Excel e no Google Sheets.</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex-1">
@@ -428,38 +412,13 @@ export default function Configuracoes() {
 
   return (
     <Layout>
-      <div className="max-w-2xl mx-auto w-full flex flex-col">
-        <header className="mb-6 shrink-0 text-center">
-          <h1 className="text-2xl font-bold tracking-tight">Configurações</h1>
-          <p className="text-sm text-light-text mt-0.5">Gerencie seu perfil, a empresa e os dados da conta</p>
-        </header>
+      <PageHeader title="Configurações" />
+      <Tabs abas={TABS} ativa={tab} onChange={setTab} label="Seções de configuração" />
 
-        <div role="tablist" aria-label="Seções de configuração" className="border-b border-divider flex justify-center gap-4 sm:gap-8 mb-6 shrink-0 overflow-x-auto">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              id={`aba-${t.id}`}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              aria-controls={`painel-${t.id}`}
-              onClick={() => setTab(t.id)}
-              className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                tab === t.id
-                  ? 'text-primary border-primary'
-                  : 'text-light-text border-transparent hover:text-ink-soft'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div id={`painel-${tab}`} role="tabpanel" aria-labelledby={`aba-${tab}`}>
-          {tab === 'perfil' && <PerfilTab />}
-          {tab === 'empresa' && <EmpresaModulosTab />}
-          {tab === 'avancado' && <AvancadoDadosTab />}
-        </div>
+      <div id={`painel-${tab}`} role="tabpanel" aria-labelledby={`aba-${tab}`} className="max-w-2xl w-full">
+        {tab === 'perfil' && <PerfilTab />}
+        {tab === 'empresa' && <EmpresaModulosTab />}
+        {tab === 'avancado' && <AvancadoDadosTab />}
       </div>
     </Layout>
   );

@@ -81,6 +81,14 @@ final class Condicoes
     private static function regra(array $regra, array $dados, ?array $anteriores): bool
     {
         $campo = $regra['campo'] ?? '';
+
+        // Coluna com vários valores (ligação a vários itens): "igual" = está entre eles.
+        if (is_array($dados[$campo] ?? null) && in_array($regra['operador'] ?? null, ['igual', 'diferente'], true)) {
+            $tem = in_array((string) ($regra['valor'] ?? ''), array_map('strval', $dados[$campo]), true);
+
+            return $regra['operador'] === 'igual' ? $tem : ! $tem;
+        }
+
         $atual = self::texto($dados[$campo] ?? null);
         $alvo  = (string) ($regra['valor'] ?? '');
         $antes = $anteriores === null ? null : self::texto($anteriores[$campo] ?? null);

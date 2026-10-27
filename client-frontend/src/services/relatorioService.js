@@ -14,6 +14,24 @@ function salvarArquivo(blob, nome) {
   window.URL.revokeObjectURL(url);
 }
 
+/** Baixa um PDF da API. Erros vêm como blob: viram JSON para a mensagem da API aparecer na tela. */
+async function baixarPdfDaApi(url, params, nome) {
+  try {
+    const response = await api.get(url, { params, responseType: 'blob' });
+    salvarArquivo(new Blob([response.data], { type: 'application/pdf' }), nome);
+  } catch (erro) {
+    const blob = erro?.response?.data;
+    if (blob instanceof Blob) {
+      try {
+        erro.response.data = JSON.parse(await blob.text());
+      } catch {
+        // mantém o erro original
+      }
+    }
+    throw erro;
+  }
+}
+
 export const relatorioService = {
   listar: async () => dados(await api.get('/relatorios')),
   criar: async (relatorio) => dados(await api.post('/relatorios', relatorio)),
@@ -32,22 +50,10 @@ export const relatorioService = {
   agrupar: async (params, signal) => dados(await api.get('/relatorios/agrupar', { params, signal })),
 
   /** PDF de um período (datas AAAA-MM-DD, inclusivas). `secoes`: partes do PDF (vazio = padrão). */
-  baixarPdf: async ({ inicio, fim, titulo = 'Relatório de atividades', secoes }) => {
-    try {
-      const params = { inicio, fim, titulo, ...(secoes?.length ? { secoes: secoes.join(',') } : {}) };
-      const response = await api.get('/relatorios/pdf', { params, responseType: 'blob' });
-      salvarArquivo(new Blob([response.data], { type: 'application/pdf' }), `relatorio-${inicio}-a-${fim}.pdf`);
-    } catch (erro) {
-      // Erros vêm como blob: converte para a mensagem da API aparecer na tela.
-      const blob = erro?.response?.data;
-      if (blob instanceof Blob) {
-        try {
-          erro.response.data = JSON.parse(await blob.text());
-        } catch {
-          // mantém o erro original
-        }
-      }
-      throw erro;
-    }
-  },
+  baixarPdf: ({ inicio, fim, titulo = 'Relatório de atividades', secoes }) =>
+    baixarPdfDaApi('/relatorios/pdf', { inicio, fim, titulo, ...(secoes?.length ? { secoes: secoes.join(',') } : {}) }, `relatorio-${inicio}-a-${fim}.pdf`),
+
+  /** PDF do relatório montado: os mesmos parâmetros do agrupamento, mais um título opcional. */
+  baixarRelatorioMontado: (params, { titulo, nomeArquivo }) =>
+    baixarPdfDaApi('/relatorios/agrupar/pdf', { ...params, ...(titulo ? { titulo } : {}) }, nomeArquivo),
 };

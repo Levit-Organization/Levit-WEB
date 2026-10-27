@@ -82,7 +82,7 @@ final class AutomacaoExecutorTest extends CIUnitTestCase
         // Campos e módulo pré-carregados: os testes não precisam de banco.
         (new ReflectionProperty($executor, 'campos'))->setValue($executor, [
             self::MODULO => ['campo-nome' => 'Nome', 'campo-email' => 'Email', 'campo-tags' => 'Tags', 'campo-status' => 'Status'],
-            'mod-2'      => ['d-titulo' => 'Título', 'd-origem' => 'Origem'],
+            'mod-2'      => ['d-titulo' => 'Título', 'd-origem' => 'Origem', 'd-lead' => 'Lead'],
         ]);
         (new ReflectionProperty($executor, 'modulos'))->setValue($executor, [
             self::MODULO => ['id' => self::MODULO, 'empresa_id' => 'emp-1', 'tipo' => 'dados', 'nome' => 'Leads'],
@@ -373,6 +373,23 @@ final class AutomacaoExecutorTest extends CIUnitTestCase
         $this->assertSame(['criar', 'mod-2', ['d-titulo' => 'Ligar para ACME'], ['aut-1']], $registros->chamadas[0]);
     }
 
+    public function testCriarRegistroLigaONovoItemAoQueDisparou(): void
+    {
+        $acao      = [['tipo' => 'criar_registro', 'configuracao' => ['modulo_destino_id' => 'mod-2', 'mapeamento' => [], 'ligar_campo_id' => 'd-lead']]];
+        $registros = $this->registrosFalsos();
+        $this->executor([], null, $registros)->executar($this->automacao(), $acao, [], 'criacao', 0, ['registro_id' => 'reg-1', 'cadeia' => ['aut-1']]);
+
+        $this->assertSame(['criar', 'mod-2', ['d-lead' => 'reg-1'], ['aut-1']], $registros->chamadas[0]);
+
+        $previa = $this->executor()->simular($this->automacao(), $acao, [])['passos'][0]['previa'];
+        $this->assertSame(['Lead' => '(o item que disparou a automação)'], $previa['dados']);
+        $this->assertArrayNotHasKey('ligar_campo_id', $previa);
+
+        $semItem = $this->executor()->executar($this->automacao(), $acao, [], 'exclusao');
+        $this->assertSame('erro', $semItem['status']);
+        $this->assertFalse($semItem['retentavel']);
+    }
+
     public function testCriarRegistroEmOutraEmpresaOuVagaEhBloqueado(): void
     {
         foreach (['outra-emp', 'vaga-1'] as $destino) {
@@ -401,12 +418,12 @@ final class AutomacaoExecutorTest extends CIUnitTestCase
     public function testEmVagasAsVariaveisSaoOsCamposDoCandidato(): void
     {
         $texto = $this->executor()->substituirVariaveis(
-            '{{Nome}} foi de {{Etapa anterior}} para {{etapa}} ({{Cargo desejado}})',
+            '{{Nome}} foi de {{Etapa anterior}} para {{etapa}} ({{E-mail}})',
             'vaga-1',
-            ['nome' => 'Ana', 'etapa' => 'Entrevista', 'etapa_anterior' => 'Triagem', 'cargo_desejado' => 'Dev']
+            ['nome' => 'Ana', 'etapa' => 'Entrevista', 'etapa_anterior' => 'Triagem', 'email' => 'ana@exemplo.com']
         );
 
-        $this->assertSame('Ana foi de Triagem para Entrevista (Dev)', $texto);
+        $this->assertSame('Ana foi de Triagem para Entrevista (ana@exemplo.com)', $texto);
     }
 
     /** Tabela com coluna "Responsável", com a pessoa já carregada (sem banco). */

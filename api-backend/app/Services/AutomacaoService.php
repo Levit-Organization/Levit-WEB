@@ -317,11 +317,11 @@ class AutomacaoService
         }
 
         if ($tipo === 'criar_registro') {
-            $this->validarCriacao($config, $empresaId);
+            $this->validarCriacao($config, $empresaId, $moduloId, $gatilhos);
         }
     }
 
-    private function validarCriacao(array $config, string $empresaId): void
+    private function validarCriacao(array $config, string $empresaId, ?string $moduloId, array $gatilhos): void
     {
         $destinoId = $config['modulo_destino_id'] ?? '';
         $destino   = $destinoId !== '' ? $this->moduloModel->where('id', $destinoId)->where('empresa_id', $empresaId)->first() : null;
@@ -341,8 +341,20 @@ class AutomacaoService
             }
         }
 
+        // Ligar o novo item ao que disparou: uma coluna de ligação do destino que aponta para esta tabela.
+        $ligar = $config['ligar_campo_id'] ?? null;
+        if ($ligar !== null && $ligar !== '') {
+            $campo = $this->campoModuloModel->where('id', $ligar)->where('modulo_id', $destinoId)->first();
+            if (! $campo || $campo['tipo'] !== 'vinculo' || $campo['modulo_vinculado_id'] !== $moduloId) {
+                throw new \DomainException('A coluna escolhida para ligar não aponta para esta tabela.');
+            }
+            if (in_array('exclusao', $gatilhos, true)) {
+                throw new \DomainException('Ligar ao item que disparou não funciona com o gatilho "Exclusão": o item já não existe.');
+            }
+        }
+
         $mapeamento = array_filter((array) ($config['mapeamento'] ?? []), static fn ($v) => $v !== null && $v !== '');
-        if ($mapeamento === []) {
+        if ($mapeamento === [] && ($ligar === null || $ligar === '')) {
             throw new \DomainException('Preencha pelo menos uma coluna do novo item.');
         }
 

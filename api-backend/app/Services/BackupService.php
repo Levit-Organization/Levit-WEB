@@ -114,12 +114,23 @@ class BackupService
             $cabecalho[] = self::celulaSegura($campo['nome']);
         }
 
+        // Colunas de ligação saem com o nome dos itens ligados, não com o identificador.
+        $titulos = [];
+        foreach ($campos as $campo) {
+            if ($campo['tipo'] === 'vinculo' && ! empty($campo['modulo_vinculado_id'])) {
+                $titulos[$campo['id']] ??= (new RegistroService())->titulosDosItens($campo['modulo_vinculado_id']);
+            }
+        }
+
         $linhas = [];
         foreach ($registros as $registro) {
             $linha = [$registro['criado_em']];
             foreach ($campos as $campo) {
-                $valor    = $registro['dados'][$campo['id']] ?? '';
-                $linha[]  = self::celulaSegura(is_array($valor) ? json_encode($valor) : (string) $valor);
+                $valor = $registro['dados'][$campo['id']] ?? '';
+                if (isset($titulos[$campo['id']])) {
+                    $valor = implode(', ', array_map(static fn ($id) => $titulos[$campo['id']][$id] ?? '', (array) $valor));
+                }
+                $linha[] = self::celulaSegura(is_array($valor) ? json_encode($valor) : (string) $valor);
             }
             $linhas[] = $linha;
         }

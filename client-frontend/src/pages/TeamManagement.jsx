@@ -16,6 +16,7 @@ import {
   Skeleton,
   PageHeader,
   Pagination,
+  Tabs,
 } from '../components/ui';
 import { usePagination } from '../hooks/usePagination';
 import { useAuth } from '../hooks/useAuth';
@@ -96,14 +97,14 @@ function ConvitesPendentes({ convites, onReenviar, onCancelar }) {
                 )}
                 {onCancelar && (
                   <Button
-                    variant="secondary"
-                    size="icon"
+                    variant="ghost"
+                    size="icon-sm"
                     icon="close"
                     loading={ocupado === `cancelar-${convite.id}`}
                     onClick={() => agir(convite, 'cancelar')}
                     title="Cancelar convite"
                     aria-label={`Cancelar convite para ${convite.email}`}
-                    className="text-danger hover:bg-danger-bg hover:border-danger"
+                    className="hover:bg-danger-bg hover:text-danger"
                   />
                 )}
               </div>
@@ -354,7 +355,6 @@ export default function TeamManagement({
     <Layout>
       <div className="flex flex-col">
         <PageHeader
-          icon="groups"
           title="Equipe"
           subtitle="Quem trabalha aqui e o que cada cargo pode acessar"
           actions={
@@ -365,35 +365,7 @@ export default function TeamManagement({
         />
 
         <div>
-          <div role="tablist" aria-label="Seções da equipe" className="border-b border-divider flex gap-6 mb-6 overflow-x-auto">
-            {abas.map((aba) => (
-              <button
-                key={aba.id}
-                id={`aba-${aba.id}`}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === aba.id}
-                aria-controls={`painel-${aba.id}`}
-                onClick={() => setActiveTab(aba.id)}
-                className={`flex items-center gap-2 pb-3 -mb-px text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
-                  activeTab === aba.id
-                    ? 'text-primary border-primary'
-                    : 'text-light-text border-transparent hover:text-ink-soft'
-                }`}
-              >
-                {aba.label}
-                {aba.count > 0 && (
-                  <span
-                    className={`rounded-full px-1.5 py-0.5 text-2xs font-bold tabular ${
-                      activeTab === aba.id ? 'bg-primary-100 text-primary-700' : 'bg-background text-light-text'
-                    }`}
-                  >
-                    {aba.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+          <Tabs abas={abas} ativa={activeTab} onChange={setActiveTab} label="Seções da equipe" />
 
           {error && !loading ? (
             <Card padding="lg" className="py-12">
@@ -443,18 +415,18 @@ export default function TeamManagement({
                   </colgroup>
 
                   <thead>
-                    <tr className="h-10 bg-white border-b border-divider">
-                      <th className="px-4 text-left text-[11px] font-bold tracking-[0.03em] text-light-text uppercase">
-                        Nome / E-mail
+                    <tr className="h-10 bg-surface border-b border-divider">
+                      <th scope="col" className="px-4 th-label text-left">
+                        Pessoa
                       </th>
-                      <th className="px-4 text-left text-[11px] font-bold tracking-[0.03em] text-light-text uppercase">
-                        Cargo Atual
+                      <th scope="col" className="px-4 th-label text-left">
+                        Cargo
                       </th>
-                      <th className="px-4 text-left text-[11px] font-bold tracking-[0.03em] text-light-text uppercase">
+                      <th scope="col" className="px-4 th-label text-left">
                         Na equipe desde
                       </th>
-                      <th className="px-4 text-right text-[11px] font-bold tracking-[0.03em] text-light-text uppercase">
-                        Ações
+                      <th scope="col" className="px-4 th-label text-right">
+                        <span className="sr-only">Ações</span>
                       </th>
                     </tr>
                   </thead>
@@ -462,7 +434,7 @@ export default function TeamManagement({
                   <tbody>
                     {loading ? (
                       [1, 2, 3].map((linha) => (
-                        <tr key={linha} className="h-[56px] border-b last:border-b-0 border-divider">
+                        <tr key={linha} className="h-14 border-b last:border-b-0 border-divider">
                           <td className="px-4">
                             <div className="flex items-center gap-3">
                               <Skeleton className="w-9 h-9 rounded-full shrink-0" />
@@ -503,7 +475,7 @@ export default function TeamManagement({
                       paginacao.pageItems.map((member) => (
                         <tr
                           key={member.id}
-                          className="h-[56px] border-b last:border-b-0 border-divider hover:bg-background/60 transition-colors"
+                          className="h-14 border-b last:border-b-0 border-divider hover:bg-background/60 transition-colors"
                         >
                           <td className="px-4">
                             <div className="flex items-center gap-3 min-w-0">
@@ -532,27 +504,26 @@ export default function TeamManagement({
                           </td>
 
                           <td className="px-4">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex justify-end gap-1">
                               {onUpdateMember && (
                                 <Button
-                                  variant="secondary"
-                                  size="icon"
+                                  variant="ghost"
+                                  size="icon-sm"
                                   onClick={() => openInviteModal(member)}
                                   title="Editar colaborador"
                                   aria-label={`Editar ${member.nome || 'colaborador'}`}
                                   icon="edit"
-                                  className="hover:text-primary hover:border-primary"
                                 />
                               )}
 
                               <Button
-                                variant="secondary"
-                                size="icon"
+                                variant="ghost"
+                                size="icon-sm"
                                 onClick={() => handleDeleteMember(member)}
                                 title="Excluir colaborador"
                                 aria-label={`Excluir ${member.nome || 'colaborador'}`}
                                 icon="delete_outline"
-                                className="text-danger hover:bg-danger-bg hover:border-danger"
+                                className="hover:bg-danger-bg hover:text-danger"
                               />
                             </div>
                           </td>
@@ -561,6 +532,7 @@ export default function TeamManagement({
                     )}
                   </tbody>
                 </table>
+                {!loading && <Pagination {...paginacao} onPageChange={paginacao.setPage} label="colaboradores" />}
               </Card>
 
               <div className="grid grid-cols-1 gap-3 md:hidden">
@@ -615,23 +587,25 @@ export default function TeamManagement({
                           <span />
                         )}
 
-                        <div className="flex gap-2">
+                        <div className="flex gap-1">
                           {onUpdateMember && (
                             <Button
-                              variant="secondary"
-                              size="icon"
+                              variant="ghost"
+                              size="icon-sm"
                               onClick={() => openInviteModal(member)}
                               icon="edit"
+                              title="Editar colaborador"
                               aria-label={`Editar ${member.nome || 'colaborador'}`}
                             />
                           )}
                           <Button
-                            variant="secondary"
-                            size="icon"
+                            variant="ghost"
+                            size="icon-sm"
                             onClick={() => handleDeleteMember(member)}
                             icon="delete_outline"
+                            title="Excluir colaborador"
                             aria-label={`Excluir ${member.nome || 'colaborador'}`}
-                            className="text-danger"
+                            className="hover:bg-danger-bg hover:text-danger"
                           />
                         </div>
                       </div>
@@ -640,28 +614,25 @@ export default function TeamManagement({
                 )}
               </div>
 
+              {/* No desktop a paginação fica dentro do card da tabela; aqui, embaixo da lista. */}
               {!loading && (
-                <Card padding="none" className="mt-3 overflow-hidden">
+                <div className="mt-3 md:hidden">
                   <Pagination {...paginacao} onPageChange={paginacao.setPage} label="colaboradores" />
-                </Card>
+                </div>
               )}
             </section>
           ) : (
             <section id="painel-roles" role="tabpanel" aria-labelledby="aba-roles">
-              <div className="flex items-center justify-between mb-5 gap-4">
-                <p className="text-sm text-light-text">
-                  Defina modelos de acesso para vincular à sua equipe.
-                </p>
-
+              <div className="flex items-center justify-end mb-5 gap-4">
                 <Button variant="secondary" size="sm" icon="add" onClick={() => openRoleModal()}>
-                  Criar Cargo
+                  Criar cargo
                 </Button>
               </div>
 
               {loading ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                   {[1, 2, 3, 4].map((c) => (
-                    <Card key={c} padding="sm" className="min-h-[92px]">
+                    <Card key={c} padding="sm" className="min-h-23">
                       <Skeleton className="h-4 w-24 mb-2" />
                       <Skeleton className="h-3 w-16 mb-4" />
                       <div className="flex gap-1.5">
@@ -689,7 +660,7 @@ export default function TeamManagement({
                       key={role.id}
                       as="article"
                       padding="none"
-                      className="relative min-h-[92px] px-5 py-4 hover:border-divider-strong transition-colors"
+                      className="relative min-h-23 px-5 py-4 hover:border-divider-strong transition-colors"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -708,50 +679,54 @@ export default function TeamManagement({
                           )}
                         </div>
 
-                        <div className="flex gap-1 shrink-0">
-                          <button
-                            type="button"
+                        <div className="flex gap-0.5 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            icon="tune"
                             onClick={() => openModuleAccessModal(role)}
-                            className="w-7 h-7 rounded-md text-light-text hover:bg-background hover:text-primary flex items-center justify-center"
                             title="Acesso por tabela"
                             aria-label={`Acesso por tabela do cargo ${role.nome}`}
-                          >
-                            <span className="material-icons text-[16px]" aria-hidden="true">tune</span>
-                          </button>
+                          />
                           {(onUpdateRole || onDeleteRole) && (
                             <>
                             {onUpdateRole && (
-                              <button
-                                type="button"
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                icon="edit"
                                 onClick={() => openRoleModal(role)}
-                                className="w-7 h-7 rounded-md text-light-text hover:bg-background hover:text-primary flex items-center justify-center"
                                 title="Editar cargo"
                                 aria-label={`Editar cargo ${role.nome}`}
-                              >
-                                <span className="material-icons text-[16px]" aria-hidden="true">edit</span>
-                              </button>
+                              />
                             )}
                             {onDeleteRole && (
-                              <button
-                                type="button"
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                icon="delete_outline"
                                 onClick={() => handleDeleteRole(role)}
-                                className="w-7 h-7 rounded-md text-danger hover:bg-danger-bg flex items-center justify-center"
                                 title="Excluir cargo"
                                 aria-label={`Excluir cargo ${role.nome}`}
-                              >
-                                <span className="material-icons text-[16px]" aria-hidden="true">delete_outline</span>
-                              </button>
+                                className="hover:bg-danger-bg hover:text-danger"
+                              />
                             )}
                             </>
                           )}
                         </div>
                       </div>
 
-                      {role.permissoes?.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          {role.permissoes.map((permission) => (
+                      {/* Acesso total já diz tudo; senão, as 3 primeiras permissões e "+n". */}
+                      {!role.acesso_total && role.permissoes?.length > 0 && (
+                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                          {role.permissoes.slice(0, 3).map((permission) => (
                             <Badge key={permission} variant="default" size="sm">{permission}</Badge>
                           ))}
+                          {role.permissoes.length > 3 && (
+                            <span className="text-2xs text-light-text" title={role.permissoes.slice(3).join(', ')}>
+                              +{role.permissoes.length - 3}
+                            </span>
+                          )}
                         </div>
                       )}
                     </Card>
@@ -777,7 +752,7 @@ export default function TeamManagement({
               loading={savingMember}
               disabled={editingMember ? !onUpdateMember : !onInviteMember}
             >
-              {editingMember ? 'Salvar Alterações' : 'Enviar Convite'}
+              {editingMember ? 'Salvar alterações' : 'Enviar convite'}
             </Button>
           </>
         }
@@ -822,7 +797,7 @@ export default function TeamManagement({
           />
 
           <Select
-            label="Cargo / Permissão de Acesso"
+            label="Cargo"
             name="cargo"
             value={memberForm.cargo}
             onChange={(event) => changeMember('cargo', event.target.value)}
@@ -856,7 +831,7 @@ export default function TeamManagement({
         open={roleModalOpen}
         onClose={closeRoleModal}
         dirty={roleDirty}
-        title={editingRole ? 'Editar Cargo' : 'Criar Cargo'}
+        title={editingRole ? 'Editar cargo' : 'Criar cargo'}
         footer={
           <>
             <Button variant="secondary" onClick={closeRoleModal}>Cancelar</Button>
@@ -866,7 +841,7 @@ export default function TeamManagement({
               loading={savingRole}
               disabled={editingRole ? !onUpdateRole : !onCreateRole}
             >
-              {editingRole ? 'Salvar' : 'Criar Cargo'}
+              {editingRole ? 'Salvar' : 'Criar cargo'}
             </Button>
           </>
         }
@@ -945,7 +920,7 @@ export default function TeamManagement({
       >
         {moduleAccessRole && (
           <>
-            <p className="text-[11px] text-light-text mb-4 -mt-2">{moduleAccessRole.nome}</p>
+            <p className="text-2xs text-light-text mb-4 -mt-2">{moduleAccessRole.nome}</p>
 
             {moduleAccessRole.acesso_total ? (
               <p className="text-sm text-light-text border border-dashed border-divider rounded-md p-4">
@@ -971,9 +946,9 @@ export default function TeamManagement({
                       className="h-9 w-40"
                       options={[
                         { value: '', label: 'Sem acesso' },
-                        { value: 'visualizar', label: 'Visualizar' },
+                        { value: 'visualizar', label: 'Só ver' },
                         { value: 'editar', label: 'Editar' },
-                        { value: 'gerenciar', label: 'Gerenciar' },
+                        { value: 'gerenciar', label: 'Tudo' },
                       ]}
                     />
                   </div>

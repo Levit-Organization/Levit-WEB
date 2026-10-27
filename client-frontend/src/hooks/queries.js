@@ -1,4 +1,4 @@
-import { useQuery, useInfiniteQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, useQueries, useInfiniteQuery, keepPreviousData } from '@tanstack/react-query';
 import { moduloService } from '../services/moduloService';
 import { registroService } from '../services/registroService';
 import { recrutamentoService } from '../services/recrutamentoService';
@@ -12,7 +12,9 @@ import { queryClient } from '../lib/queryClient';
 export const queryKeys = {
   modulos: ['modulos'],
   modulo: (id) => ['modulo', id],
-  registros: (id, busca) => ['registros', id, busca || ''],
+  registros: (id, busca, filtros) => ['registros', id, busca || '', filtros || null],
+  titulos: (id) => ['titulos', id],
+  ligados: (moduloId, registroId) => ['ligados', moduloId, registroId],
   kanban: (vagaId) => ['kanban', vagaId || 'all'],
   equipe: ['equipe'],
   cargos: ['cargos'],
@@ -52,12 +54,54 @@ export function useModulo(id) {
  * enquanto a nova busca chega, em vez de piscar um spinner a cada digitação.
  * O `signal` cancela a requisição anterior quando a busca muda.
  */
-export function useRegistros(id, busca) {
+export function useRegistros(id, busca, filtros) {
   return useQuery({
-    queryKey: queryKeys.registros(id, busca),
-    queryFn: ({ signal }) => registroService.getAll(id, busca, signal),
+    queryKey: queryKeys.registros(id, busca, filtros),
+    queryFn: ({ signal }) => registroService.getAll(id, busca, signal, filtros),
     enabled: !!id,
     placeholderData: keepPreviousData,
+  });
+}
+
+const tituloQuery = (moduloId) => ({
+  queryKey: queryKeys.titulos(moduloId),
+  queryFn: ({ signal }) => registroService.titulos(moduloId, signal),
+  staleTime: 30_000,
+  retry: false,
+});
+
+/** Nomes dos itens de uma tabela ([{ id, titulo }]), para escolher um item ligado. */
+export function useTitulos(moduloId) {
+  return useQuery({ ...tituloQuery(moduloId), enabled: !!moduloId });
+}
+
+/** O outro lado das ligações de um item (ex.: os pedidos de um cliente). */
+export function useItensQueApontam(moduloId, registroId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: queryKeys.ligados(moduloId, registroId),
+    queryFn: ({ signal }) => registroService.ligados(moduloId, registroId, signal),
+    enabled: enabled && !!moduloId && !!registroId,
+    retry: false,
+  });
+}
+
+const SEM_TABELAS = [];
+
+// Fora do hook: com a mesma referência, o React Query só refaz o objeto quando os dados mudam.
+const titulosPorTabela = (resultados) =>
+  Object.fromEntries(resultados.flatMap((r) => (r.data ? [[r.data.moduloId, r.data.mapa]] : [])));
+
+/**
+ * Nomes dos itens de várias tabelas de uma vez (as ligadas pelas colunas de
+ * uma tabela): { [moduloId]: { [itemId]: titulo } }. Tabela sem acesso fica de fora.
+ */
+export function useTitulosDasTabelas(moduloIds = SEM_TABELAS) {
+  return useQueries({
+    queries: moduloIds.map((id) => ({
+      ...tituloQuery(id),
+      select: (lista) => ({ moduloId: id, mapa: Object.fromEntries(lista.map((item) => [item.id, item.titulo])) }),
+    })),
+    combine: titulosPorTabela,
   });
 }
 

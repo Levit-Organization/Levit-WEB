@@ -10,6 +10,7 @@ const loaders = {
   ForgotPassword: () => import('../pages/ForgotPassword'),
   ResetPassword: () => import('../pages/ResetPassword'),
   AceitarConvite: () => import('../pages/AceitarConvite'),
+  Candidatura: () => import('../pages/Candidatura'),
   Dashboard: () => import('../pages/Dashboard'),
   Modules: () => import('../pages/Modules'),
   ModuleForm: () => import('../pages/ModuleForm'),

@@ -10,29 +10,47 @@ class CandidatoController extends BaseApiController
 {
     protected CandidatoService $candidatoService;
 
+    private const REGRAS_CANDIDATO = [
+        'nome'     => ['required', 'min_length[3]', 'max_length[150]'],
+        'email'    => ['required', 'valid_email', 'max_length[150]'],
+        'telefone' => ['permit_empty', 'max_length[20]'],
+        'mensagem' => ['permit_empty', 'max_length[5000]'],
+    ];
+
     public function __construct()
     {
         $this->candidatoService = new CandidatoService();
     }
 
+    /** Com currículo o envio é multipart; sem ele, ainda aceita JSON. */
+    private function dadosDoCandidato(): array
+    {
+        $dados = str_contains($this->request->getHeaderLine('Content-Type'), 'multipart/form-data')
+            ? $this->request->getPost()
+            : ($this->request->getJSON(true) ?? []);
+
+        return array_intersect_key(array_map(static fn ($v) => is_string($v) ? trim($v) : $v, $dados), self::REGRAS_CANDIDATO);
+    }
+
+    public function vagaPublica($moduloId)
+    {
+        try {
+            return $this->respondSuccess($this->candidatoService->vagaPublica($moduloId), 200);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        }
+    }
+
     public function candidatar($moduloId)
     {
-        $dados = $this->request->getJSON(true) ?? [];
+        $dados = $this->dadosDoCandidato();
 
-        $rules = [
-            'nome'           => ['required', 'min_length[3]', 'max_length[150]'],
-            'email'          => ['required', 'valid_email', 'max_length[150]'],
-            'telefone'       => ['permit_empty', 'max_length[20]'],
-            'cargo_desejado' => ['permit_empty', 'max_length[100]'],
-            'mensagem'       => ['permit_empty'],
-        ];
-
-        if (! $this->validateData($dados, $rules)) {
+        if (! $this->validateData($dados, self::REGRAS_CANDIDATO)) {
             return $this->respondError('Dados inválidos.', 422, $this->validator->getErrors());
         }
 
         try {
-            $candidato = $this->candidatoService->criarCandidatura($moduloId, $dados);
+            $candidato = $this->candidatoService->criarCandidatura($moduloId, $dados, $this->request->getFile('curriculo'));
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
         } catch (\DomainException $e) {
@@ -42,6 +60,51 @@ class CandidatoController extends BaseApiController
         }
 
         return $this->respondSuccess($candidato, 201);
+    }
+
+    public function adicionar($moduloId)
+    {
+        $dados = $this->dadosDoCandidato();
+        $user  = service('authenticatedUser');
+
+        if (! $this->validateData($dados, self::REGRAS_CANDIDATO)) {
+            return $this->respondError('Dados inválidos.', 422, $this->validator->getErrors());
+        }
+
+        try {
+            $candidato = $this->candidatoService->adicionarCandidato(
+                $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados, $this->request->getFile('curriculo')
+            );
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 409);
+        } catch (\RuntimeException $e) {
+            return $this->respondFalha($e, 500);
+        }
+
+        return $this->respondSuccess($candidato, 201);
+    }
+
+    public function curriculo($moduloId, $candidatoId)
+    {
+        $user = service('authenticatedUser');
+
+        try {
+            $arquivo = $this->candidatoService->baixarCurriculo($candidatoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
+        }
+
+        return $this->response
+            ->setContentType($arquivo['tipo_mime'])
+            ->setHeader('Content-Disposition', $this->cabecalhoDeAnexo($arquivo['nome_original']))
+            ->setHeader('X-Content-Type-Options', 'nosniff')
+            ->setBody($arquivo['conteudo']);
     }
 
     public function kanban($moduloId)

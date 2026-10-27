@@ -10,9 +10,13 @@ use App\Models\HistoricoFaseModel;
 use App\Models\ModuloModel;
 use App\Services\Automacao\CamposCandidato;
 use CodeIgniter\Events\Events;
+use CodeIgniter\HTTP\Files\UploadedFile;
 
 class CandidatoService
 {
+    private const CURRICULO_EXTENSOES     = ['pdf', 'doc', 'docx'];
+    private const CURRICULO_MAXIMO_BYTES  = 5 * 1024 * 1024; // 5 MB
+
     protected EmpresaModel $empresaModel;
     protected ModuloModel $moduloModel;
     protected CandidatoModel $candidatoModel;
@@ -31,10 +35,30 @@ class CandidatoService
     }
 
     /**
+     * O que a página pública de candidatura mostra: o nome da vaga e da empresa.
+     * Vaga sem etapa ainda não recebe candidatos, então também não aparece.
+     */
+    public function vagaPublica(string $moduloId): array
+    {
+        $modulo = $this->moduloModel->where('id', $moduloId)->where('tipo', 'recrutamento')->first();
+
+        if (! $modulo || ! $this->faseRecrutamentoModel->where('modulo_id', $moduloId)->first()) {
+            throw new NaoEncontradoException('Vaga não encontrada ou não está recebendo candidaturas.');
+        }
+
+        $empresa = $this->empresaModel->select('nome')->find($modulo['empresa_id']);
+
+        return [
+            'vaga'    => $modulo['nome'],
+            'empresa' => $empresa['nome'] ?? null,
+        ];
+    }
+
+    /**
      * Candidatura pública — sem autenticação, sem cargo, sem checagem
      * de nível (não se aplica: quem chama isso não está logado).
      */
-    public function criarCandidatura(string $moduloId, array $dados): array
+    public function criarCandidatura(string $moduloId, array $dados, ?UploadedFile $curriculo = null): array
     {
         $modulo = $this->moduloModel->where('id', $moduloId)->where('tipo', 'recrutamento')->first();
 
@@ -42,31 +66,7 @@ class CandidatoService
             throw new NaoEncontradoException('Vaga não encontrada.');
         }
 
-        if ($this->candidatoModel->where('modulo_id', $moduloId)->where('email', $dados['email'])->first()) {
-            throw new \DomainException('Você já se candidatou para esta vaga anteriormente.');
-        }
-
-        $primeiraFase = $this->faseRecrutamentoModel->where('modulo_id', $moduloId)->orderBy('ordem', 'ASC')->first();
-
-        if (! $primeiraFase) {
-            throw new \RuntimeException('Esta vaga ainda não tem nenhuma fase configurada.');
-        }
-
-        $candidatoId = $this->candidatoModel->insert([
-            'modulo_id'      => $moduloId,
-            'fase_atual_id'  => $primeiraFase['id'],
-            'nome'           => $dados['nome'],
-            'email'          => $dados['email'],
-            'telefone'       => $dados['telefone'] ?? null,
-            'cargo_desejado' => $dados['cargo_desejado'] ?? null,
-            'mensagem'       => $dados['mensagem'] ?? null,
-        ]);
-
-        Events::trigger('candidato_criado', [
-            'modulo_id'      => $moduloId,
-            'registro_id'    => null,
-            'dados_registro' => CamposCandidato::dados($dados, $primeiraFase['nome']),
-        ]);
+        $candidato = $this->inserirCandidato($modulo, $dados, $curriculo, 'Você já se candidatou para esta vaga anteriormente.');
 
         // Candidaturas seguidas na mesma vaga viram uma notificação só.
         $notificacoes = new NotificacaoService();
@@ -83,7 +83,115 @@ class CandidatoService
             ]
         );
 
+        return $candidato;
+    }
+
+    /** Candidato registrado por alguém da equipe (quem tem "editar" na vaga). */
+    public function adicionarCandidato(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $dados, ?UploadedFile $curriculo = null): array
+    {
+        $this->confirmarVagaDaEmpresa($moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
+
+        $modulo    = $this->moduloModel->find($moduloId);
+        $candidato = $this->inserirCandidato($modulo, $dados, $curriculo, 'Já existe um candidato com esse e-mail nesta vaga.');
+
+        AtividadeService::registrar('candidato_adicionado', 'Adicionou o candidato “' . $dados['nome'] . '”', $moduloId);
+
+        return $candidato;
+    }
+
+    public function baixarCurriculo(string $candidatoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
+    {
+        $candidato = $this->buscarCandidatoBruto($candidatoId, $moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
+
+        if (empty($candidato['curriculo_chave'])) {
+            throw new NaoEncontradoException('Este candidato não enviou currículo.');
+        }
+
+        return [
+            'conteudo'      => service('storage')->obter($candidato['curriculo_chave']),
+            'nome_original' => $candidato['curriculo_nome'] ?: 'curriculo',
+            'tipo_mime'     => $candidato['curriculo_mime'] ?: 'application/octet-stream',
+        ];
+    }
+
+    /**
+     * Grava o candidato na primeira etapa da vaga, com o currículo se veio.
+     * O arquivo sobe antes do insert; se o banco falhar, ele é apagado.
+     */
+    private function inserirCandidato(array $modulo, array $dados, ?UploadedFile $curriculo, string $mensagemDuplicado): array
+    {
+        $moduloId = $modulo['id'];
+
+        if ($this->candidatoModel->where('modulo_id', $moduloId)->where('email', $dados['email'])->first()) {
+            throw new \DomainException($mensagemDuplicado);
+        }
+
+        $primeiraFase = $this->faseRecrutamentoModel->where('modulo_id', $moduloId)->orderBy('ordem', 'ASC')->first();
+
+        if (! $primeiraFase) {
+            throw new \RuntimeException('Esta vaga ainda não tem nenhuma etapa configurada.');
+        }
+
+        $arquivo = $curriculo !== null && $curriculo->getError() !== UPLOAD_ERR_NO_FILE
+            ? $this->salvarCurriculo($curriculo)
+            : [];
+
+        try {
+            $candidatoId = $this->candidatoModel->insert([
+                'modulo_id'     => $moduloId,
+                'fase_atual_id' => $primeiraFase['id'],
+                'nome'          => $dados['nome'],
+                'email'         => $dados['email'],
+                'telefone'      => ($dados['telefone'] ?? '') ?: null,
+                'mensagem'      => ($dados['mensagem'] ?? '') ?: null,
+            ] + $arquivo);
+        } catch (\Throwable $e) {
+            if (! empty($arquivo['curriculo_chave'])) {
+                service('storage')->excluir($arquivo['curriculo_chave']);
+            }
+
+            throw $e;
+        }
+
+        Events::trigger('candidato_criado', [
+            'modulo_id'      => $moduloId,
+            'registro_id'    => null,
+            'dados_registro' => CamposCandidato::dados($dados, $primeiraFase['nome']),
+        ]);
+
         return $this->buscarCandidato($candidatoId, $moduloId, $modulo['empresa_id']);
+    }
+
+    /** @return array{curriculo_chave: string, curriculo_nome: string, curriculo_mime: string, curriculo_tamanho: int} */
+    private function salvarCurriculo(UploadedFile $curriculo): array
+    {
+        // Acima do upload_max_filesize do PHP o arquivo nem chega: o erro vem do upload.
+        if (in_array($curriculo->getError(), [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+            throw new \DomainException('O currículo passa do tamanho permitido. Envie um arquivo menor.');
+        }
+
+        if (! $curriculo->isValid()) {
+            throw new \DomainException('O currículo não chegou corretamente. Tente enviar de novo.');
+        }
+
+        $extensao = strtolower($curriculo->guessExtension() ?: $curriculo->getClientExtension());
+
+        if (! in_array($extensao, self::CURRICULO_EXTENSOES, true)) {
+            throw new \DomainException('Envie o currículo em PDF ou Word (.doc ou .docx).');
+        }
+
+        if ($curriculo->getSize() > self::CURRICULO_MAXIMO_BYTES) {
+            throw new \DomainException('O currículo passa de 5 MB. Envie um arquivo menor.');
+        }
+
+        return [
+            'curriculo_chave'   => service('storage')->salvar($curriculo->getTempName(), $extensao),
+            'curriculo_nome'    => mb_substr($curriculo->getClientName(), 0, 255),
+            'curriculo_mime'    => $curriculo->getMimeType(),
+            'curriculo_tamanho' => $curriculo->getSize(),
+        ];
     }
 
     public function listarKanban(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
@@ -102,7 +210,7 @@ class CandidatoService
         foreach ($candidatos as $candidato) {
             $fase = $candidato['fase_atual_id'];
             if (isset($kanban[$fase])) {
-                $kanban[$fase]['candidatos'][] = $candidato;
+                $kanban[$fase]['candidatos'][] = self::apresentar($candidato);
                 $kanban[$fase]['total']++;
             }
         }
@@ -160,7 +268,7 @@ class CandidatoService
             }
 
             $candidato['vaga'] = $nomeVagaPorId[$candidato['modulo_id']] ?? null;
-            $kanban[$chave]['candidatos'][] = $candidato;
+            $kanban[$chave]['candidatos'][] = self::apresentar($candidato);
             $kanban[$chave]['total']++;
         }
 
@@ -255,6 +363,12 @@ class CandidatoService
 
     public function buscarCandidato(string $candidatoId, string $moduloId, string $empresaId): array
     {
+        return self::apresentar($this->buscarCandidatoBruto($candidatoId, $moduloId, $empresaId));
+    }
+
+    /** Linha do banco como está, com a chave do currículo (uso interno). */
+    private function buscarCandidatoBruto(string $candidatoId, string $moduloId, string $empresaId): array
+    {
         $candidato = $this->candidatoModel
             ->select('candidato.*')
             ->join('modulo', 'modulo.id = candidato.modulo_id')
@@ -280,10 +394,26 @@ class CandidatoService
 
     public function excluirCandidato(string $candidatoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
     {
-        $this->buscarCandidato($candidatoId, $moduloId, $empresaId);
+        $candidato = $this->buscarCandidatoBruto($candidatoId, $moduloId, $empresaId);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
 
         $this->candidatoModel->delete($candidatoId);
+
+        if (! empty($candidato['curriculo_chave'])) {
+            service('storage')->excluir($candidato['curriculo_chave']);
+        }
+    }
+
+    /**
+     * O que sai para a tela: a chave do storage nunca, só se há currículo e o
+     * nome dele. "Cargo desejado" saiu do produto; a coluna antiga fica no banco.
+     */
+    private static function apresentar(array $candidato): array
+    {
+        $candidato['tem_curriculo'] = ! empty($candidato['curriculo_chave']);
+        unset($candidato['curriculo_chave'], $candidato['curriculo_mime'], $candidato['cargo_desejado']);
+
+        return $candidato;
     }
 
     private function confirmarVagaDaEmpresa(string $moduloId, string $empresaId): void

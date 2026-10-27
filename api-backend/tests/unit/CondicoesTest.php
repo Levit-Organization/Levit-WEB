@@ -56,6 +56,15 @@ final class CondicoesTest extends CIUnitTestCase
         $this->assertFalse($this->avaliar([$this->regra('maior', '5', null, 'n')], ['n' => '']), 'vazio nunca é maior');
     }
 
+    public function testIgualEmColunaComVariosValoresProcuraNaLista(): void
+    {
+        $dados = ['produtos' => ['id-1', 'id-2']];
+
+        $this->assertTrue($this->avaliar([$this->regra('igual', 'id-2', null, 'produtos')], $dados));
+        $this->assertFalse($this->avaliar([$this->regra('igual', 'id-3', null, 'produtos')], $dados));
+        $this->assertTrue($this->avaliar([$this->regra('diferente', 'id-3', null, 'produtos')], $dados));
+    }
+
     public function testMudancasPrecisamDoValorAnterior(): void
     {
         $this->assertTrue($this->avaliar([$this->regra('mudou_para', 'Fechado')], ['status' => 'Fechado'], ['status' => 'Proposta']));

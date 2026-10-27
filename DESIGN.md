@@ -92,7 +92,8 @@ compartilham `fieldClasses` e `FieldShell`, e aceitam `icon`), `Toggle`,
 `Badge` (7 variantes, com `dot`), `Alert` (error/success/warning/info),
 `Spinner`, `Modal`, `Drawer`.
 
-Compostos: `Card`, `Skeleton`, `EmptyState`, `StatCard`, `Avatar`, `PageHeader`.
+Compostos: `Card`, `Skeleton`, `EmptyState`, `StatCard`, `Avatar`, `PageHeader`,
+`Tabs`.
 
 Utilitários de domínio em `funil.js`: `coresDaFase(indice, total)`,
 `tempoRelativo(data)`, `estaParado(data, limiteDias)`.
@@ -105,6 +106,37 @@ Regras de uso:
 - Classe de cor montada em runtime não funciona (o JIT do Tailwind não lê nome
   de classe dinâmico). As paletas de pessoa e de funil estão escritas por
   extenso em `Avatar.jsx` e `funil.js` por isso.
+
+## Densidade
+
+A tela fica calma quando cada coisa aparece uma vez e no lugar dela.
+
+- **Um número, um lugar.** Se o subtítulo já diz "3 de 5 ativas", não há
+  indicador repetindo o mesmo número logo abaixo. Convite, falha ou atraso
+  aparece onde se age sobre ele, não em três cards.
+- **Urgência codificada uma vez.** Se o grupo já se chama "Atrasados" em
+  vermelho, a linha não ganha outro selo vermelho.
+- **Um primário por tela.** As outras ações são `secondary` ou `ghost`.
+- **No máximo um selo de estado por linha**, e listas de selos param em 3 com
+  "+n" (o resto vai no `title`).
+- **Texto de ajuda só quando diz algo não óbvio**: consequência de uma ação, um
+  limite, o porquê de algo estar desabilitado. Nunca repete o título.
+- **Sem caixa dentro de card.** Dentro de um card, separe com divisória
+  (`divide-y divide-divider`) ou espaço.
+
+Padrões únicos:
+
+- **Cabeçalho:** toda página usa `PageHeader`. Ícone só quando identifica a
+  entidade (o ícone da própria tabela); página de seção não tem ícone.
+- **Abas de seção:** `Tabs` (sublinhado, contagem opcional). Alternância de
+  filtro ("Meus / Da equipe", "Lista / Quadro") é o controle segmentado de
+  pílula, não aba.
+- **Ações por linha:** até 3, `Button variant="ghost" size="icon-sm"` com
+  `aria-label`; mais que isso, menu de três pontos.
+- **Cabeçalho de tabela:** utility `th-label`, em sentence case.
+- **Ícone:** escala fixa 14 (dentro de selo) · 16 · 18 (botão) · 20 (navegação)
+  · 24. Nada de 15, 17, 19, 22.
+- **Caixa de texto:** sentence case em botão e título ("Nova automação").
 
 ## Proibido
 

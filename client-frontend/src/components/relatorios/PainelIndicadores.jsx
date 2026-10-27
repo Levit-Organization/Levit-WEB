@@ -33,7 +33,7 @@ function Vaga({ vaga }) {
         <span className="text-xs text-light-text">{numero(vaga.total)} candidatos no total</span>
       </div>
 
-      <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
         <Indicador rotulo="Inscritos no período" comparacao={vaga.inscritos} />
         <Indicador rotulo="Chegaram à última etapa" comparacao={vaga.concluidos} />
         <Indicador rotulo="Saíram do processo" comparacao={vaga.sairam} subirEBom={false} />
@@ -45,8 +45,8 @@ function Vaga({ vaga }) {
         </Alert>
       )}
 
-      <h4 className="text-sm font-semibold text-ink mt-5 mb-1">Até onde chegaram os inscritos no período</h4>
-      <p className="text-xs text-light-text mb-3">Cada barra conta quem chegou até a etapa ou passou dela (e a % dos inscritos). Embaixo: quantos estão nela agora e o tempo médio que ficam.</p>
+      <h4 className="text-sm font-semibold text-ink mt-6 mb-1">Até onde chegaram os inscritos no período</h4>
+      <p className="text-xs text-light-text mb-3">Quem chegou a cada etapa ou passou dela.</p>
       <BarrasHorizontais
         titulo={`Funil de ${vaga.nome}`}
         vazio="Ninguém se inscreveu neste período."
@@ -72,12 +72,12 @@ function Financeiro({ fin }) {
   return (
     <Card className="min-w-0">
       <h3 className="font-semibold text-ink">{fin.nome}</h3>
-      <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
         <Indicador rotulo="Entradas" comparacao={fin.entradas} formatar={moeda} />
         <Indicador rotulo="Saídas" comparacao={fin.saidas} formatar={moeda} subirEBom={false} />
         <Indicador rotulo="Saldo" comparacao={fin.saldo} formatar={moeda} />
       </div>
-      <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="min-w-0">
           <h4 className="text-sm font-semibold text-ink mb-3">Últimos 6 meses</h4>
           <ColunasMensais titulo={`Entradas e saídas por mês em ${fin.nome}`} meses={fin.meses} series={SERIES_FINANCEIRO} formatar={moeda} />
@@ -100,14 +100,14 @@ function Prazos({ prazos }) {
   const taxa = prazos.taxa_conclusao;
   return (
     <Card className="min-w-0">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
         <Indicador rotulo="Prazos que venceram no período" comparacao={prazos.vencendo} />
         <Indicador
           rotulo="Desses, já concluídos"
           comparacao={prazos.concluidos}
           dica={taxa.atual === null ? 'nenhum prazo no período' : `${taxa.atual}% concluídos${taxa.anterior !== null ? ` (antes: ${taxa.anterior}%)` : ''}`}
         />
-        <div className="rounded-xl border border-divider bg-surface px-4 py-3.5">
+        <div className="min-w-0">
           <p className="text-sm text-light-text">Atrasados agora</p>
           <p className={prazos.atrasados_agora ? 'text-2xl font-bold text-danger tabular mt-1' : 'text-2xl font-bold text-ink tabular mt-1'}>
             {numero(prazos.atrasados_agora)}
@@ -115,7 +115,7 @@ function Prazos({ prazos }) {
           <p className="text-2xs text-light-text mt-0.5">em todas as tabelas</p>
         </div>
       </div>
-      <h4 className="text-sm font-semibold text-ink mt-5 mb-3">Atrasados por responsável</h4>
+      <h4 className="text-sm font-semibold text-ink mt-6 mb-3">Atrasados por responsável</h4>
       <BarrasHorizontais
         titulo="Itens atrasados por responsável"
         vazio="Nenhum item atrasado."
@@ -132,7 +132,7 @@ export default function PainelIndicadores({ inicio, fim }) {
   if (consulta.isLoading) {
     return (
       <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[1, 2, 3, 4].map((n) => <Skeleton key={n} className="h-24 rounded-xl" />)}</div>
+        <Skeleton className="h-28 rounded-2xl" />
         <Skeleton className="h-72 rounded-2xl" />
       </div>
     );
@@ -152,15 +152,15 @@ export default function PainelIndicadores({ inicio, fim }) {
   return (
     <div className={consulta.isFetching ? 'flex flex-col gap-8 opacity-70 transition-opacity' : 'flex flex-col gap-8 transition-opacity'} aria-busy={consulta.isFetching}>
       <Secao titulo="Resumo" descricao={`Comparado com ${textoDoPeriodo(d.periodo_anterior)}.`}>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Card className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5">
           <Indicador rotulo="Itens criados nas tabelas" comparacao={r.itens_criados} />
           <Indicador rotulo="Candidatos inscritos" comparacao={r.candidatos} />
           <Indicador rotulo="Atividades na plataforma" comparacao={r.atividades} />
           <Indicador rotulo="Pessoas ativas" comparacao={r.pessoas_ativas} />
-        </div>
+        </Card>
       </Secao>
 
-      <Secao titulo="Prazos" descricao="Itens com prazo em todas as tabelas. Concluído = alguma lista do item numa opção como Concluído, Entregue ou Pago.">
+      <Secao titulo="Prazos" descricao="Concluído = item numa opção como Concluído, Entregue ou Pago.">
         <Prazos prazos={d.prazos} />
       </Secao>
 

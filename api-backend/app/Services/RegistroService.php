@@ -6,6 +6,7 @@ use App\Exceptions\NaoEncontradoException;
 use App\Models\CampoModuloModel;
 use App\Models\ModuloModel;
 use App\Models\RegistroModel;
+use App\Services\Pesquisa\Filtros;
 use CodeIgniter\Events\Events;
 
 class RegistroService
@@ -26,44 +27,192 @@ class RegistroService
         $this->autorizacaoModuloService = new AutorizacaoModuloService();
     }
 
-    public function listarRegistros(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, ?string $busca = null): array
+    /**
+     * Itens da tabela, mais novos primeiro. `busca` procura nas colunas de texto;
+     * `filtros` é a pesquisa avançada (ver Pesquisa\Filtros), que pode olhar os
+     * dados das tabelas ligadas. As duas se somam.
+     */
+    public function listarRegistros(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, ?string $busca = null, ?array $filtros = null): array
     {
         $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
 
-        if ($busca === null || trim($busca) === '') {
+        $busca      = trim((string) $busca);
+        $comFiltros = ! empty($filtros['regras']);
+
+        if ($busca === '' && ! $comFiltros) {
             return $this->registroModel
                 ->where('modulo_id', $moduloId)
                 ->orderBy('criado_em', 'DESC')
                 ->findAll();
         }
 
-        $camposTexto = $this->campoModuloModel
-            ->where('modulo_id', $moduloId)
-            ->where('tipo', 'texto')
-            ->findAll();
+        $condicoes = ['r.modulo_id = :modulo:'];
+        $binds     = ['modulo' => $moduloId];
 
-        if (empty($camposTexto)) {
-            return [];
+        if ($busca !== '') {
+            $camposTexto = $this->campoModuloModel
+                ->where('modulo_id', $moduloId)
+                ->where('tipo', 'texto')
+                ->findAll();
+
+            if (empty($camposTexto)) {
+                return [];
+            }
+
+            $ou = [];
+            foreach ($camposTexto as $campo) {
+                $ou[] = "r.dados->>'{$campo['id']}' ILIKE :busca:";
+            }
+            $condicoes[]    = '(' . implode(' OR ', $ou) . ')';
+            $binds['busca'] = '%' . $busca . '%';
         }
 
-        $condicoes = [];
-        $bindings  = [$moduloId];
-
-        foreach ($camposTexto as $campo) {
-            $condicoes[] = "dados->>'{$campo['id']}' ILIKE ?";
-            $bindings[]  = '%' . $busca . '%';
+        if ($comFiltros) {
+            [$sql, $parametros] = $this->pesquisa($empresaId, $cargoId, $acessoTotal)->paraSql($filtros, $moduloId, 'r');
+            $condicoes[]        = $sql;
+            $binds += $parametros;
         }
 
-        $sql = 'SELECT * FROM registro WHERE modulo_id = ? AND (' . implode(' OR ', $condicoes) . ') ORDER BY criado_em DESC';
+        $sql = 'SELECT r.* FROM registro r WHERE ' . implode(' AND ', $condicoes) . ' ORDER BY r.criado_em DESC';
 
-        $registros = db_connect()->query($sql, $bindings)->getResultArray();
+        $registros = db_connect()->query($sql, $binds)->getResultArray();
 
         foreach ($registros as &$registro) {
             $registro['dados'] = json_decode($registro['dados'], true);
         }
 
         return $registros;
+    }
+
+    /** Pesquisa avançada com as colunas de todas as tabelas da empresa e o acesso de quem pesquisa. */
+    private function pesquisa(string $empresaId, string $cargoId, bool $acessoTotal): Filtros
+    {
+        $campos = db_connect()->query(
+            'SELECT c.id, c.modulo_id, c.nome, c.tipo, c.modulo_vinculado_id FROM campo_modulo c JOIN modulo m ON m.id = c.modulo_id WHERE m.empresa_id = ?',
+            [$empresaId]
+        )->getResultArray();
+
+        return new Filtros(
+            array_column($campos, null, 'id'),
+            fn (string $moduloId): bool => $this->autorizacaoModuloService->filtrarModulosComNivel([$moduloId], $acessoTotal, $cargoId, 'visualizar') !== []
+        );
+    }
+
+    /** Máximo de itens mostrados por ligação recebida (o total vem à parte). */
+    public const MAX_LIGADOS_MOSTRADOS = 50;
+
+    /**
+     * O outro lado das ligações: itens de outras tabelas (ou desta) que apontam
+     * para este, agrupados pela coluna que faz a ligação. Ex.: num cliente, os
+     * pedidos dele. Só entram tabelas que a pessoa vê, e ligações sem itens não.
+     *
+     * @return list<array{campo_id: string, campo_nome: string, modulo: array, total: int, itens: list<array{id: string, titulo: ?string}>}>
+     */
+    public function itensQueApontam(string $registroId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
+    {
+        $this->buscarRegistro($registroId, $moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
+
+        $ligacoes = $this->campoModuloModel
+            ->select('campo_modulo.id, campo_modulo.nome, campo_modulo.modulo_id, modulo.nome AS modulo_nome, modulo.icone AS modulo_icone')
+            ->join('modulo', 'modulo.id = campo_modulo.modulo_id')
+            ->where('campo_modulo.modulo_vinculado_id', $moduloId)
+            ->orderBy('modulo.nome', 'ASC')
+            ->findAll();
+        if ($ligacoes === []) {
+            return [];
+        }
+
+        $visiveis = array_flip($this->autorizacaoModuloService->filtrarModulosComNivel(
+            array_values(array_unique(array_column($ligacoes, 'modulo_id'))), $acessoTotal, $cargoId, 'visualizar'
+        ));
+
+        $grupos = [];
+        foreach ($ligacoes as $ligacao) {
+            if (! isset($visiveis[$ligacao['modulo_id']])) {
+                continue;
+            }
+
+            $linhas = db_connect()->query(
+                'SELECT id, COUNT(*) OVER () AS total FROM registro
+                  WHERE modulo_id = :modulo:
+                    AND (dados @> jsonb_build_object(:campo:::text, :item:::text) OR dados @> jsonb_build_object(:campo:::text, jsonb_build_array(:item:::text)))
+                  ORDER BY criado_em DESC LIMIT ' . self::MAX_LIGADOS_MOSTRADOS,
+                ['modulo' => $ligacao['modulo_id'], 'campo' => $ligacao['id'], 'item' => $registroId]
+            )->getResultArray();
+            if ($linhas === []) {
+                continue;
+            }
+
+            $titulos  = $this->titulosDosItens($ligacao['modulo_id'], array_column($linhas, 'id'));
+            $grupos[] = [
+                'campo_id'   => $ligacao['id'],
+                'campo_nome' => $ligacao['nome'],
+                'modulo'     => ['id' => $ligacao['modulo_id'], 'nome' => $ligacao['modulo_nome'], 'icone' => $ligacao['modulo_icone']],
+                'total'      => (int) $linhas[0]['total'],
+                'itens'      => array_map(static fn ($l) => ['id' => $l['id'], 'titulo' => $titulos[$l['id']] ?? null], $linhas),
+            ];
+        }
+
+        return $grupos;
+    }
+
+    /** Itens da tabela como { id, titulo }, para escolher e mostrar ligações. */
+    public function listarTitulos(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
+    {
+        $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
+
+        $lista = [];
+        foreach ($this->titulosDosItens($moduloId) as $id => $titulo) {
+            $lista[] = ['id' => $id, 'titulo' => $titulo];
+        }
+
+        return $lista;
+    }
+
+    /**
+     * Título de cada item: o valor da primeira coluna de texto (ou da primeira
+     * coluna, se não houver texto). É o "nome" do item onde ele aparece ligado.
+     * Sem checagem de acesso: quem chama decide.
+     *
+     * @param list<string>|null $ids só estes itens (null = todos)
+     *
+     * @return array<string, string|null> id => título, em ordem alfabética
+     */
+    public function titulosDosItens(string $moduloId, ?array $ids = null): array
+    {
+        if ($ids !== null) {
+            $ids = array_values(array_filter($ids, static fn ($id) => is_string($id) && Filtros::uuidValido($id)));
+            if ($ids === []) {
+                return [];
+            }
+        }
+
+        $campos = $this->campoModuloModel->select('id, tipo')->where('modulo_id', $moduloId)->orderBy('ordem', 'ASC')->findAll();
+        $titulo = self::campoDeTitulo($campos) !== null ? 'dados->>:campo:' : 'NULL';
+
+        $linhas = db_connect()->query(
+            "SELECT id, {$titulo} AS titulo FROM registro WHERE modulo_id = :modulo:"
+            . ($ids !== null ? ' AND id IN :ids:' : '')
+            . ($titulo !== 'NULL' ? " ORDER BY lower({$titulo}) NULLS LAST, criado_em" : ' ORDER BY criado_em'),
+            ['modulo' => $moduloId, 'campo' => (string) self::campoDeTitulo($campos), 'ids' => $ids ?? []]
+        )->getResultArray();
+
+        return array_column($linhas, 'titulo', 'id');
+    }
+
+    /** A coluna que dá nome aos itens: a primeira de texto, ou a primeira de todas. */
+    public static function campoDeTitulo(array $camposEmOrdem): ?string
+    {
+        foreach ($camposEmOrdem as $campo) {
+            if ($campo['tipo'] === 'texto') {
+                return $campo['id'];
+            }
+        }
+
+        return $camposEmOrdem[0]['id'] ?? null;
     }
 
     public function criarRegistro(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $usuarioId, array $dados): array
@@ -141,6 +290,8 @@ class RegistroService
             throw new \DomainException('Importe no máximo ' . self::MAX_IMPORTACAO . ' linhas por vez.');
         }
 
+        $this->preconferirLigacoes($campos, $itens);
+
         helper('uuid');
         $agora   = gmdate('Y-m-d H:i:s');
         $validos = [];
@@ -187,13 +338,46 @@ class RegistroService
         $registro = $this->buscarRegistro($registroId, $moduloId, $empresaId);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
 
+        $db = db_connect();
+        $db->transStart();
         $this->registroModel->delete($registroId);
+        $this->desvincular($registroId, $moduloId);
+        $db->transComplete();
+
+        if ($db->transStatus() === false) {
+            throw new \RuntimeException('Não foi possível excluir o item. Tente novamente.');
+        }
 
         Events::trigger('registro_excluido', [
             'modulo_id'      => $moduloId,
             'registro_id'    => $registroId,
             'dados_registro' => $registro['dados'],
         ]);
+    }
+
+    /**
+     * O item excluído sai das colunas de ligação que apontavam para ele, como
+     * um ON DELETE SET NULL: quem ligava a vários perde só esse; quem ligava
+     * só a ele fica vazio.
+     */
+    private function desvincular(string $registroId, string $moduloId): void
+    {
+        $campos = $this->campoModuloModel->select('id, modulo_id')->where('modulo_vinculado_id', $moduloId)->findAll();
+        $db     = db_connect();
+
+        foreach ($campos as $campo) {
+            $db->query(
+                "UPDATE registro SET dados = CASE
+                    WHEN jsonb_typeof(dados->:campo:) = 'array' AND jsonb_array_length((dados->:campo:) - :item:::text) > 0
+                        THEN jsonb_set(dados, ARRAY[:campo:]::text[], (dados->:campo:) - :item:::text)
+                    ELSE dados - :campo:::text
+                 END
+                 WHERE modulo_id = :modulo:
+                   AND (dados @> jsonb_build_object(:campo:::text, :item:::text)
+                     OR dados @> jsonb_build_object(:campo:::text, jsonb_build_array(:item:::text)))",
+                ['campo' => $campo['id'], 'item' => $registroId, 'modulo' => $campo['modulo_id']]
+            );
+        }
     }
 
     /**
@@ -366,10 +550,107 @@ class RegistroService
                     }
                     $dadosValidados[$campo['id']] = (string) $valor;
                     break;
+
+                case 'vinculo':
+                    $ligados = $this->validarVinculo($campo, $valor);
+                    if ($ligados !== null) {
+                        $dadosValidados[$campo['id']] = $ligados;
+                    }
+                    break;
             }
         }
 
         return $dadosValidados;
+    }
+
+    /**
+     * Coluna de ligação: ids de itens que existem na tabela ligada. Guarda um id
+     * ou, se a coluna aceita vários, uma lista sem repetidos.
+     *
+     * @return list<string>|string|null null = nada ligado
+     */
+    private function validarVinculo(array $campo, mixed $valor): array|string|null
+    {
+        $ids = array_values(array_unique(array_filter(
+            array_map(static fn ($id) => is_scalar($id) ? strtolower(trim((string) $id)) : '', is_array($valor) ? $valor : [$valor]),
+            static fn (string $id) => $id !== ''
+        )));
+
+        if ($ids === []) {
+            return null;
+        }
+
+        $multiplo = ! empty($campo['opcoes']['multiplo']);
+        if (! $multiplo && count($ids) > 1) {
+            throw new \DomainException("A coluna '{$campo['nome']}' liga um item só.");
+        }
+        if (count($ids) > self::MAX_LIGADOS) {
+            throw new \DomainException("A coluna '{$campo['nome']}' liga no máximo " . self::MAX_LIGADOS . ' itens.');
+        }
+        foreach ($ids as $id) {
+            if (! Filtros::uuidValido($id)) {
+                throw new \DomainException("A coluna '{$campo['nome']}' precisa apontar para itens da tabela ligada.");
+            }
+        }
+        if ($this->algumInexistente((string) ($campo['modulo_vinculado_id'] ?? ''), $ids)) {
+            throw new \DomainException("A coluna '{$campo['nome']}' aponta para um item que não existe mais na tabela ligada.");
+        }
+
+        return $multiplo ? $ids : $ids[0];
+    }
+
+    /** Máximo de itens numa coluna de ligação que aceita vários. */
+    public const MAX_LIGADOS = 100;
+
+    /** @var array<string, bool> itens ligados já conferidos nesta requisição ("tabela|id" => existe) */
+    private array $itensConferidos = [];
+
+    /** @param list<string> $ids uuids válidos */
+    private function algumInexistente(string $moduloId, array $ids): bool
+    {
+        $novos = array_values(array_filter($ids, fn (string $id) => ! isset($this->itensConferidos["{$moduloId}|{$id}"])));
+
+        if ($novos !== []) {
+            $achados = $moduloId === '' ? [] : array_column(
+                db_connect()->query('SELECT id FROM registro WHERE modulo_id = ? AND id IN ?', [$moduloId, $novos])->getResultArray(),
+                'id'
+            );
+            foreach ($novos as $id) {
+                $this->itensConferidos["{$moduloId}|{$id}"] = in_array($id, $achados, true);
+            }
+        }
+
+        foreach ($ids as $id) {
+            if (! $this->itensConferidos["{$moduloId}|{$id}"]) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Importação: confere de uma vez os itens ligados de todas as linhas (uma consulta por coluna). */
+    private function preconferirLigacoes(array $campos, array $itens): void
+    {
+        foreach ($campos as $campo) {
+            if ($campo['tipo'] !== 'vinculo' || empty($campo['modulo_vinculado_id'])) {
+                continue;
+            }
+
+            $ids = [];
+            foreach ($itens as $item) {
+                $valor = is_array($item['dados'] ?? null) ? ($item['dados'][$campo['id']] ?? null) : null;
+                foreach (is_array($valor) ? $valor : [$valor] as $id) {
+                    if (is_string($id) && Filtros::uuidValido($id)) {
+                        $ids[strtolower($id)] = true;
+                    }
+                }
+            }
+
+            foreach (array_chunk(array_keys($ids), 500) as $lote) {
+                $this->algumInexistente($campo['modulo_vinculado_id'], $lote);
+            }
+        }
     }
 
     /** O responsável precisa ser alguém da mesma empresa da tabela. */

@@ -39,7 +39,6 @@ export const CAMPOS_CANDIDATO = [
   { id: 'nome', nome: 'Nome', tipo: 'texto' },
   { id: 'email', nome: 'E-mail', tipo: 'texto' },
   { id: 'telefone', nome: 'Telefone', tipo: 'texto' },
-  { id: 'cargo_desejado', nome: 'Cargo desejado', tipo: 'texto' },
   { id: 'mensagem', nome: 'Mensagem', tipo: 'texto' },
   { id: 'etapa', nome: 'Etapa', tipo: 'etapa' },
   { id: 'etapa_anterior', nome: 'Etapa anterior', tipo: 'etapa' },
@@ -92,7 +91,8 @@ export function acaoValida({ tipo, configuracao: c = {} }) {
   if (tipo === 'notificacao') return !!(c.titulo?.trim() && (['todos', 'responsavel'].includes(c.destinatarios) || c.destino_id));
   if (tipo === 'atualizar_campo') return !!c.campo_id;
   if (tipo === 'criar_registro') {
-    return !!c.modulo_destino_id && Object.values(c.mapeamento || {}).some((v) => String(v ?? '').trim() !== '');
+    // Ligar ao item que disparou já conta como coluna preenchida.
+    return !!c.modulo_destino_id && (!!c.ligar_campo_id || Object.values(c.mapeamento || {}).some((v) => String(v ?? '').trim() !== ''));
   }
   return false;
 }

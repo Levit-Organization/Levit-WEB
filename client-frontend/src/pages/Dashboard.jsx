@@ -177,9 +177,9 @@ export default function Dashboard() {
       </header>
 
       {/* INDICADORES: a operação inteira */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8 shrink-0" aria-label="Resumo">
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8 shrink-0" aria-label="Resumo">
         {loadingModulos ? (
-          [1, 2, 3, 4].map((s) => (
+          [1, 2, 3].map((s) => (
             <Card key={s} padding="md" className="flex items-start gap-3.5">
               <Skeleton className="w-10 h-10 rounded-lg shrink-0" />
               <div className="flex-1">
@@ -214,18 +214,6 @@ export default function Dashboard() {
               value={equipe.length}
               label={equipe.length === 1 ? 'Pessoa na equipe' : 'Pessoas na equipe'}
               variant="success"
-              badge={
-                convites.length > 0 ? (
-                  <Badge variant="warning" size="sm">+{plural(convites.length, 'convite', 'convites')}</Badge>
-                ) : null
-              }
-            />
-            <StatCard
-              icon={atencao.length ? 'priority_high' : 'task_alt'}
-              value={atencao.length}
-              label={atencao.length === 1 ? 'Coisa pede atenção' : 'Coisas pedem atenção'}
-              hint={atencao.length ? 'Veja a lista abaixo' : 'Tudo em dia'}
-              variant={atencao.length ? 'warning' : 'default'}
             />
           </>
         )}
@@ -318,7 +306,7 @@ export default function Dashboard() {
                 className="flex items-center gap-3.5 group no-underline"
               >
                 <div className="w-11 h-11 rounded-lg flex items-center justify-center bg-primary-100 text-primary shrink-0">
-                  <span className="material-icons text-[21px]" aria-hidden="true">{modulo.icone || 'extension'}</span>
+                  <span className="material-icons text-[24px]" aria-hidden="true">{modulo.icone || 'extension'}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-sm text-ink truncate">{modulo.nome}</h3>
@@ -426,10 +414,7 @@ export default function Dashboard() {
                     <Avatar key={membro.id} name={membro.nome} size="md" ring />
                   ))}
                 </div>
-                <p className="text-sm text-light-text">
-                  {plural(equipe.length, 'pessoa', 'pessoas')}
-                  {convites.length > 0 ? ` · ${plural(convites.length, 'convite pendente', 'convites pendentes')}` : ''}
-                </p>
+                <p className="text-sm text-light-text">{plural(equipe.length, 'pessoa', 'pessoas')}</p>
               </div>
             )}
           </Card>

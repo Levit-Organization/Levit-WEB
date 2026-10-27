@@ -21,7 +21,7 @@ export function AcaoAtualizarCampo({ configuracao, campos, onChange }) {
           placeholder="Selecione a coluna"
           options={campos.map((c) => ({ value: c.id, label: c.nome }))}
         />
-        {['selecao', 'responsavel', 'prazo', 'recorrencia'].includes(campo?.tipo) ? (
+        {['selecao', 'responsavel', 'prazo', 'recorrencia', 'vinculo'].includes(campo?.tipo) ? (
           <CampoValor label="Novo valor" campo={campo} value={configuracao.valor || ''} onChange={(v) => onChange({ valor: v })} />
         ) : (
           <Input
@@ -40,7 +40,7 @@ export function AcaoAtualizarCampo({ configuracao, campos, onChange }) {
 }
 
 /** Cria um registro em outro módulo, preenchendo os campos a partir deste. */
-export function AcaoCriarRegistro({ configuracao, camposOrigem, modulos, onChange }) {
+export function AcaoCriarRegistro({ configuracao, camposOrigem, modulos, moduloOrigemId, onChange }) {
   const destinoId = configuracao.modulo_destino_id || '';
   const destino = useModulo(destinoId || undefined).data;
   const camposDestino = destino?.campos || [];
@@ -51,7 +51,7 @@ export function AcaoCriarRegistro({ configuracao, camposOrigem, modulos, onChang
       <Select
         label="Tabela onde criar"
         value={destinoId}
-        onChange={(e) => onChange({ modulo_destino_id: e.target.value, mapeamento: {} })}
+        onChange={(e) => onChange({ modulo_destino_id: e.target.value, mapeamento: {}, ligar_campo_id: null })}
         required
         placeholder="Selecione uma tabela"
         options={modulos.map((m) => ({ value: m.id, label: m.nome }))}
@@ -63,15 +63,49 @@ export function AcaoCriarRegistro({ configuracao, camposOrigem, modulos, onChang
           {camposDestino.length === 0 ? (
             <p className="text-xs text-light-text">Carregando colunas…</p>
           ) : (
-            camposDestino.map((campo) => (
-              <Input
-                key={campo.id}
-                label={campo.nome}
-                value={mapeamento[campo.id] || ''}
-                onChange={(e) => onChange({ mapeamento: { ...mapeamento, [campo.id]: e.target.value } })}
-                placeholder={campo.tipo === 'selecao' ? `Uma das opções: ${(campo.opcoes || []).join(', ')}` : 'Texto fixo ou {{variável}}'}
-              />
-            ))
+            camposDestino.map((campo) => {
+              // Ligação que aponta para esta tabela: pode receber o próprio item que disparou.
+              if (campo.tipo === 'vinculo' && campo.modulo_vinculado_id === moduloOrigemId) {
+                const ligado = configuracao.ligar_campo_id === campo.id;
+                return (
+                  <label key={campo.id} className="flex items-start gap-2.5 rounded-lg border border-divider p-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ligado}
+                      onChange={(e) => {
+                        const resto = Object.fromEntries(Object.entries(mapeamento).filter(([chave]) => chave !== campo.id));
+                        onChange({ ligar_campo_id: e.target.checked ? campo.id : null, mapeamento: resto });
+                      }}
+                      className="mt-0.5 w-4 h-4 accent-primary shrink-0"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-ink">{campo.nome}: ligar ao item que disparou</span>
+                      <span className="block text-xs text-light-text">O novo item já nasce ligado a este, e aparece em “Ligados a este item”.</span>
+                    </span>
+                  </label>
+                );
+              }
+              if (campo.tipo === 'vinculo') {
+                return (
+                  <CampoValor
+                    key={campo.id}
+                    label={campo.nome}
+                    campo={campo}
+                    value={mapeamento[campo.id] || ''}
+                    onChange={(v) => onChange({ mapeamento: { ...mapeamento, [campo.id]: v } })}
+                  />
+                );
+              }
+              return (
+                <Input
+                  key={campo.id}
+                  label={campo.nome}
+                  value={mapeamento[campo.id] || ''}
+                  onChange={(e) => onChange({ mapeamento: { ...mapeamento, [campo.id]: e.target.value } })}
+                  placeholder={campo.tipo === 'selecao' ? `Uma das opções: ${(campo.opcoes || []).join(', ')}` : 'Texto fixo ou {{variável}}'}
+                />
+              );
+            })
           )}
           <p className="text-xs text-light-text">
             {dicaVariaveis(camposOrigem)} Campos vazios ficam em branco no novo registro.

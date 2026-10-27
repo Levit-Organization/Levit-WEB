@@ -142,6 +142,7 @@ describe('acaoValida (ações sobre dados)', () => {
     expect(acaoValida({ tipo: 'atualizar_campo', configuracao: { campo_id: '' } })).toBe(false);
     expect(acaoValida({ tipo: 'criar_registro', configuracao: { modulo_destino_id: 'm2', mapeamento: { a: '  ' } } })).toBe(false);
     expect(acaoValida({ tipo: 'criar_registro', configuracao: { modulo_destino_id: 'm2', mapeamento: { a: '{{Nome}}' } } })).toBe(true);
+    expect(acaoValida({ tipo: 'criar_registro', configuracao: { modulo_destino_id: 'm2', mapeamento: {}, ligar_campo_id: 'c-lead' } })).toBe(true);
   });
 });
 

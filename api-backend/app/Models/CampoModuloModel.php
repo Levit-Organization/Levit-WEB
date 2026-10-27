@@ -15,6 +15,7 @@ class CampoModuloModel extends BaseModel
         'tipo',
         'opcoes',
         'ordem',
+        'modulo_vinculado_id',
     ];
 
     protected array $casts = [

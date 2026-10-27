@@ -169,4 +169,47 @@ final class IndicadoresTest extends CIUnitTestCase
         $this->assertStringNotContainsString('Quem mais fez', $html);
         $this->assertStringNotContainsString('Tudo o que foi feito', $html);
     }
+
+    public function testAgruparPorLigacaoMostraONomeDoItemEContaCadaItemUmaVez(): void
+    {
+        $ana   = '0190a000-0000-7000-8000-00000000000a';
+        $sumiu = '0190a000-0000-7000-8000-00000000000b';
+        $semNome = '0190a000-0000-7000-8000-00000000000c';
+        $r = IndicadoresService::montarGrupos([
+            ['grupo' => $ana, 'total' => 3, 'soma' => null, 'media' => null],
+            ['grupo' => $sumiu, 'total' => 1, 'soma' => null, 'media' => null],
+            ['grupo' => $semNome, 'total' => 1, 'soma' => null, 'media' => null],
+            ['grupo' => null, 'total' => 2, 'soma' => null, 'media' => null],
+        ], 'contar', 'vinculo', [$ana => 'Ana', $semNome => null], 5);
+
+        $this->assertSame(['Ana', 'Item excluído', 'Item sem nome', 'Sem item ligado'], array_column($r['grupos'], 'rotulo'));
+        $this->assertSame(5, $r['total_itens'], 'item ligado a vários clientes aparece em vários grupos, mas conta uma vez');
+    }
+
+    public function testColunaDeAgrupamentoAceitaColunaDaTabelaLigada(): void
+    {
+        $campos = [
+            'cliente' => ['id' => 'cliente', 'modulo_id' => 'ped', 'nome' => 'Cliente', 'tipo' => 'vinculo', 'modulo_vinculado_id' => 'cli'],
+            'status'  => ['id' => 'status', 'modulo_id' => 'ped', 'nome' => 'Status', 'tipo' => 'selecao', 'modulo_vinculado_id' => null],
+            'cidade'  => ['id' => 'cidade', 'modulo_id' => 'cli', 'nome' => 'Cidade', 'tipo' => 'texto', 'modulo_vinculado_id' => null],
+            'matriz'  => ['id' => 'matriz', 'modulo_id' => 'cli', 'nome' => 'Matriz', 'tipo' => 'vinculo', 'modulo_vinculado_id' => 'cli'],
+        ];
+
+        [$coluna, $ligacao] = IndicadoresService::colunaDeAgrupamento('cliente>cidade', 'ped', $campos);
+        $this->assertSame('Cliente › Cidade', $coluna['nome']);
+        $this->assertSame('cliente', $ligacao['id']);
+
+        [$direta, $semLigacao] = IndicadoresService::colunaDeAgrupamento('cliente', 'ped', $campos);
+        $this->assertSame('vinculo', $direta['tipo']);
+        $this->assertNull($semLigacao);
+
+        foreach (['cidade', 'cliente>matriz', 'status>cidade', 'cliente>status', 'x>y'] as $invalida) {
+            try {
+                IndicadoresService::colunaDeAgrupamento($invalida, 'ped', $campos);
+                $this->fail("Deveria recusar {$invalida}");
+            } catch (\DomainException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
 }

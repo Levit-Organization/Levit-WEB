@@ -35,7 +35,7 @@ export default function PageHeader({
         )}
         {icon && (
           <div className="w-11 h-11 rounded-xl bg-primary-100 text-primary flex items-center justify-center shrink-0">
-            <span className="material-icons text-[22px]" aria-hidden="true">{icon}</span>
+            <span className="material-icons text-[24px]" aria-hidden="true">{icon}</span>
           </div>
         )}
         <div className="min-w-0">

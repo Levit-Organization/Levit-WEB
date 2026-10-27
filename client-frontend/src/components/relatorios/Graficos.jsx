@@ -23,10 +23,13 @@ export function Variacao({ comparacao, subirEBom = true, className }) {
   );
 }
 
-/** Indicador com número grande e variação contra o período anterior. */
+/**
+ * Indicador com número grande e variação contra o período anterior. Sem caixa
+ * própria: vive dentro do card de quem chama, lado a lado com os outros.
+ */
 export function Indicador({ rotulo, comparacao, formatar = numero, subirEBom = true, dica }) {
   return (
-    <div className="rounded-xl border border-divider bg-surface px-4 py-3.5 min-w-0">
+    <div className="min-w-0">
       <p className="text-sm text-light-text truncate">{rotulo}</p>
       <div className="mt-1 flex items-baseline gap-2 flex-wrap">
         <span className="text-2xl font-bold text-ink tabular">{formatar(comparacao?.atual ?? 0)}</span>

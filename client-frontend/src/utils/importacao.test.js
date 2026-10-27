@@ -68,3 +68,27 @@ describe('prepararItens', () => {
     expect(problemas).toEqual([{ linha: 3, mensagem: 'Status: "Pago" não é uma opção de Status' }]);
   });
 });
+
+describe('converterCelula: ligação com outra tabela', () => {
+  const titulos = { 'id-ana': 'Ana Souza', 'id-bia': 'Bia', 'id-x1': 'Duplicado', 'id-x2': 'duplicado' };
+  const ligados = { 'mod-c': titulos };
+  const um = { tipo: 'vinculo', nome: 'Cliente', modulo_vinculado_id: 'mod-c', opcoes: { multiplo: false } };
+  const varios = { ...um, opcoes: { multiplo: true } };
+
+  it('acha o item pelo nome, sem diferenciar maiúsculas', () => {
+    expect(converterCelula('ana souza', um, [], ligados)).toEqual({ valor: 'id-ana' });
+    expect(converterCelula('Bia', varios, [], ligados)).toEqual({ valor: ['id-bia'] });
+  });
+
+  it('aceita vários nomes separados quando a coluna permite', () => {
+    expect(converterCelula('Ana Souza; Bia, bia', varios, [], ligados)).toEqual({ valor: ['id-ana', 'id-bia'] });
+    expect(converterCelula('Ana Souza, Bia', um, [], ligados).erro).toContain('não está');
+  });
+
+  it('avisa nome ambíguo ou inexistente', () => {
+    expect(converterCelula('Duplicado', um, [], ligados).erro).toContain('ambíguo');
+    expect(converterCelula('Carla', um, [], ligados).erro).toContain('não está');
+    expect(converterCelula('Ana', um, [], {}).erro).toContain('não foi possível');
+  });
+});
+

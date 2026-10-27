@@ -34,7 +34,7 @@ class ModuloController extends BaseApiController
         $user = service('authenticatedUser');
 
         try {
-            $modulo = $this->moduloService->criarModulo($user->empresaId, $user->id, $user->cargoId, $dados);
+            $modulo = $this->moduloService->criarModulo($user->empresaId, $user->id, $user->cargoId, $dados, $user->acessoTotal);
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
         } catch (\DomainException $e) {
@@ -177,6 +177,8 @@ class ModuloController extends BaseApiController
             return $this->respondError($e->getMessage(), 404);
         } catch (AcessoNegadoException $e) {
             return $this->respondError($e->getMessage(), 403);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 409);
         }
 
         return $this->respondSuccess(null, 200);

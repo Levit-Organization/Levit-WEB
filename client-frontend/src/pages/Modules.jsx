@@ -53,15 +53,12 @@ export default function Modules() {
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[1, 2, 3].map((skeleton) => (
-            <Card key={skeleton} padding="md">
-              <div className="flex items-center gap-4 mb-4">
-                <Skeleton className="w-12 h-12 rounded-lg" />
-                <div className="flex-1">
-                  <Skeleton className="h-4 w-24 mb-2" />
-                  <Skeleton className="h-3 w-16" />
-                </div>
+            <Card key={skeleton} padding="md" className="flex items-center gap-4">
+              <Skeleton className="w-12 h-12 rounded-lg" />
+              <div className="flex-1">
+                <Skeleton className="h-4 w-24 mb-2" />
+                <Skeleton className="h-3 w-16" />
               </div>
-              <Skeleton className="h-8" />
             </Card>
           ))}
         </div>
@@ -88,41 +85,41 @@ export default function Modules() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {modulos.map((modulo) => (
-            <Card key={modulo.id} padding="md" interactive className="flex flex-col justify-between group">
+            <Card key={modulo.id} padding="md" interactive className="flex items-center gap-2 group">
               <Link
                 to={destinoDoModulo(modulo)}
-                className="flex items-center gap-4 mb-4 rounded-lg no-underline"
+                className="flex flex-1 min-w-0 items-center gap-4 rounded-lg no-underline"
               >
                 <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-primary-100 text-primary shrink-0">
-                  <span className="material-icons text-xl" aria-hidden="true">{modulo.icone || 'extension'}</span>
+                  <span className="material-icons text-[20px]" aria-hidden="true">{modulo.icone || 'extension'}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="font-semibold text-sm text-ink truncate" title={modulo.nome}>{modulo.nome}</h4>
                   <p className="text-xs text-light-text mt-0.5">
-                    {modulo.total_registros || 0} registro{(modulo.total_registros || 0) != 1 ? 's' : ''}
+                    {modulo.total_registros || 0} {Number(modulo.total_registros || 0) === 1 ? 'item' : 'itens'}
                   </p>
                 </div>
-                <span className="material-icons text-lg text-faint opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity" aria-hidden="true">
-                  arrow_forward
-                </span>
               </Link>
 
-              <div className="flex gap-2 justify-end mt-auto border-t border-divider pt-3">
-                <Link
+              {/* Com mouse, as ações aparecem no hover ou no foco; no toque ficam sempre à mostra. */}
+              <div className="flex gap-0.5 shrink-0 transition-opacity pointer-fine:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+                <Button
                   to={`/modulos/${modulo.id}/editar`}
-                  className="text-xs font-medium text-light-text hover:text-primary transition-colors px-2 py-1"
+                  variant="ghost"
+                  size="icon-sm"
+                  icon="edit"
                   aria-label={`Editar ${modulo.nome}`}
-                >
-                  Editar
-                </Link>
-                <button
-                  type="button"
+                  title="Editar"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  icon="delete"
                   onClick={() => handleDelete(modulo)}
-                  className="text-xs font-medium text-light-text hover:text-danger transition-colors px-2 py-1"
                   aria-label={`Excluir ${modulo.nome}`}
-                >
-                  Excluir
-                </button>
+                  title="Excluir"
+                  className="hover:bg-danger-bg hover:text-danger"
+                />
               </div>
             </Card>
           ))}

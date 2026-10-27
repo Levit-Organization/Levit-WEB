@@ -14,6 +14,8 @@ export { default as EmptyState } from './EmptyState';
 export { default as StatCard } from './StatCard';
 export { default as Avatar } from './Avatar';
 export { default as PageHeader } from './PageHeader';
+export { default as Tabs } from './Tabs';
+export { default as FileInput } from './FileInput';
 export { coresDaFase, tempoRelativo, estaParado } from './funil';
 export { default as Pagination } from './Pagination';
 export { default as ErrorState } from './ErrorState';

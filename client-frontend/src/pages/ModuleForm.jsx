@@ -5,7 +5,7 @@ import Layout from '../components/Layout';
 import { Button, Input, Select, Alert, Badge, Card, EmptyState, PageHeader } from '../components/ui';
 import { moduloService } from '../services/moduloService';
 import { MODULO_ICON_OPTIONS } from '../utils/iconOptions';
-import { modulosQuery } from '../hooks/queries';
+import { modulosQuery, useModulos } from '../hooks/queries';
 import { useToast, useConfirm } from '../hooks/useFeedback';
 import { mensagemDeErro } from '../lib/queryClient';
 import { MODELOS_TABELA } from '../utils/modelosTabela';
@@ -41,6 +41,7 @@ const CAMPO_TIPO_INFO = {
   responsavel: { label: 'Responsável', icon: 'person' },
   prazo: { label: 'Prazo', icon: 'event_available' },
   recorrencia: { label: 'Repetição', icon: 'event_repeat' },
+  vinculo: { label: 'Ligação com tabela', icon: 'link' },
 };
 
 /** Modelos agrupados: primeiro os segmentos em que o Levit foca, depois os usos gerais. */
@@ -54,10 +55,19 @@ const GRUPOS_DE_MODELOS = Object.entries(
 
 /** O que cada tipo novo faz, mostrado embaixo da coluna. */
 const CAMPO_TIPO_DICA = {
-  responsavel: 'Uma pessoa da equipe. Ela vê os itens dela em "Meus itens" e pode ser avisada pelas automações.',
-  prazo: 'Itens atrasados aparecem em "Precisa da sua atenção". Um item sai dos atrasados quando uma coluna de lista dele fica em Concluído, Entregue, Pago ou parecido.',
-  recorrencia: 'Para o que se repete (todo mês, todo ano…). Quando um item com repetição é concluído, o Levit cria o próximo com o prazo avançado e o status de volta ao início.',
+  responsavel: 'A pessoa vê os itens dela em "Meus itens" e pode ser avisada pelas automações.',
+  prazo: 'Itens atrasados aparecem em "Precisa da sua atenção" no Início.',
+  recorrencia: 'Ao concluir o item, o Levit cria o próximo com o prazo avançado.',
+  vinculo: 'Cada item aponta para itens de outra tabela, como o cliente de um pedido. Dá para filtrar pelos dados da tabela ligada.',
 };
+
+/** O que vai para a API de cada coluna. Ligação: a tabela de destino e se aceita vários itens. */
+function payloadDaColuna({ nome, tipo, opcoes, modulo_vinculado_id }) {
+  if (tipo === 'vinculo') {
+    return { nome, tipo, modulo_vinculado_id, opcoes: { multiplo: !!opcoes?.multiplo } };
+  }
+  return { nome, tipo, ...(Array.isArray(opcoes) && opcoes.length > 0 ? { opcoes } : {}) };
+}
 
 export default function ModuleForm() {
   const { id } = useParams();
@@ -66,6 +76,8 @@ export default function ModuleForm() {
   const toast = useToast();
   const confirm = useConfirm();
   const isEditing = !!id;
+  // Tabelas que uma coluna de ligação pode apontar (só as de lista).
+  const tabelasDeDados = (useModulos().data ?? []).filter((m) => (m.tipo || 'dados') === 'dados');
 
   const [formData, setFormData] = useState({
     nome: '',
@@ -160,6 +172,10 @@ export default function ModuleForm() {
   const handleFieldChange = (index, field, value) => {
     const updated = [...campos];
     updated[index] = { ...updated[index], [field]: value };
+    // Ligação guarda { multiplo } em opcoes; as listas, um array. Trocar de tipo não leva um para o outro.
+    if (field === 'tipo' && (value === 'vinculo' || campos[index].tipo === 'vinculo')) {
+      updated[index] = { ...updated[index], opcoes: value === 'vinculo' ? { multiplo: false } : null, modulo_vinculado_id: '' };
+    }
     setCampos(updated);
   };
 
@@ -257,11 +273,7 @@ export default function ModuleForm() {
 
         for (const campo of campos) {
           if (campo._isNew) {
-            await moduloService.addField(id, {
-              nome: campo.nome,
-              tipo: campo.tipo,
-              ...(campo.opcoes && campo.opcoes.length > 0 ? { opcoes: campo.opcoes } : {}),
-            });
+            await moduloService.addField(id, payloadDaColuna(campo));
           } else if (campo.id) {
             const original = camposOriginais.find(c => c.id === campo.id);
             if (original) {
@@ -281,11 +293,7 @@ export default function ModuleForm() {
         toast.success('Tabela atualizada.');
         navigate('/modulos');
       } else {
-        const camposLimpos = campos.map(({ nome, tipo, opcoes }) => ({
-          nome,
-          tipo,
-          ...(opcoes && opcoes.length > 0 ? { opcoes } : {}),
-        }));
+        const camposLimpos = campos.map(payloadDaColuna);
         const payload = { ...formData, campos: camposLimpos };
 
         if (formData.tipo === 'recrutamento') {
@@ -319,7 +327,6 @@ export default function ModuleForm() {
         backTo="/modulos"
         icon={formData.icone}
         title={isEditing ? 'Editar tabela' : 'Nova tabela'}
-        subtitle={isEditing ? 'Atualize as informações e colunas' : 'Crie uma tabela do seu jeito'}
       />
 
       {error && (
@@ -330,10 +337,7 @@ export default function ModuleForm() {
 
       {!isEditing && (
         <section aria-labelledby="modelos-titulo" className="mb-6">
-          <div className="flex items-baseline justify-between gap-3 mb-3">
-            <h2 id="modelos-titulo" className="text-sm font-semibold text-ink">Comece por um modelo</h2>
-            <p className="text-xs text-light-text">ou monte do zero logo abaixo</p>
-          </div>
+          <h2 id="modelos-titulo" className="text-sm font-semibold text-ink mb-3">Comece por um modelo</h2>
           <div className="flex flex-col gap-4">
             {GRUPOS_DE_MODELOS.map(([grupo, modelos]) => (
               <div key={grupo}>
@@ -355,11 +359,11 @@ export default function ModuleForm() {
                       >
                         <span className="flex items-center gap-2.5">
                           <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${ativo ? 'bg-primary text-white' : 'bg-primary-100 text-primary'}`}>
-                            <span className="material-icons text-[19px]" aria-hidden="true">{modelo.icone}</span>
+                            <span className="material-icons text-[20px]" aria-hidden="true">{modelo.icone}</span>
                           </span>
                           <span className="text-sm font-semibold text-ink">{modelo.titulo}</span>
                         </span>
-                        <span className="block text-xs text-light-text mt-2 leading-relaxed">{modelo.descricao}</span>
+                        <span className="block text-xs text-light-text mt-2 truncate" title={modelo.descricao}>{modelo.descricao}</span>
                       </button>
                     );
                   })}
@@ -374,10 +378,7 @@ export default function ModuleForm() {
 
         {/* Coluna esquerda: identidade do módulo */}
         <Card className="lg:sticky lg:top-8 flex flex-col gap-5">
-          <div>
-            <h2 className="text-base font-semibold">Informações básicas</h2>
-            <p className="text-xs text-light-text mt-0.5">Nome, tipo e ícone de identificação.</p>
-          </div>
+          <h2 className="text-base font-semibold">Informações básicas</h2>
 
           <Input
             label="Nome da tabela"
@@ -400,24 +401,21 @@ export default function ModuleForm() {
           />
 
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-sm font-medium">Ícone</label>
-              <button
-                type="button"
-                onClick={() => setIconPickerOpen((v) => !v)}
-                className="text-xs text-primary font-medium hover:underline"
-              >
-                {iconPickerOpen ? 'Fechar' : 'Alterar'}
-              </button>
-            </div>
-
-            <div className="w-full h-11 px-3.5 border border-divider rounded-lg flex items-center gap-2.5 bg-background/60">
-              <span className="material-icons text-primary text-[20px]">{formData.icone}</span>
-              <span className="text-sm text-light-text">Ícone selecionado</span>
-            </div>
+            <p className="block text-sm font-medium mb-1.5">Ícone</p>
+            <button
+              type="button"
+              onClick={() => setIconPickerOpen((v) => !v)}
+              aria-expanded={iconPickerOpen}
+              className="flex items-center gap-2.5 text-sm text-primary font-medium hover:underline"
+            >
+              <span className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center shrink-0">
+                <span className="material-icons text-[20px]" aria-hidden="true">{formData.icone}</span>
+              </span>
+              {iconPickerOpen ? 'Fechar' : 'Alterar ícone'}
+            </button>
 
             {iconPickerOpen && (
-              <div className="mt-2.5 grid grid-cols-5 gap-2 p-3 border border-divider rounded-lg bg-background/40">
+              <div className="mt-3 grid grid-cols-5 gap-2">
                 {MODULO_ICON_OPTIONS.map(icon => (
                   <button
                     key={icon}
@@ -430,7 +428,7 @@ export default function ModuleForm() {
                         : 'bg-surface border border-divider-strong text-light-text hover:border-primary-300 hover:bg-primary-50 hover:text-primary'
                     }`}
                   >
-                    <span className="material-icons text-[19px]">{icon}</span>
+                    <span className="material-icons text-[20px]">{icon}</span>
                   </button>
                 ))}
               </div>
@@ -444,17 +442,14 @@ export default function ModuleForm() {
           {precisaDeFases && (
             <Card>
               <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h2 className="text-base font-semibold">Fases do Pipeline</h2>
-                  <p className="text-xs text-light-text mt-0.5">Defina as etapas pelas quais um candidato passa, em ordem.</p>
-                </div>
+                <h2 className="text-base font-semibold">Etapas do quadro</h2>
                 <button
                   type="button"
                   onClick={handleAddFase}
                   className="h-9 px-3.5 rounded-lg border border-divider text-sm font-medium text-light-text hover:border-primary hover:text-primary transition-colors flex items-center gap-1.5 shrink-0"
                 >
-                  <span className="material-icons text-base">add</span>
-                  Fase
+                  <span className="material-icons text-[16px]">add</span>
+                  Etapa
                 </button>
               </div>
 
@@ -475,9 +470,9 @@ export default function ModuleForm() {
                       type="button"
                       onClick={() => handleRemoveFase(index)}
                       className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-danger hover:bg-danger-bg transition-colors shrink-0"
-                      title="Remover fase"
+                      title="Remover etapa"
                     >
-                      <span className="material-icons text-[19px]">close</span>
+                      <span className="material-icons text-[20px]">close</span>
                     </button>
                   </div>
                 ))}
@@ -485,7 +480,7 @@ export default function ModuleForm() {
 
               {fasesValidas.length === 0 && (
                 <div className="mt-3">
-                  <Alert variant="warning">Adicione pelo menos uma fase para criar a vaga.</Alert>
+                  <Alert variant="warning">Adicione pelo menos uma etapa para criar a vaga.</Alert>
                 </div>
               )}
             </Card>
@@ -495,7 +490,7 @@ export default function ModuleForm() {
             <div className="bg-background/60 border border-divider rounded-2xl p-5 flex items-start gap-3">
               <span className="material-icons text-light-text text-[20px] mt-0.5">info</span>
               <p className="text-sm text-light-text">
-                As fases desta vaga são gerenciadas na tela de{' '}
+                As etapas desta vaga são gerenciadas na tela de{' '}
                 <Link to="/recrutamento" className="text-primary font-medium hover:underline">Recrutamento</Link>.
               </p>
             </div>
@@ -503,25 +498,20 @@ export default function ModuleForm() {
 
           {!['financeiro', 'arquivo'].includes(formData.tipo) ? (
             <Card>
-              <div className="flex justify-between items-center mb-5">
-                <div>
-                  <h2 className="text-base font-semibold">Colunas da tabela</h2>
-                  <p className="text-xs text-light-text mt-0.5">
-                    {isEditing ? 'Adicione, edite ou remova colunas' : 'Defina as colunas que compõem cada item'}
-                  </p>
-                </div>
+              <div className="flex justify-between items-center mb-2">
+                <h2 className="text-base font-semibold">Colunas da tabela</h2>
                 <button
                   type="button"
                   onClick={handleAddField}
                   className="h-9 px-3.5 rounded-lg border border-divider text-sm font-medium text-light-text hover:border-primary hover:text-primary transition-colors flex items-center gap-1.5 shrink-0"
                 >
-                  <span className="material-icons text-base" aria-hidden="true">add</span>
+                  <span className="material-icons text-[16px]" aria-hidden="true">add</span>
                   Coluna
                 </button>
               </div>
 
               {campos.length === 0 ? (
-                <div className="py-12 border border-dashed border-divider rounded-xl">
+                <div className="py-10">
                   <EmptyState
                     icon="view_column"
                     size="sm"
@@ -533,10 +523,10 @@ export default function ModuleForm() {
                   />
                 </div>
               ) : (
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col divide-y divide-divider">
                   {campos.map((campo, index) => (
-                    <div key={campo.id || campo._tempId} className="border border-divider rounded-xl overflow-hidden">
-                      <div className="flex items-center gap-3 p-3.5 bg-background/40">
+                    <div key={campo.id || campo._tempId} className="py-3.5">
+                      <div className="flex items-center gap-3">
                         <div className="flex flex-col shrink-0">
                           <button
                             type="button"
@@ -586,7 +576,7 @@ export default function ModuleForm() {
                         </div>
 
                         {campo._isNew && (
-                          <Badge variant="primary" size="sm" className="uppercase tracking-wide shrink-0">
+                          <Badge variant="primary" size="sm" className="shrink-0">
                             Novo
                           </Badge>
                         )}
@@ -597,19 +587,47 @@ export default function ModuleForm() {
                           className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-danger hover:bg-danger-bg transition-colors shrink-0"
                           title="Remover coluna"
                         >
-                          <span className="material-icons text-[19px]">delete_outline</span>
+                          <span className="material-icons text-[20px]">delete_outline</span>
                         </button>
                       </div>
 
                       {CAMPO_TIPO_DICA[campo.tipo] && (
-                        <p className="px-3.5 py-2.5 border-t border-divider text-xs text-light-text flex items-start gap-1.5">
-                          <span className="material-icons text-[15px] text-primary shrink-0" aria-hidden="true">info</span>
-                          {CAMPO_TIPO_DICA[campo.tipo]}
-                        </p>
+                        <p className="mt-1.5 pl-[84px] text-xs text-light-text">{CAMPO_TIPO_DICA[campo.tipo]}</p>
+                      )}
+
+                      {campo.tipo === 'vinculo' && (
+                        <div className="mt-3 pl-[84px] flex flex-col gap-3">
+                          {campo._isNew ? (
+                            <>
+                              <Select
+                                label="Liga à tabela"
+                                value={campo.modulo_vinculado_id || ''}
+                                onChange={(e) => handleFieldChange(index, 'modulo_vinculado_id', e.target.value)}
+                                required
+                                placeholder={tabelasDeDados.length ? 'Escolha a tabela' : 'Crie outra tabela de lista primeiro'}
+                                options={tabelasDeDados.map((m) => ({ value: m.id, label: m.id === id ? `${m.nome} (esta tabela)` : m.nome }))}
+                              />
+                              <label className="flex items-center gap-2 text-sm text-ink-soft cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={!!campo.opcoes?.multiplo}
+                                  onChange={(e) => handleFieldChange(index, 'opcoes', { multiplo: e.target.checked })}
+                                  className="w-4 h-4 accent-primary"
+                                />
+                                Cada item pode ligar a vários itens dessa tabela
+                              </label>
+                            </>
+                          ) : (
+                            <p className="text-xs text-light-text">
+                              Liga à tabela <strong className="text-ink-soft font-semibold">{campo.modulo_vinculado?.nome || 'removida'}</strong>
+                              {campo.opcoes?.multiplo ? ', vários itens por vez.' : ', um item por vez.'}
+                            </p>
+                          )}
+                        </div>
                       )}
 
                       {campo.tipo === 'selecao' && (
-                        <div className="p-3.5 border-t border-divider">
+                        <div className="mt-3 pl-[84px]">
                           <p className="text-xs font-medium text-light-text mb-2">Opções da lista</p>
                           <div className="flex flex-col gap-2">
                             {(campo.opcoes || []).map((opcao, optIdx) => (
@@ -627,7 +645,7 @@ export default function ModuleForm() {
                                   onClick={() => handleRemoveOption(index, optIdx)}
                                   className="text-light-text hover:text-danger transition-colors shrink-0"
                                 >
-                                  <span className="material-icons text-base">close</span>
+                                  <span className="material-icons text-[16px]">close</span>
                                 </button>
                               </div>
                             ))}
@@ -655,7 +673,7 @@ export default function ModuleForm() {
                 <div>
                   <h2 className="text-base font-semibold text-primary-900">Tabela financeira</h2>
                   <p className="text-sm text-primary-800 mt-1">
-                    Tabelas financeiras possuem uma estrutura fixa e otimizada (Data, Descrição, Valor, Categoria) para controle de fluxo de caixa, não sendo necessário definir colunas customizadas.
+                    Já vem com data, descrição, valor e categoria. Não precisa criar colunas.
                   </p>
                 </div>
               </div>
@@ -669,7 +687,7 @@ export default function ModuleForm() {
                 <div>
                   <h2 className="text-base font-semibold text-primary-900">Tabela de arquivos</h2>
                   <p className="text-sm text-primary-800 mt-1">
-                    Esta tabela atua como um repositório centralizado e organizado de arquivos (upload, armazenamento e download), não necessitando da criação de colunas de dados.
+                    Guarda arquivos para enviar e baixar. Não precisa criar colunas.
                   </p>
                 </div>
               </div>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, EmptyState, ErrorState, Skeleton } from '../ui';
 import { cn } from '../ui/cn';
-import SeloPrazo from './SeloPrazo';
+import { situacaoDoPrazo } from '../../utils/prazos';
 import PessoaResponsavel from './PessoaResponsavel';
 import { mensagemDeErro } from '../../lib/queryClient';
 
@@ -15,6 +15,10 @@ const GRUPOS = [
 const POR_GRUPO = 5;
 
 function Linha({ item }) {
+  // A urgência já está no título do grupo (atrasados, hoje...): aqui só a data, sem selo colorido.
+  // "Vence hoje" no grupo "Vencem hoje" seria eco.
+  const situacao = situacaoDoPrazo(item.prazo);
+  const prazo = situacao?.tipo === 'hoje' ? null : situacao?.rotulo;
   return (
     <li>
       <Link
@@ -22,7 +26,7 @@ function Linha({ item }) {
         className="flex items-center gap-3 py-2.5 group rounded-md focus-visible:outline-2 focus-visible:outline-primary"
       >
         <span className="w-8 h-8 rounded-lg bg-primary-50 text-primary flex items-center justify-center shrink-0" aria-hidden="true">
-          <span className="material-icons text-[17px]">{item.modulo_icone || 'table_chart'}</span>
+          <span className="material-icons text-[16px]">{item.modulo_icone || 'table_chart'}</span>
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-ink truncate group-hover:text-primary transition-colors">
@@ -30,15 +34,11 @@ function Linha({ item }) {
           </span>
           <span className="block text-xs text-light-text truncate">
             {item.modulo_nome} · {item.coluna_prazo}
-          </span>
-          {/* No celular o selo desce para baixo do nome, para o nome não ser cortado. */}
-          <span className="block mt-1 sm:hidden">
-            <SeloPrazo data={item.prazo} />
+            {/* No celular a data entra na linha de baixo, para o nome não ser cortado. */}
+            {prazo && <span className="sm:hidden"> · {prazo}</span>}
           </span>
         </span>
-        <span className="hidden sm:block shrink-0">
-          <SeloPrazo data={item.prazo} />
-        </span>
+        {prazo && <span className="hidden sm:block shrink-0 text-xs text-light-text tabular">{prazo}</span>}
         <span className="hidden sm:inline-flex w-6 shrink-0 justify-end">
           {item.responsavel_nome && <PessoaResponsavel nome={item.responsavel_nome} comNome={false} />}
         </span>

@@ -5,6 +5,7 @@
  */
 import { normalizar } from './prazos';
 import { REPETICOES } from './recorrencia';
+import { aceitaVarios } from './vinculos';
 
 /** Texto do arquivo: UTF-8 quando válido; senão Windows-1252 (CSV salvo pelo Excel em português). */
 export function decodificarTexto(buffer) {
@@ -109,7 +110,7 @@ function converterNumero(bruto) {
  * Converte uma célula para o tipo da coluna.
  * @returns {{ valor?: any, erro?: string }} valor ausente = célula vazia (não importa nada)
  */
-export function converterCelula(bruto, campo, pessoas = []) {
+export function converterCelula(bruto, campo, pessoas = [], ligados = {}) {
   if (bruto === null || bruto === undefined || String(bruto).trim() === '') return {};
   const texto = bruto instanceof Date ? bruto : String(bruto).trim();
 
@@ -138,16 +139,41 @@ export function converterCelula(bruto, campo, pessoas = []) {
       const r = REPETICOES.find((op) => op.valor === alvo || normalizar(op.rotulo) === alvo);
       return r ? { valor: r.valor } : { erro: `"${texto}" não é uma repetição válida` };
     }
+    case 'vinculo':
+      return converterLigacao(String(texto), campo, ligados[campo.modulo_vinculado_id]);
     default:
       return { valor: String(texto) };
   }
 }
 
 /**
+ * Ligação: a célula traz o nome do item da outra tabela (como a exportação
+ * escreve). Coluna que aceita vários: nomes separados por vírgula ou ponto e vírgula.
+ * @param {Record<string, string|null>|undefined} titulos id => nome dos itens da tabela ligada
+ */
+function converterLigacao(texto, campo, titulos) {
+  if (!titulos) return { erro: `não foi possível ler os itens da tabela ligada a ${campo.nome}` };
+  const achar = (nome) => Object.keys(titulos).filter((id) => normalizar(titulos[id] ?? '') === normalizar(nome));
+
+  const inteiro = achar(texto);
+  if (inteiro.length === 1) return { valor: aceitaVarios(campo) ? inteiro : inteiro[0] };
+  if (inteiro.length > 1) return { erro: `"${texto}" é ambíguo na tabela ligada` };
+  if (!aceitaVarios(campo)) return { erro: `"${texto}" não está na tabela ligada` };
+
+  const ids = [];
+  for (const parte of texto.split(/[;,]/).map((p) => p.trim()).filter(Boolean)) {
+    const achados = achar(parte);
+    if (achados.length !== 1) return { erro: `"${parte}" ${achados.length ? 'é ambíguo' : 'não está'} na tabela ligada` };
+    ids.push(achados[0]);
+  }
+  return { valor: [...new Set(ids)] };
+}
+
+/**
  * Converte as linhas da planilha (sem o cabeçalho) em itens prontos para a API.
  * Linhas com alguma célula inválida vão para `problemas` e não são enviadas.
  */
-export function prepararItens(linhas, campos, mapa, pessoas = []) {
+export function prepararItens(linhas, campos, mapa, pessoas = [], ligados = {}) {
   const itens = [];
   const problemas = [];
   linhas.forEach((celulas, i) => {
@@ -157,7 +183,7 @@ export function prepararItens(linhas, campos, mapa, pessoas = []) {
     campos.forEach((campo) => {
       const indice = mapa[campo.id];
       if (indice === undefined || indice < 0) return;
-      const { valor, erro } = converterCelula(celulas[indice], campo, pessoas);
+      const { valor, erro } = converterCelula(celulas[indice], campo, pessoas, ligados);
       if (erro) erros.push(`${campo.nome}: ${erro}`);
       else if (valor !== undefined) dados[campo.id] = valor;
     });
