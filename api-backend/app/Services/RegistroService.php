@@ -34,10 +34,15 @@ class RegistroService
      */
     public function listarRegistros(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, ?string $busca = null, ?array $filtros = null): array
     {
-        $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
+        $modulo = $this->moduloDaEmpresa($moduloId, $empresaId);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
 
-        $busca      = trim((string) $busca);
+        $busca = trim((string) $busca);
+
+        if ($modulo['tipo'] === 'arquivo') {
+            return $this->listarArquivos($moduloId, $busca);
+        }
+
         $comFiltros = ! empty($filtros['regras']);
 
         if ($busca === '' && ! $comFiltros) {
@@ -83,6 +88,36 @@ class RegistroService
         }
 
         return $registros;
+    }
+
+    /**
+     * Tabela de arquivos: cada item é um arquivo, então a lista traz o nome,
+     * o tamanho, o tipo e quem enviou. A busca procura no nome do arquivo.
+     * A chave no armazenamento nunca sai daqui.
+     */
+    private function listarArquivos(string $moduloId, string $busca): array
+    {
+        $sql = 'SELECT r.id, r.modulo_id, r.criado_por, r.criado_em, r.atualizado_em,
+                       a.nome_original AS arquivo_nome, a.tamanho_bytes AS arquivo_tamanho,
+                       a.tipo_mime AS arquivo_tipo, u.nome AS enviado_por_nome
+                  FROM registro r
+                  JOIN arquivo a ON a.registro_id = r.id
+             LEFT JOIN usuario u ON u.id = r.criado_por
+                 WHERE r.modulo_id = :modulo:';
+        $binds = ['modulo' => $moduloId];
+
+        if ($busca !== '') {
+            $sql .= ' AND a.nome_original ILIKE :busca:';
+            $binds['busca'] = '%' . $busca . '%';
+        }
+
+        $arquivos = db_connect()->query($sql . ' ORDER BY r.criado_em DESC', $binds)->getResultArray();
+
+        foreach ($arquivos as &$arquivo) {
+            $arquivo['arquivo_tamanho'] = (int) $arquivo['arquivo_tamanho'];
+        }
+
+        return $arquivos;
     }
 
     /** Pesquisa avançada com as colunas de todas as tabelas da empresa e o acesso de quem pesquisa. */
@@ -479,7 +514,7 @@ class RegistroService
         return $registro;
     }
 
-    private function confirmarModuloDaEmpresa(string $moduloId, string $empresaId, bool $comCampos = false): ?array
+    private function moduloDaEmpresa(string $moduloId, string $empresaId): array
     {
         $modulo = $this->moduloModel
             ->where('id', $moduloId)
@@ -489,6 +524,13 @@ class RegistroService
         if (! $modulo) {
             throw new NaoEncontradoException('Tabela não encontrada.');
         }
+
+        return $modulo;
+    }
+
+    private function confirmarModuloDaEmpresa(string $moduloId, string $empresaId, bool $comCampos = false): ?array
+    {
+        $this->moduloDaEmpresa($moduloId, $empresaId);
 
         if (! $comCampos) {
             return null;

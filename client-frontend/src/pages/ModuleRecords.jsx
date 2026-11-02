@@ -18,7 +18,7 @@ import {
 } from '../components/ui';
 import { fieldClasses } from '../components/ui/fieldUtils';
 import { registroService } from '../services/registroService';
-import { arquivoService } from '../services/arquivoService';
+import TabelaDeArquivos from '../components/arquivos/TabelaDeArquivos';
 import { useModulo, useRegistros, usePessoas, useTitulosDasTabelas, queryKeys } from '../hooks/queries';
 import { useAuth } from '../hooks/useAuth';
 import SeloPrazo from '../components/prazos/SeloPrazo';
@@ -107,9 +107,10 @@ export default function ModuleRecords() {
   const filtrosAtivos = filtrosAdiados.tabela === id ? filtrosAdiados.filtros : null;
   const totalFiltros = filtrosApi?.regras.length ?? 0;
 
-  const registrosQuery = useRegistros(id, buscaAtiva, filtrosAtivos);
-  const registros = registrosQuery.data ?? SEM_DADOS;
+  // Tabela de arquivos tem tela própria (TabelaDeArquivos), com a própria lista.
   const ehArquivo = modulo?.tipo === 'arquivo';
+  const registrosQuery = useRegistros(ehArquivo ? null : id, buscaAtiva, filtrosAtivos);
+  const registros = registrosQuery.data ?? SEM_DADOS;
   const chaveRegistros = queryKeys.registros(id, buscaAtiva, filtrosAtivos);
 
   // --- Colunas, ordenação e paginação ---------------------------------------
@@ -131,13 +132,6 @@ export default function ModuleRecords() {
   const titulosLigados = useTitulosDasTabelas(ligadas);
 
   const colunas = useMemo(() => {
-    if (ehArquivo) {
-      return [
-        { key: 'arquivo_nome', titulo: 'Arquivo', tipo: 'texto', ler: (r) => r.arquivo_nome },
-        { key: 'arquivo_tamanho', titulo: 'Tamanho', tipo: 'numero', ler: (r) => r.arquivo_tamanho },
-        { key: 'criado_em', titulo: 'Criado em', tipo: 'data', ler: (r) => r.criado_em },
-      ];
-    }
     // Até 5 colunas na tabela (o formulário mostra todas), mas Responsável e
     // Prazo sempre aparecem: são o que diz de quem é e até quando.
     const visiveis = campos.filter(
@@ -158,7 +152,7 @@ export default function ModuleRecords() {
       })),
       { key: 'criado_em', titulo: 'Criado em', tipo: 'data', ler: (r) => r.criado_em },
     ];
-  }, [campos, ehArquivo, nomes, titulosLigados]);
+  }, [campos, nomes, titulosLigados]);
 
   const [ordem, setOrdem] = useState(null); // { key, direcao }
 
@@ -169,7 +163,7 @@ export default function ModuleRecords() {
   // Por tabela: trocar de tabela mantém esta tela montada (mesma rota, outro id).
   const [preferencias, setPreferencias] = useState({});
   const preferencia = preferencias[id] ?? lerPreferencia(id);
-  const podeQuadro = !ehArquivo && camposLista.length > 0;
+  const podeQuadro = camposLista.length > 0;
   const visao = podeQuadro && preferencia.visao === 'quadro' ? 'quadro' : 'lista';
   // Sem escolha salva, agrupa pela lista que é o andamento do trabalho (a que
   // tem uma opção de conclusão, como "Entregue"), não pela primeira que houver.
@@ -228,20 +222,16 @@ export default function ModuleRecords() {
   const [editingRegistro, setEditingRegistro] = useState(null);
   const [formDados, setFormDados] = useState({});
   const [dadosIniciais, setDadosIniciais] = useState({});
-  const [selectedFile, setSelectedFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const formSujo = ehArquivo
-    ? !!selectedFile
-    : JSON.stringify(formDados) !== JSON.stringify(dadosIniciais);
+  const formSujo = JSON.stringify(formDados) !== JSON.stringify(dadosIniciais);
 
   const abrirFormulario = (registro) => {
     const dados = registro?.dados || {};
     setEditingRegistro(registro);
     setFormDados(dados);
     setDadosIniciais(dados);
-    setSelectedFile(null);
     setError('');
     setShowForm(true);
   };
@@ -251,7 +241,7 @@ export default function ModuleRecords() {
   const [searchParams, setSearchParams] = useSearchParams();
   const itemDoLink = searchParams.get('item');
   const [linkTratado, setLinkTratado] = useState(null);
-  if (itemDoLink && itemDoLink !== linkTratado && registrosQuery.data && !registrosQuery.isPlaceholderData && !ehArquivo) {
+  if (itemDoLink && itemDoLink !== linkTratado && registrosQuery.data && !registrosQuery.isPlaceholderData) {
     setLinkTratado(itemDoLink);
     const alvo = registrosQuery.data.find((r) => r.id === itemDoLink);
     if (alvo) abrirFormulario(alvo);
@@ -278,14 +268,7 @@ export default function ModuleRecords() {
     try {
       setSaving(true);
       setError('');
-      if (ehArquivo) {
-        if (!selectedFile) {
-          setError('Selecione um arquivo.');
-          return;
-        }
-        await arquivoService.upload(id, selectedFile);
-        toast.success('Arquivo enviado.');
-      } else if (editingRegistro) {
+      if (editingRegistro) {
         await registroService.update(id, editingRegistro.id, { dados: formDados });
         toast.success('Item atualizado.');
       } else {
@@ -302,35 +285,21 @@ export default function ModuleRecords() {
 
   const handleDelete = async (registro) => {
     const ok = await confirm({
-      title: ehArquivo ? 'Excluir arquivo?' : 'Excluir item?',
-      message: ehArquivo
-        ? `"${registro.arquivo_nome || 'Este arquivo'}" será removido definitivamente.`
-        : 'Este item será removido definitivamente. Essa ação não pode ser desfeita.',
+      title: 'Excluir item?',
+      message: 'Este item será removido definitivamente. Essa ação não pode ser desfeita.',
       confirmLabel: 'Excluir',
       variant: 'danger',
     });
     if (!ok) return;
 
     try {
-      if (ehArquivo) {
-        await arquivoService.delete(id, registro.id);
-      } else {
-        await registroService.delete(id, registro.id);
-      }
+      await registroService.delete(id, registro.id);
       queryClient.setQueryData(chaveRegistros, (atual) =>
         atual?.filter((r) => r.id !== registro.id)
       );
-      toast.success(ehArquivo ? 'Arquivo excluído.' : 'Item excluído.');
+      toast.success('Item excluído.');
     } catch (err) {
       toast.error(mensagemDeErro(err, 'Erro ao excluir.'));
-    }
-  };
-
-  const handleDownload = async (registro) => {
-    try {
-      await arquivoService.downloadFile(id, registro.id, registro.arquivo_nome);
-    } catch (err) {
-      toast.error(mensagemDeErro(err, 'Erro ao baixar arquivo.'));
     }
   };
 
@@ -421,6 +390,7 @@ export default function ModuleRecords() {
   // Módulos especiais têm telas próprias.
   if (modulo?.tipo === 'recrutamento') return <Navigate to="/recrutamento" replace />;
   if (modulo?.tipo === 'financeiro') return <Navigate to={`/modulos/${id}/financeiro`} replace />;
+  if (ehArquivo) return <TabelaDeArquivos key={id} modulo={modulo} />;
 
   const buscando = registrosQuery.isFetching && registrosQuery.isPlaceholderData;
   const termoBusca = buscaAtiva;
@@ -447,13 +417,13 @@ export default function ModuleRecords() {
             <Button to={`/modulos/${id}/editar`} variant="secondary" icon="settings">
               Configurar
             </Button>
-            {!ehArquivo && campos.length > 0 && (
+            {campos.length > 0 && (
               <Button variant="secondary" icon="upload_file" onClick={() => setImportando(true)}>
                 Importar
               </Button>
             )}
-            <Button onClick={() => abrirFormulario(null)} icon={ehArquivo ? 'upload' : 'add'}>
-              {ehArquivo ? 'Enviar arquivo' : 'Novo item'}
+            <Button onClick={() => abrirFormulario(null)} icon="add">
+              Novo item
             </Button>
           </>
         }
@@ -477,7 +447,7 @@ export default function ModuleRecords() {
         />
         </div>
 
-        {!ehArquivo && campos.length > 0 && (
+        {campos.length > 0 && (
           <Button
             variant={mostrarFiltros || totalFiltros > 0 ? 'subtle' : 'secondary'}
             size="sm"
@@ -546,7 +516,7 @@ export default function ModuleRecords() {
         )}
       </div>
 
-      {mostrarFiltros && !ehArquivo && (
+      {mostrarFiltros && (
         <Card id="painel-filtros" className="mb-6">
           <PainelFiltros alvos={alvosFiltro} filtros={filtros} onChange={mudarFiltros} />
         </Card>
@@ -584,7 +554,7 @@ export default function ModuleRecords() {
       ) : registros.length === 0 ? (
         <Card padding="lg" className="py-12">
           <EmptyState
-            icon={ehArquivo ? 'folder_open' : 'inbox'}
+            icon="inbox"
             size="lg"
             title={termoBusca || filtrando ? 'Nenhum resultado' : 'Nenhum item ainda'}
             description={
@@ -592,12 +562,10 @@ export default function ModuleRecords() {
                 ? 'Nenhum item atende a todos os filtros. Ajuste ou limpe os filtros.'
                 : termoBusca
                   ? `Nada bate com "${termoBusca}" nesta tabela. Tente outro termo.`
-                  : ehArquivo
-                    ? 'Esta tabela guarda arquivos. Envie o primeiro para começar a organizar os documentos aqui.'
-                    : 'Cada item é uma linha com as colunas que você configurou nesta tabela.'
+                  : 'Cada item é uma linha com as colunas que você configurou nesta tabela.'
             }
-            actionLabel={filtrando ? 'Limpar filtros' : termoBusca ? undefined : ehArquivo ? 'Enviar arquivo' : 'Criar primeiro item'}
-            actionIcon={filtrando ? 'filter_list_off' : termoBusca ? undefined : ehArquivo ? 'upload' : 'add'}
+            actionLabel={filtrando ? 'Limpar filtros' : termoBusca ? undefined : 'Criar primeiro item'}
+            actionIcon={filtrando ? 'filter_list_off' : termoBusca ? undefined : 'add'}
             onAction={filtrando ? () => mudarFiltros(filtrosVazios()) : termoBusca ? undefined : () => abrirFormulario(null)}
           />
         </Card>
@@ -649,7 +617,6 @@ export default function ModuleRecords() {
                       const vazio = valor === null || valor === undefined || valor === '';
                       let exibicao = valor;
                       if (coluna.key === 'criado_em') exibicao = valor ? new Date(valor).toLocaleDateString('pt-BR') : null;
-                      if (coluna.key === 'arquivo_tamanho') exibicao = valor ? `${(valor / 1024).toFixed(2)} KB` : null;
                       const textoVazio = exibicao === null || exibicao === undefined || exibicao === '';
                       if (!textoVazio && coluna.tipo === 'prazo') {
                         exibicao = <SeloPrazo data={valor} concluido={itemConcluido(registro.dados, campos)} />;
@@ -686,7 +653,7 @@ export default function ModuleRecords() {
                         <td
                           key={coluna.key}
                           className={`px-4 py-3 truncate max-w-[200px] ${
-                            coluna.key === 'criado_em' || coluna.key === 'arquivo_tamanho' ? 'text-light-text text-xs' : ''
+                            coluna.key === 'criado_em' ? 'text-light-text text-xs' : ''
                           }`}
                           title={vazio ? undefined : String(valor)}
                         >
@@ -696,32 +663,21 @@ export default function ModuleRecords() {
                     })}
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {ehArquivo ? (
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            icon="download"
-                            onClick={() => handleDownload(registro)}
-                            title="Baixar"
-                            aria-label="Baixar arquivo"
-                          />
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            icon="edit"
-                            onClick={() => abrirFormulario(registro)}
-                            title="Editar"
-                            aria-label="Editar item"
-                          />
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          icon="edit"
+                          onClick={() => abrirFormulario(registro)}
+                          title="Editar"
+                          aria-label="Editar item"
+                        />
                         <Button
                           variant="ghost"
                           size="icon-sm"
                           icon="delete_outline"
                           onClick={() => handleDelete(registro)}
                           title="Excluir"
-                          aria-label={ehArquivo ? 'Excluir arquivo' : 'Excluir item'}
+                          aria-label="Excluir item"
                           className="hover:bg-danger-bg hover:text-danger"
                         />
                       </div>
@@ -740,12 +696,12 @@ export default function ModuleRecords() {
         open={showForm}
         onClose={closeForm}
         dirty={formSujo}
-        title={ehArquivo ? 'Enviar arquivo' : editingRegistro ? 'Editar item' : 'Novo item'}
+        title={editingRegistro ? 'Editar item' : 'Novo item'}
         footer={
           <>
             <Button variant="secondary" onClick={closeForm}>Cancelar</Button>
             <Button type="submit" form="registro-form" loading={saving}>
-              {saving ? 'Salvando...' : editingRegistro ? 'Atualizar' : ehArquivo ? 'Enviar' : 'Criar item'}
+              {saving ? 'Salvando...' : editingRegistro ? 'Atualizar' : 'Criar item'}
             </Button>
           </>
         }
@@ -757,41 +713,25 @@ export default function ModuleRecords() {
         )}
 
         <form id="registro-form" onSubmit={handleSave} noValidate>
-          {ehArquivo ? (
-            <div className="flex flex-col gap-5">
-              <div>
-                <label htmlFor="arquivo-input" className="block text-sm font-medium mb-1.5 text-ink">Selecione o arquivo</label>
-                <input
-                  id="arquivo-input"
-                  type="file"
-                  onChange={(e) => setSelectedFile(e.target.files[0] || null)}
-                  className="w-full text-sm text-light-text file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200 file:cursor-pointer cursor-pointer"
-                />
+          <div className="flex flex-col gap-5">
+            {campos.map((campo) => (
+              <div key={campo.id}>
+                <label htmlFor={`campo-${campo.id}`} className="block text-sm font-medium mb-1.5 text-ink">
+                  {campo.nome}
+                  <span className="text-xs text-light-text ml-2 font-normal">{TIPOS[campo.tipo]}</span>
+                </label>
+                {renderFieldInput(campo)}
               </div>
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-5">
-                {campos.map((campo) => (
-                  <div key={campo.id}>
-                    <label htmlFor={`campo-${campo.id}`} className="block text-sm font-medium mb-1.5 text-ink">
-                      {campo.nome}
-                      <span className="text-xs text-light-text ml-2 font-normal">{TIPOS[campo.tipo]}</span>
-                    </label>
-                    {renderFieldInput(campo)}
-                  </div>
-                ))}
-              </div>
+            ))}
+          </div>
 
-              {campos.length === 0 && (
-                <p className="text-sm text-light-text text-center py-8">
-                  Esta tabela não possui colunas configuradas.
-                </p>
-              )}
-            </>
+          {campos.length === 0 && (
+            <p className="text-sm text-light-text text-center py-8">
+              Esta tabela não possui colunas configuradas.
+            </p>
           )}
         </form>
-        {editingRegistro && !ehArquivo && (
+        {editingRegistro && (
           <div className="mt-8 pt-6 border-t border-divider">
             <ItensQueApontam moduloId={id} registroId={editingRegistro.id} onNavegar={() => setShowForm(false)} />
           </div>

@@ -17,6 +17,8 @@ function politicaDeSeguranca(apiUrl) {
     'img-src': ["'self'", 'data:', 'blob:', 'https://github.com', 'https://avatars.githubusercontent.com'],
     'font-src': ["'self'", 'data:'],
     'connect-src': ["'self'", api],
+    // Visualização de PDF da tabela de arquivos (iframe com o blob baixado da API).
+    'frame-src': ["'self'", 'blob:'],
     'object-src': ["'none'"],
     'base-uri': ["'self'"],
     'form-action': ["'self'"],

@@ -6,6 +6,7 @@ const MAX_WIDTHS = {
   md: 'max-w-md',
   lg: 'max-w-lg',
   xl: 'max-w-2xl',
+  '3xl': 'max-w-5xl',
 };
 
 /**

@@ -158,9 +158,14 @@ composer install
 
 ### 3. Backend — configure as variáveis de ambiente
 
-O projeto **não inclui** um arquivo `.env` ou `.env.example` na raiz do `api-backend`. É necessário criar manualmente um arquivo `.env` com, no mínimo, as variáveis listadas em [Configuração](#configuração).
+Copie o modelo e preencha os valores (o `.env` não vai para o git):
 
-> O próprio `README.md` padrão do CodeIgniter (mantido em `api-backend/README.md`) instrui a copiar um arquivo chamado `env` para `.env`, mas esse arquivo não está presente no projeto enviado.
+```bash
+cd api-backend
+cp .env.example .env
+```
+
+O `.env.example` lista todas as variáveis lidas pelo código, ver [Configuração](#configuração). Sem as variáveis `B2_*`, a tabela de arquivos e os currículos não funcionam.
 
 ### 4. Backend — configure o banco de dados
 
@@ -262,10 +267,12 @@ Por padrão, a aplicação sobe em `http://localhost:8080/`, conforme `$baseURL`
 Para processar a fila de automações (jobs assíncronos), é necessário rodar o worker da fila do CodeIgniter separadamente:
 
 ```bash
-php spark queue:work
+php spark queue:work automacoes
 ```
 
-O comando exato do worker não foi testado neste projeto; ele segue a convenção padrão do pacote `codeigniter4/queue`, configurado em `app/Config/Queue.php` com handler padrão `database`.
+`automacoes` é o nome da fila usada pelos eventos de registro (`app/Config/Events.php`), com handler `database` (`app/Config/Queue.php`).
+
+O `php spark serve` deste projeto (`app/Commands/Serve.php`) sobe o servidor com `upload_max_filesize=12M` e `post_max_size=13M`, porque o PHP padrão aceita só 2 MB e a tabela de arquivos aceita até 10 MB. Em Apache/Nginx com PHP-FPM, os mesmos valores vêm de `public/.user.ini`.
 
 ### Frontend (desenvolvimento)
 
@@ -410,7 +417,6 @@ Pontos de atenção:
 ## Limitações conhecidas
 
 - Inconsistência entre o driver de banco de dados configurado por padrão (`MySQLi`) e o uso de recursos específicos do PostgreSQL nas migrations (`uuidv7()`, `jsonb`), ver [Banco de dados](#banco-de-dados).
-- Não há arquivo `.env`/`.env.example` no repositório, o que obriga quem for configurar o projeto a descobrir as variáveis necessárias diretamente no código-fonte.
 - Não foram identificados testes automatizados cobrindo a lógica de negócio da aplicação, nem no backend nem no front-end.
 - Não há pipeline de CI/CD configurado.
 - O arquivo `api-backend/test_db.php`, presente na raiz do backend, contém um trecho de PHP malformado (variáveis com `\` em vez de `$`) e não é executável no estado atual.

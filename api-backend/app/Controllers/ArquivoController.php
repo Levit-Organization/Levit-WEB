@@ -20,8 +20,9 @@ class ArquivoController extends BaseApiController
         $arquivo = $this->request->getFile('arquivo');
         $user    = service('authenticatedUser');
 
+        // Acima do post_max_size o PHP descarta o corpo inteiro e nada chega.
         if (! $arquivo) {
-            return $this->respondError('Nenhum arquivo enviado.', 422);
+            return $this->respondError('Nenhum arquivo chegou. Se ele tem mais de 10 MB, envie um menor.', 422);
         }
 
         try {
@@ -49,6 +50,8 @@ class ArquivoController extends BaseApiController
             return $this->respondError($e->getMessage(), 404);
         } catch (AcessoNegadoException $e) {
             return $this->respondError($e->getMessage(), 403);
+        } catch (\RuntimeException $e) {
+            return $this->respondFalha($e, 502);
         }
 
         return $this->response
@@ -68,6 +71,8 @@ class ArquivoController extends BaseApiController
             return $this->respondError($e->getMessage(), 404);
         } catch (AcessoNegadoException $e) {
             return $this->respondError($e->getMessage(), 403);
+        } catch (\RuntimeException $e) {
+            return $this->respondFalha($e, 500);
         }
 
         return $this->respondSuccess(null, 200);
