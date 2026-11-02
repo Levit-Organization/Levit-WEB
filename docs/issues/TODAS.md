@@ -73,7 +73,7 @@ Faltavam feedback consistente, confirmações seguras e acessibilidade básica e
 - `client-frontend/src/components/ui/Drawer.jsx`
 - `client-frontend/src/context/FeedbackProvider.jsx`
 - `client-frontend/src/components/Layout.jsx`
-- `client-frontend/src/context/AuthContext.jsx`
+- `client-frontend/src/context/AuthProvider.jsx`
 - `client-frontend/src/components/ErrorBoundary.jsx`
 - `client-frontend/src/pages/NotFound.jsx`
 
@@ -832,7 +832,7 @@ O token de sessão fica no `localStorage`, exposto a qualquer XSS.
 
 ### Arquivos principais
 - `client-frontend/src/services/api.js`
-- `client-frontend/src/context/AuthContext.jsx`
+- `client-frontend/src/context/AuthProvider.jsx`
 - `api-backend/app/Services/AuthService.php`
 
 ### Como testar

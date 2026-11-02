@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, matchPath, useLocation } from '
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
 import { FeedbackProvider } from './context/FeedbackProvider';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider } from './context/AuthProvider';
 import { useAuth } from './hooks/useAuth';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
