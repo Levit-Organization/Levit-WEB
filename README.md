@@ -302,6 +302,8 @@ composer audit --no-dev                        # vulnerabilidades em dependênci
 
 Os testes ficam em `tests/unit` e cobrem as regras puras dos services: filtros e condições de automação, gatilhos e webhooks, recorrência, prazos, indicadores, PDF dos relatórios, limites de cargo, sanitização e a sessão por cookie. Os 2 testes de `tests/database` usam SQLite em memória e precisam da extensão `sqlite3`.
 
+Os testes de integração em `tests/integracao` passam por rotas, filtros, controllers e banco (autenticação, CSRF, isolamento entre empresas). Rodam no CI com `postgres:18`; localmente, só com o grupo de banco `tests` apontando para um PostgreSQL 18 (instruções no topo do arquivo de teste).
+
 ### Frontend
 
 ```bash
@@ -440,7 +442,7 @@ sequenceDiagram
 
 ## Limitações conhecidas
 
-- Os testes do backend cobrem as regras dos services; ainda não há testes de integração HTTP contra um PostgreSQL real.
+- Os testes de integração (`tests/integracao`) precisam de um PostgreSQL 18; sem ele, são pulados localmente e rodam só no CI.
 - O frontend é JavaScript sem tipagem estática.
 
 ## Licença
