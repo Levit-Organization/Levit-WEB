@@ -62,15 +62,16 @@ Além disso, a plataforma oferece controle de equipe com cargos e permissões po
 | Fila / jobs assíncronos  | `codeigniter4/queue ^1.0`                               |
 | Armazenamento de arquivos | `aws/aws-sdk-php ^3.392` (Backblaze B2)                 |
 | Envio de e-mail          | Integração HTTP com a API da Brevo (via Guzzle)          |
-| Testes (backend)         | PHPUnit `^10.5`                                          |
+| Testes (backend)         | PHPUnit `^10.5`, PHPStan `^2.1`                          |
 | Linguagem (frontend)     | JavaScript (React `^19.2`)                               |
 | Build tool (frontend)    | Vite `^8.2`                                              |
 | Roteamento (frontend)    | React Router `^7.18`                                     |
 | HTTP client (frontend)   | Axios `^1.19`                                            |
 | Estilos (frontend)       | Tailwind CSS `^4.3`                                       |
 | Lint (frontend)          | ESLint `^10.8`                                            |
+| Testes (frontend)        | Vitest `^5.0`, Testing Library                            |
 
-O SGBD (banco de dados) não pôde ser confirmado com certeza — ver seção [Banco de dados](#banco-de-dados).
+O banco é PostgreSQL 18+, ver [Banco de dados](#banco-de-dados).
 
 ## Arquitetura
 
@@ -94,7 +95,7 @@ flowchart LR
     S3[(Storage S3-compatible<br/>Backblaze B2)]
     Email[API de e-mail<br/>Brevo]
 
-    SPA -- HTTP/JSON + Bearer JWT --> Routes
+    SPA -- HTTP/JSON + cookie HttpOnly --> Routes
     Routes --> Controllers --> Services --> Models --> DB
     Services --> Queue
     Queue --> Email
@@ -106,7 +107,7 @@ flowchart LR
 ## Estrutura do projeto
 
 ```text
-Levit-dev-caua/
+Levit-WEB/
 ├── api-backend/
 │   ├── app/
 │   │   ├── Controllers/     # Endpoints da API (auth, modulos, registros, candidatos...)
@@ -115,11 +116,11 @@ Levit-dev-caua/
 │   │   ├── Filters/         # AuthFilter (JWT) e RateLimitFilter
 │   │   ├── Jobs/            # Job de processamento de automacoes (fila)
 │   │   ├── Database/
-│   │   │   ├── Migrations/  # 26 migrations
-│   │   │   └── Seeds/       # PermissaoSeeder
+│   │   │   ├── Migrations/  # schema versionado
+│   │   │   └── Seeds/       # PermissaoSeeder, CategoriaFinanceiraSeeder
 │   │   ├── Config/          # Configuracao do framework (rotas, CORS, filtros, fila...)
 │   │   └── Helpers/         # uuid_helper.php
-│   ├── tests/                # Testes de exemplo do CodeIgniter (ver secao Testes)
+│   ├── tests/                # PHPUnit (ver secao Testes)
 │   ├── public/                # Document root (index.php)
 │   └── composer.json
 └── client-frontend/
@@ -137,7 +138,7 @@ Levit-dev-caua/
 - [Composer](https://getcomposer.org/)
 - Node.js, o Vite 8 exige Node.js `20.19+` ou `22.12+`
 - npm (ou outro gerenciador de pacotes compatível com o `package-lock.json`)
-- Um banco de dados relacional configurado via variáveis de ambiente (ver [Banco de dados](#banco-de-dados))
+- PostgreSQL 18+ (ver [Banco de dados](#banco-de-dados))
 - Conta/credenciais em um provedor de e-mail (Brevo) e em um serviço de armazenamento compatível com S3 (Backblaze B2)
 
 ## Instalação
@@ -174,6 +175,7 @@ Defina as credenciais de conexão no `.env` (ver [Banco de dados](#banco-de-dado
 ```bash
 php spark migrate
 php spark db:seed PermissaoSeeder
+php spark db:seed CategoriaFinanceiraSeeder
 ```
 
 ### 5. Frontend — instale as dependências
@@ -187,70 +189,65 @@ npm install
 
 ### Backend
 
-As seguintes variáveis de ambiente são lidas diretamente no código (via `env()`):
+Todas as variáveis estão em `api-backend/.env.example`, com comentários. Resumo:
 
-| Variável                 | Finalidade                                              | Obrigatória |
-| ------------------------- | --------------------------------------------------------- | :---------: |
-| `JWT_SECRET_KEY`           | Chave usada para assinar e validar os tokens JWT           | Sim¹        |
-| `EMAIL_PROVIDER`           | Seleciona o provedor de e-mail (`brevo` ou `log`); padrão `brevo` | Não        |
-| `BREVO_API_KEY`             | Chave de API da Brevo, usada quando `EMAIL_PROVIDER=brevo` | Condicional |
-| `BREVO_REMETENTE_EMAIL`     | E-mail do remetente nas mensagens enviadas                  | Condicional |
-| `BREVO_REMETENTE_NOME`      | Nome do remetente (padrão: `Levit`)                          | Não        |
-| `B2_BUCKET`                 | Bucket do storage compatível com S3                         | Sim         |
-| `B2_REGION`                 | Região do storage                                            | Sim         |
-| `B2_ENDPOINT`               | Endpoint do storage (sem `https://`, adicionado pelo código) | Sim         |
-| `B2_KEY_ID`                  | Chave de acesso do storage                                   | Sim         |
-| `B2_APPLICATION_KEY`         | Segredo da chave de acesso do storage                        | Sim         |
+| Variável | Finalidade | Obrigatória |
+|---|---|:---:|
+| `database.default.*` | Conexão PostgreSQL (`hostname`, `database`, `username`, `password`, `port`) | Sim |
+| `JWT_SECRET_KEY` | Assina os tokens JWT. Gere com `php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"`. Sem ela, a API não emite nem valida tokens. | Sim |
+| `B2_ENDPOINT`, `B2_REGION`, `B2_BUCKET`, `B2_KEY_ID`, `B2_APPLICATION_KEY` | Storage S3 (Backblaze B2) da tabela de arquivos e dos currículos | Sim |
+| `BREVO_API_KEY`, `BREVO_REMETENTE_EMAIL`, `BREVO_REMETENTE_NOME` | E-mail transacional (Brevo) | Com `EMAIL_PROVIDER=brevo` |
+| `EMAIL_PROVIDER` | `brevo` (padrão) ou `log` (grava em `writable/logs`, para desenvolvimento) | Não |
+| `FRONTEND_URL` | Origens liberadas no CORS (separadas por vírgula) e base dos links nos e-mails | Em produção |
+| `SESSAO_COOKIE_SAMESITE` | `Lax` (padrão) com front e API no mesmo site; `None` em domínios diferentes (exige HTTPS) | Não |
+| `SESSAO_COOKIE_SECURE` | Cookie só por HTTPS. Padrão: ligado em `production` | Não |
+| `SESSAO_COOKIE_DOMINIO` | Domínio do cookie de sessão (padrão: o host da API) | Não |
+| `FUSO_HORARIO`, `RESUMO_DIARIO_EMAIL` | Fuso das rotinas diárias e liga/desliga o resumo por e-mail | Não |
 
-Além dessas, o CodeIgniter 4 usa por convenção variáveis de configuração do framework no mesmo `.env`, entre elas `app.baseURL` e o grupo `database.default.*` (`hostname`, `username`, `password`, `database`, `port`), já que `app/Config/Database.php` não traz nenhuma credencial hardcoded.
-
-¹ Se `JWT_SECRET_KEY` não for definida, o código aplica um valor padrão fixo embutido no repositório, ver [Segurança](#segurança). Configurá-la é obrigatório para qualquer ambiente que não seja desenvolvimento local isolado.
-
-**Nenhum valor de segredo ou credencial foi reproduzido neste README.**
+> [!WARNING]
+> Nunca versione o `.env`. Se um segredo for commitado por engano, **troque-o**: apagar o arquivo não o remove do histórico do git.
 
 ### Frontend
 
-O front-end **não usa variáveis de ambiente**. A URL base da API está definida diretamente no código-fonte, em `client-frontend/src/services/api.js`:
+`client-frontend/.env.example`:
 
-```js
-const API_BASE_URL = 'http://localhost:8080/api/v1';
-```
-
-Para apontar o front-end para uma API em outro endereço, é necessário editar esse valor diretamente no arquivo (não há suporte a `.env`/`import.meta.env` no projeto atual).
+| Variável | Finalidade | Padrão |
+|---|---|---|
+| `VITE_API_URL` | URL base da API | `http://localhost:8080/api/v1` |
 
 ## Banco de dados
 
-- `app/Config/Database.php` define o driver padrão (`$default['DBDriver']`) como `MySQLi`, na porta `3306`, sem nenhuma credencial preenchida (valores vazios, a serem sobrescritos por `.env`).
-- Porém, as 26 migrations usam consistentemente `RawSql('uuidv7()')` como valor padrão de chave primária e ao menos uma migration insere dados com a função SQL `uuidv7()` diretamente (`INSERT INTO permissao (...) VALUES (uuidv7(), ...)`), além de uma coluna `jsonb` (tipo nativo do PostgreSQL) na tabela `campo_modulo`.
+O banco é **PostgreSQL 18+**: as migrations usam `uuidv7()` (função nativa a partir do 18) como chave primária e `jsonb` nos dados dos registros. `app/Config/Database.php` já vem com o driver `Postgre`; as credenciais ficam no `.env`.
 
-`uuidv7()` como função nativa e o tipo `jsonb` são recursos específicos do **PostgreSQL**, incompatíveis com o driver `MySQLi` configurado por padrão. Isso significa que o ambiente real de desenvolvimento/produção usa PostgreSQL com a configuração de driver sobrescrita via `.env`.
-
-O schema principal, conforme as migrations, contempla 17 tabelas. As relações centrais:
+As relações centrais:
 
 ```mermaid
 erDiagram
-    EMPRESA ||--o{ USUARIO : possui
+    EMPRESA ||--o{ MEMBRO : possui
+    USUARIO ||--o{ MEMBRO : "participa de"
     EMPRESA ||--o{ CARGO : possui
     EMPRESA ||--o{ MODULO : possui
-    EMPRESA ||--o{ CANDIDATO : possui
-    CARGO ||--o{ USUARIO : "atribuido a"
+    CARGO ||--o{ MEMBRO : "atribuido a"
     CARGO }o--o{ PERMISSAO : "cargo_permissao"
+    CARGO }o--o{ MODULO : "cargo_modulo_permissao"
     MODULO ||--o{ CAMPO_MODULO : define
     MODULO ||--o{ REGISTRO : contem
     MODULO ||--o{ FASE_RECRUTAMENTO : define
+    MODULO ||--o{ CANDIDATO : recebe
     MODULO ||--o{ AUTOMACAO : define
-    REGISTRO ||--o| ARQUIVO : anexa
+    REGISTRO ||--o{ ARQUIVO : anexa
     AUTOMACAO ||--o{ AUTOMACAO_ACAO : executa
     AUTOMACAO ||--o{ AUTOMACAO_LOG : registra
     CANDIDATO ||--o{ HISTORICO_FASE : movimenta
 ```
 
-As demais tabelas nas migrations são: `token_revogado`, `convite`.
+Uma pessoa (`usuario`) pode estar em várias empresas: a ligação é a tabela `membro`, com o cargo dela em cada uma. O diagrama completo está em [`docs/diagrama-persistencia.md`](docs/diagrama-persistencia.md).
 
-Para popular as permissões padrão do sistema, execute o seeder após as migrations (comando na seção [Instalação](#instalação)):
+Depois das migrations, rode os seeders de permissões e de categorias financeiras:
 
-```text
-gerenciar_modulos, gerenciar_equipe, gerenciar_recrutamento, ver_relatorios, gerenciar_automacoes, gerenciar_dados
+```bash
+php spark db:seed PermissaoSeeder
+php spark db:seed CategoriaFinanceiraSeeder
 ```
 
 ## Execução
@@ -292,22 +289,27 @@ npm run preview   # para pré-visualizar o build localmente
 
 ## Testes
 
-### Backend
+O CI (`.github/workflows/`) roda tudo isto a cada push e pull request.
 
-O projeto usa PHPUnit, configurado em `phpunit.dist.xml`:
+### Backend
 
 ```bash
 cd api-backend
-composer test
-# ou diretamente:
-vendor/bin/phpunit
+vendor/bin/phpstan analyse --memory-limit=1G   # análise estática, nível 6
+vendor/bin/phpunit --no-coverage               # testes
+composer audit --no-dev                        # vulnerabilidades em dependências
 ```
 
-Os arquivos de teste (`tests/unit/HealthTest.php`, `tests/database/ExampleDatabaseTest.php`, `tests/session/ExampleSessionTest.php`) são os testes de exemplo padrão que acompanham o starter do CodeIgniter 4. Não possui testes automatizados cobrindo a lógica de negócio própria da aplicação (controllers, services ou models customizados).
+Os testes ficam em `tests/unit` e cobrem as regras puras dos services: filtros e condições de automação, gatilhos e webhooks, recorrência, prazos, indicadores, PDF dos relatórios, limites de cargo, sanitização e a sessão por cookie. Os 2 testes de `tests/database` usam SQLite em memória e precisam da extensão `sqlite3`.
 
 ### Frontend
 
-Não possui dependências ou scripts de teste (Jest, Vitest, Testing Library etc.) no `package.json` do `client-frontend`.
+```bash
+cd client-frontend
+npm run lint
+npm test          # Vitest + Testing Library
+npm run build
+```
 
 ## API
 
@@ -322,11 +324,16 @@ Todas as rotas ficam sob o prefixo `api/v1` (definidas em `app/Config/Routes.php
 
 ### Autenticação
 
-| Método | Endpoint             | Descrição                          | Autenticação |
-| ------ | --------------------- | ------------------------------------ | :-----------: |
-| POST   | `auth/registrar`        | Cadastra empresa + usuário fundador   | —             |
-| POST   | `auth/login`             | Autentica e retorna o token JWT       | —             |
-| POST   | `auth/logout`            | Revoga o token atual                  | JWT           |
+| Método | Endpoint | Descrição | Autenticação |
+|---|---|---|:---:|
+| POST | `auth/registrar` | Cadastra empresa + usuário fundador | — |
+| POST | `auth/login` | Autentica e abre a sessão | — |
+| POST | `auth/forgot-password` | Envia o link de redefinição de senha | — |
+| POST | `auth/reset-password` | Troca a senha com o token do e-mail | — |
+| POST | `auth/logout` | Revoga o token e apaga o cookie | Sessão |
+| GET | `auth/equipes` | Equipes da pessoa logada | Sessão |
+| POST | `auth/equipes` | Cria uma equipe e entra nela | Sessão |
+| POST | `auth/trocar-equipe` | Entra em outra equipe (novo token) | Sessão |
 
 ### Módulos, campos e registros
 
@@ -395,64 +402,47 @@ Todas as rotas ficam sob o prefixo `api/v1` (definidas em `app/Config/Routes.php
 
 ## Autenticação e autorização
 
-- **Autenticação**: baseada em JWT (`firebase/php-jwt`), enviado no header `Authorization: Bearer <token>`. A validação, incluindo checagem de revogação (`token_revogado`), acontece em `app/Filters/AuthFilter.php`.
-- **Autorização**: RBAC simples por empresa. Cada usuário tem um `cargo`, e cada `cargo` tem uma lista de `permissao` associada via `cargo_permissao`. As rotas que exigem uma permissão específica declaram isso diretamente no arquivo de rotas, por exemplo `['filter' => 'auth:gerenciar_modulos']`.
-- **Rate limiting**: aplicado especificamente às rotas públicas (`publico/candidatura/{uuid}` e `publico/convite/aceitar`) via `app/Filters/RateLimitFilter.php`, limitando a 5 tentativas por hora por endereço IP.
-- No front-end, o token é armazenado em `localStorage` (chave `levit_token`) e injetado automaticamente em toda requisição Axios; um interceptor trata respostas `401` limpando o storage e redirecionando para `/login`.
+```mermaid
+sequenceDiagram
+    participant N as Navegador
+    participant A as API
+    N->>A: POST auth/login (X-Levit-Sessao: cookie)
+    A-->>N: Set-Cookie levit_sessao (HttpOnly) + corpo { csrf, usuario, empresa }
+    N->>A: GET modulos (cookie vai sozinho)
+    A-->>N: 200
+    N->>A: PUT modulos/{id} (cookie + X-CSRF-Token)
+    A-->>N: 200 (sem X-CSRF-Token: 403)
+```
+
+- **Navegador**: o JWT fica no cookie `levit_sessao`, `HttpOnly`, que o JavaScript da página não lê. Um XSS não consegue levar o token embora. Toda escrita autenticada por cookie exige o cabeçalho `X-CSRF-Token`, um HMAC do `jti` do token entregue no login. O front guarda só esse valor e os dados de exibição no `localStorage` (`app/Libraries/SessaoWeb.php`, `client-frontend/src/services/api.js`).
+- **App Android e outros clientes**: sem o cabeçalho `X-Levit-Sessao: cookie`, o login devolve o token no corpo, e as chamadas usam `Authorization: Bearer <token>`, como antes.
+- **Validação** (`app/Filters/AuthFilter.php`): assinatura e expiração (8 h), lista de revogados (`token_revogado`), troca de senha posterior à emissão (derruba sessões antigas) e vínculo atual com a equipe do token.
+- **Autorização**: cada membro tem um `cargo` por equipe. O cargo tem permissões gerais (`cargo_permissao`, declaradas na rota, ex.: `auth:gerenciar_equipe`) e um nível por tabela (`visualizar`, `editar`, `gerenciar`), conferido nos services (`AutorizacaoModuloService`). Toda consulta filtra por `empresa_id`.
+- **Rate limit** (`app/Filters/RateLimitFilter.php`): por IP e, no login e na recuperação de senha, também por e-mail.
 
 ## Segurança
 
-- Senhas de usuário são armazenadas como hash (coluna `senha_hash`); a implementação exata do hashing não foi inspecionada em detalhe aqui.
-- Validação de entrada nos controllers via as regras de validação nativas do CodeIgniter (`required`, `valid_email`, `min_length`, `regex_match` etc.).
-- Rate limiting nas rotas públicas sensíveis a abuso (candidatura e aceite de convite).
-- CORS configurado via `app/Config/Cors.php` e filtro `cors`.
+- Senhas com bcrypt. O login gasta o mesmo tempo para e-mails inexistentes, para não revelar quais contas existem.
+- Token de redefinição de senha guardado só como hash SHA-256, de uso único e com validade curta.
+- Sessão em cookie `HttpOnly` + CSRF no navegador (ver acima).
+- CORS restrito às origens de `FRONTEND_URL`.
+- Cabeçalhos de segurança do CodeIgniter (`secureheaders`) em todas as respostas.
+- Validação de entrada nos controllers e sanitização do conteúdo rico (`tests/unit/SanitizacaoTest.php`).
+- `composer audit` e `npm audit` no CI.
 
-Pontos de atenção:
+## Deploy
 
-- `app/Services/JwtService.php` define um valor padrão fixo para `JWT_SECRET_KEY` caso a variável de ambiente não esteja definida. Isso significa que, se o `.env` não for configurado corretamente em produção, a assinatura dos tokens pode usar uma chave previsível e conhecida por qualquer pessoa com acesso ao código-fonte.
-- `app/Services/Storage/BackblazeStorageService.php` instancia o cliente S3 com verificação de certificado TLS desabilitada (`'verify' => false`).
-- `app/Config/Cors.php` mantém `allowedOrigins` como `['*']` (valor padrão do framework, não restrito a domínios específicos).
-- O JWT é armazenado em `localStorage` no front-end, o que expõe o token a riscos de XSS caso exista alguma vulnerabilidade de injeção de script na aplicação.
+1. Backend: `composer install --no-dev --optimize-autoloader`, `.env` de produção com `CI_ENVIRONMENT = production`, `php spark migrate` e os seeders. O document root é `api-backend/public`.
+2. Worker da fila: `php spark queue:work automacoes`, mantido por um supervisor (systemd, Supervisor).
+3. Rotinas diárias: agende `php spark rotinas:diarias` no cron.
+4. Frontend: `VITE_API_URL=<url da API> npm run build` e sirva `client-frontend/dist` como SPA (todas as rotas caem no `index.html`).
+5. Cookie de sessão: com front e API no mesmo site (ex.: `app.` e `api.` do mesmo domínio), o padrão `SameSite=Lax` basta. Em domínios diferentes, use `SESSAO_COOKIE_SAMESITE=None`.
 
 ## Limitações conhecidas
 
-- Inconsistência entre o driver de banco de dados configurado por padrão (`MySQLi`) e o uso de recursos específicos do PostgreSQL nas migrations (`uuidv7()`, `jsonb`), ver [Banco de dados](#banco-de-dados).
-- Não foram identificados testes automatizados cobrindo a lógica de negócio da aplicação, nem no backend nem no front-end.
-- Não há pipeline de CI/CD configurado.
-- O arquivo `api-backend/test_db.php`, presente na raiz do backend, contém um trecho de PHP malformado (variáveis com `\` em vez de `$`) e não é executável no estado atual.
-- URL base da API fixada diretamente no código do front-end (`client-frontend/src/services/api.js`), sem suporte a variáveis de ambiente para trocar de ambiente (dev/staging/produção).
+- Os testes do backend cobrem as regras dos services; ainda não há testes de integração HTTP contra um PostgreSQL real.
+- O frontend é JavaScript sem tipagem estática.
 
-## Diagnóstico da análise
+## Licença
 
-### Pontos fortes identificados
-
-- Separação clara de responsabilidades no backend (Controller → Service → Model), com uma camada de serviço consistente para cada domínio.
-- Autorização baseada em permissões granulares por cargo, aplicada diretamente na definição das rotas — fácil de auditar.
-- Uso de UUID (v7) como chave primária em todas as tabelas, o que favorece escalabilidade horizontal e evita previsibilidade de IDs sequenciais.
-- Abstrações por interface para os serviços externos (`EmailServiceInterface`, `StorageServiceInterface`), o que facilita trocar provedores.
-- Processamento assíncrono de automações via fila, evitando bloquear a requisição HTTP original.
-- Rate limiting aplicado especificamente onde há maior risco de abuso (endpoints públicos sem autenticação).
-
-### Informações que não puderam ser confirmadas
-
-- O SGBD real de destino (MySQL, conforme configuração padrão, ou PostgreSQL, conforme uso de `uuidv7()`/`jsonb` nas migrations).
-- Versão exata do Node.js exigida pelo projeto (não declarada em `package.json`; inferida apenas a partir do requisito oficial do Vite 8).
-- Se o `LICENSE` (MIT) encontrado em `api-backend/` se aplica ao código de aplicação além do starter do framework.
-- Processo e ambiente de deploy (não há artefatos de infraestrutura no repositório).
-- Algoritmo exato de hashing de senha usado (não inspecionado em profundidade neste diagnóstico).
-- Nome oficial do produto (inferido por convenção de nomes no código, não declarado explicitamente).
-
-### Problemas encontrados no projeto que afetam a documentação
-
-- Ausência de `.env.example`, que é a fonte mais comum de verdade sobre variáveis de ambiente exigidas — a lista de variáveis deste README foi reconstruída por busca textual no código-fonte e pode não cobrir 100% dos casos.
-- README padrão (não customizado) tanto no backend quanto no frontend, sem nenhuma documentação própria prévia para servir de referência cruzada.
-- Ausência de testes de negócio dificulta descrever o comportamento esperado da API com total segurança apenas pela leitura do código.
-
-### Melhorias recomendadas
-
-- Adicionar um `.env.example` documentando todas as variáveis necessárias (backend) e, idealmente, migrar a URL base da API do frontend para uma variável `VITE_API_BASE_URL`.
-- Resolver a inconsistência de driver de banco de dados: se o alvo é PostgreSQL, atualizar `app/Config/Database.php` para refletir isso; se é MySQL, revisar as migrations que usam `uuidv7()`/`jsonb`.
-- Remover o valor padrão fixo de `JWT_SECRET_KEY` em `JwtService.php`, exigindo a variável de ambiente e falhando de forma explícita se ausente.
-- Reativar a verificação de certificado TLS no cliente do serviço de armazenamento.
-- Adicionar testes automatizados cobrindo as regras de negócio dos `Services`, tanto no backend quanto no frontend.
-- Declarar explicitamente a licença do projeto na raiz do repositório, cobrindo os dois subprojetos.
+MIT, ver [`api-backend/LICENSE`](api-backend/LICENSE).
