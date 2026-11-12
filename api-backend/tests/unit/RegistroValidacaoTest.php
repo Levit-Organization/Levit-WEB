@@ -1,11 +1,13 @@
 <?php
 
 use App\Services\RegistroService;
+use App\Services\Registros\ValidadorDeDados;
 use CodeIgniter\Test\CIUnitTestCase;
 
 /**
- * Validação dos dados de um item nas partes que não consultam o banco:
- * tipos simples, opções, repetição e o formato das colunas de ligação.
+ * Validação dos dados de um item: tipos simples, opções, repetição, o
+ * formato das colunas de ligação e (com o banco trocado por listas em
+ * memória) a conferência dos itens ligados e das pessoas.
  *
  * @internal
  */
@@ -23,11 +25,44 @@ final class RegistroValidacaoTest extends CIUnitTestCase
         ['id' => 'tags', 'nome' => 'Tags', 'tipo' => 'vinculo', 'modulo_vinculado_id' => 'tag', 'opcoes' => ['multiplo' => true]],
     ];
 
-    private function validar(array $dados, array $campos = self::CAMPOS): array
-    {
-        $servico = (new ReflectionClass(RegistroService::class))->newInstanceWithoutConstructor();
+    private const ANA = '0190a000-0000-7000-8000-0000000000aa';
+    private const CLIENTE = '0190a000-0000-7000-8000-0000000000c1';
+    private const TAG_1 = '0190a000-0000-7000-8000-0000000000f1';
+    private const TAG_2 = '0190a000-0000-7000-8000-0000000000f2';
 
-        return (new ReflectionMethod($servico, 'validarDadosDoRegistro'))->invoke($servico, $campos, ['dados' => $dados], 'mod');
+    /** Validador com o banco trocado por listas em memória; guarda as consultas feitas. */
+    private function validador(): ValidadorDeDados
+    {
+        return new class () extends ValidadorDeDados {
+            /** @var list<array> */
+            public array $consultas = [];
+
+            protected function idsExistentes(string $moduloId, array $ids): array
+            {
+                $this->consultas[] = ['itens', $moduloId, $ids];
+                $existentes = ['cli' => [RegistroValidacaoTest::itens()[0]], 'tag' => array_slice(RegistroValidacaoTest::itens(), 1)];
+
+                return array_values(array_intersect($ids, $existentes[$moduloId] ?? []));
+            }
+
+            protected function pessoaExiste(string $usuarioId, string $moduloId): bool
+            {
+                $this->consultas[] = ['pessoa', $usuarioId, $moduloId];
+
+                return $usuarioId === RegistroValidacaoTest::itens()[3];
+            }
+        };
+    }
+
+    /** @return list<string> cliente, tag 1, tag 2 e a pessoa da equipe */
+    public static function itens(): array
+    {
+        return [self::CLIENTE, self::TAG_1, self::TAG_2, self::ANA];
+    }
+
+    private function validar(array $dados, array $campos = self::CAMPOS, ?ValidadorDeDados $validador = null): array
+    {
+        return ($validador ?? $this->validador())->validar($campos, ['dados' => $dados], 'mod');
     }
 
     private function assertRecusa(string $mensagem, array $dados): void
@@ -54,9 +89,54 @@ final class RegistroValidacaoTest extends CIUnitTestCase
 
     public function testSemDadosDevolveVazio(): void
     {
-        $servico = (new ReflectionClass(RegistroService::class))->newInstanceWithoutConstructor();
+        $this->assertSame([], $this->validador()->validar(self::CAMPOS, [], 'mod'));
+    }
 
-        $this->assertSame([], (new ReflectionMethod($servico, 'validarDadosDoRegistro'))->invoke($servico, self::CAMPOS, [], 'mod'));
+    public function testLigacoesEPessoaQueExistem(): void
+    {
+        $validador = $this->validador();
+
+        $this->assertSame(
+            ['dono' => self::ANA, 'cliente' => self::CLIENTE, 'tags' => [self::TAG_1, self::TAG_2]],
+            $this->validar(['dono' => self::ANA, 'cliente' => [strtoupper(self::CLIENTE)], 'tags' => [self::TAG_1, self::TAG_2, ' ' . self::TAG_1]], self::CAMPOS, $validador)
+        );
+
+        // Conferidos uma vez por requisição: validar de novo não consulta o banco.
+        $this->validar(['dono' => self::ANA, 'cliente' => self::CLIENTE], self::CAMPOS, $validador);
+        $this->assertSame([
+            ['pessoa', self::ANA, 'mod'],
+            ['itens', 'cli', [self::CLIENTE]],
+            ['itens', 'tag', [self::TAG_1, self::TAG_2]],
+        ], $validador->consultas);
+    }
+
+    public function testLigacaoParaItemQueNaoExisteMais(): void
+    {
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage("A coluna 'Tags' aponta para um item que não existe mais na tabela ligada.");
+        $this->validar(['tags' => [self::TAG_1, self::CLIENTE]]);
+    }
+
+    public function testPessoaDeOutraEmpresa(): void
+    {
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage("A coluna 'Dono' precisa ser uma pessoa da equipe.");
+        $this->validar(['dono' => self::CLIENTE]);
+    }
+
+    public function testImportacaoConfereAsLigacoesDeUmaVez(): void
+    {
+        $validador = $this->validador();
+        $validador->preconferirLigacoes(self::CAMPOS, [
+            ['dados' => ['cliente' => self::CLIENTE, 'tags' => [self::TAG_1]]],
+            ['dados' => ['cliente' => 'lixo', 'tags' => [strtoupper(self::TAG_2), self::TAG_1]]],
+            ['dados' => 'sem dados'],
+        ]);
+        $this->assertSame([['itens', 'cli', [self::CLIENTE]], ['itens', 'tag', [self::TAG_1, self::TAG_2]]], $validador->consultas);
+
+        // Depois disso, validar cada linha não consulta mais os itens.
+        $this->validar(['cliente' => self::CLIENTE, 'tags' => [self::TAG_2]], self::CAMPOS, $validador);
+        $this->assertCount(2, $validador->consultas);
     }
 
     public function testRecusaValoresInvalidos(): void
