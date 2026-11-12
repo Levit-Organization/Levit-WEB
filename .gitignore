@@ -25,3 +25,6 @@ Thumbs.db
 .superpowers/
 .impeccable/
 .tmp_review/
+
+# Worktrees temporários do Claude Code
+.claude/worktrees/
