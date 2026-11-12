@@ -30,21 +30,21 @@ class Database extends Config
         'username'     => '',
         'password'     => '',
         'database'     => '',
-        'DBDriver'     => 'MySQLi',
+        'DBDriver'     => 'Postgre', // O schema usa uuidv7() e jsonb: só PostgreSQL 18+.
         'DBPrefix'     => '',
         // O banco é remoto: abrir uma conexão nova (com SSL) custa ~1,5 s.
         // Persistente, cada processo PHP reaproveita a conexão já aberta.
         // Dá para desligar por ambiente com database.default.pConnect = false.
         'pConnect'     => true,
         'DBDebug'      => true,
-        'charset'      => 'utf8mb4',
-        'DBCollat'     => 'utf8mb4_general_ci',
+        'charset'      => 'utf8',
+        'DBCollat'     => '',
         'swapPre'      => '',
         'encrypt'      => false,
         'compress'     => false,
         'strictOn'     => false,
         'failover'     => [],
-        'port'         => 3306,
+        'port'         => 5432,
         'numberNative' => false,
         'foundRows'    => false,
         'dateFormat'   => [
