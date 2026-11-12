@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 /**
  * Content-Security-Policy do build de produção. Só scripts do próprio site
  * rodam e a página só conversa com a API, o que limita o estrago de uma
- * eventual falha de XSS (o token de sessão fica no localStorage).
+ * eventual falha de XSS (o token de sessão já fica em cookie HttpOnly).
  * Fica fora do `vite dev`, que precisa de scripts inline e websocket.
  */
 function politicaDeSeguranca(apiUrl) {

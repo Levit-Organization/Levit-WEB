@@ -14,7 +14,7 @@ class AuthFilter implements FilterInterface
     public function before(RequestInterface $request, $arguments = null)
     {
         // App (Android) manda Authorization: Bearer; o navegador manda o cookie HttpOnly.
-        $authHeader = (string) $request->getServer('HTTP_AUTHORIZATION');
+        $authHeader = $request->getHeaderLine('Authorization');
         $viaCookie  = ! str_starts_with($authHeader, 'Bearer ');
         $token      = $viaCookie ? SessaoWeb::tokenDoCookie($request) : substr($authHeader, 7);
 
