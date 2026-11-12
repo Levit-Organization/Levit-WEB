@@ -30,6 +30,7 @@ Seguimos [Conventional Commits](https://www.conventionalcommits.org/pt-br/):
 Exemplos: `fix(auth): derruba sessões ao redefinir senha`, `refactor(relatorios): separa montagem do PDF`.
 
 Mensagens como "Fixes" ou "Commit para gravação" não dizem o que mudou; evite.
+O CI (`.github/workflows/commits.yml`) confere o padrão em todo pull request.
 Para ter o modelo no editor ao commitar:
 
 ```bash
