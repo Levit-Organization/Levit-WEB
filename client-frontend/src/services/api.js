@@ -5,18 +5,26 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/
 
 export const SESSION_EXPIRED_EVENT = 'levit:session-expired';
 
+/**
+ * Sessão por cookie HttpOnly: o token JWT nunca passa pelo JavaScript (um XSS
+ * não consegue levá-lo embora). O navegador manda o cookie sozinho; nas
+ * escritas, o servidor exige também o X-CSRF-Token recebido no login.
+ */
+export const CSRF_KEY = 'levit_csrf';
+
 const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
+    'X-Levit-Sessao': 'cookie',
   },
 });
 
-// Interceptor: inject JWT token into every request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('levit_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const csrf = localStorage.getItem(CSRF_KEY);
+  if (csrf) {
+    config.headers['X-CSRF-Token'] = csrf;
   }
   return config;
 });
@@ -45,9 +53,9 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    // 401 com token salvo = sessão expirada. Sem token (ex.: senha errada no
+    // 401 com sessão salva = sessão expirada. Sem sessão (ex.: senha errada no
     // login) é só uma resposta de erro comum e a tela trata.
-    if (error.response?.status === 401 && localStorage.getItem('levit_token')) {
+    if (error.response?.status === 401 && localStorage.getItem(CSRF_KEY)) {
       window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     }
     return Promise.reject(error);

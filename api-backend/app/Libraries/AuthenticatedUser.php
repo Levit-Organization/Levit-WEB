@@ -12,6 +12,9 @@ class AuthenticatedUser
     public array $permissoes = [];
     public bool $acessoTotal = false;
 
+    /** Autenticado pelo cookie do navegador (e não por Authorization: Bearer). */
+    public bool $viaCookie = false;
+
     /**
      * Nível do cargo em cada tabela (id => visualizar|editar|gerenciar),
      * carregado junto com a autenticação. `null` = não carregado (fora de

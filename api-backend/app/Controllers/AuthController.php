@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Exceptions\NaoEncontradoException;
+use App\Libraries\SessaoWeb;
 use App\Services\AuthService;
 use CodeIgniter\HTTP\ResponseInterface;
 
@@ -88,7 +89,7 @@ class AuthController extends BaseApiController
             return $this->respondFalha($e, 500);
         }
 
-        return $this->respondSuccess(
+        return $this->respondSessao(
             $this->authService->montarRespostaAutenticacao($resultado['usuario'], $resultado['empresa']),
             201
         );
@@ -114,7 +115,7 @@ class AuthController extends BaseApiController
             return $this->respondError($e->getMessage(), 401);
         }
 
-        return $this->respondSuccess(
+        return $this->respondSessao(
             $this->authService->montarRespostaAutenticacao($resultado['usuario'], $resultado['empresa']),
             200
         );
@@ -181,7 +182,7 @@ class AuthController extends BaseApiController
 
         $this->authService->revogarToken($user->jti, $user->id, $user->expiraEm);
 
-        return $this->respondSuccess($this->authService->montarRespostaAutenticacao($usuario, $empresa), $status);
+        return $this->respondSessao($this->authService->montarRespostaAutenticacao($usuario, $empresa), $status);
     }
 
     public function logout(): ResponseInterface
@@ -189,6 +190,7 @@ class AuthController extends BaseApiController
         $user = service('authenticatedUser');
 
         $this->authService->revogarToken($user->jti, $user->id, $user->expiraEm);
+        SessaoWeb::encerrar($this->response);
 
         return $this->respondSuccess(null, 200);
     }

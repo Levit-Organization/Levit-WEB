@@ -37,7 +37,7 @@ class Cors extends BaseConfig
         'allowedOrigins' => ['http://localhost:5173'],
         'allowedOriginsPatterns' => [],
         'supportsCredentials' => true,
-        'allowedHeaders' => ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+        'allowedHeaders' => ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-CSRF-Token', 'X-Levit-Sessao'],
         'exposedHeaders' => [],
         'allowedMethods' => ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
         'maxAge' => 7200,

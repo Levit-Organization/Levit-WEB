@@ -2,6 +2,7 @@
 
 namespace App\Filters;
 
+use App\Libraries\SessaoWeb;
 use App\Services\AuthService;
 use App\Services\JwtService;
 use CodeIgniter\Filters\FilterInterface;
@@ -12,15 +13,16 @@ class AuthFilter implements FilterInterface
 {
     public function before(RequestInterface $request, $arguments = null)
     {
-        $authHeader = $request->getServer('HTTP_AUTHORIZATION');
+        // App (Android) manda Authorization: Bearer; o navegador manda o cookie HttpOnly.
+        $authHeader = (string) $request->getServer('HTTP_AUTHORIZATION');
+        $viaCookie  = ! str_starts_with($authHeader, 'Bearer ');
+        $token      = $viaCookie ? SessaoWeb::tokenDoCookie($request) : substr($authHeader, 7);
 
-        if (! $authHeader || ! str_starts_with($authHeader, 'Bearer ')) {
+        if ($token === null || $token === '') {
             return service('response')
                 ->setStatusCode(401)
                 ->setJSON(['status' => 'error', 'message' => 'Token de autenticação não informado.']);
         }
-
-        $token = substr($authHeader, 7);
 
         try {
             $claims = (new JwtService())->validar($token);
@@ -44,6 +46,16 @@ class AuthFilter implements FilterInterface
                 ->setJSON(['status' => 'error', 'message' => 'Token inválido ou expirado.']);
         }
 
+        // Cookie vai sozinho em qualquer requisição do navegador: escrita só com o
+        // cabeçalho de CSRF, que um site de terceiros não consegue montar.
+        $escrita = ! in_array(strtoupper($request->getMethod()), ['GET', 'HEAD', 'OPTIONS'], true);
+        if ($viaCookie && $escrita && ! SessaoWeb::csrfValido($request, (string) $claims->jti)) {
+            return service('response')
+                ->setStatusCode(403)
+                ->setJSON(['status' => 'error', 'message' => 'Sessão inválida. Recarregue a página e tente novamente.']);
+        }
+
+        service('authenticatedUser')->viaCookie = $viaCookie;
         service('authenticatedUser')->preencher(
             $claims->sub,
             $claims->empresa_id,

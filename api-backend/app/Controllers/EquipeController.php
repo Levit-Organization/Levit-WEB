@@ -117,7 +117,7 @@ class EquipeController extends BaseApiController
             return $this->respondFalha($e, 500);
         }
 
-        return $this->respondSuccess(
+        return $this->respondSessao(
             $this->authService->montarRespostaAutenticacao($resultado['usuario'], $resultado['empresa']),
             201
         );

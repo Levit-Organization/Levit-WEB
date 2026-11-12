@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import api, { SESSION_EXPIRED_EVENT } from '../services/api';
+import api, { CSRF_KEY, SESSION_EXPIRED_EVENT } from '../services/api';
 import { modulosQuery, queryKeys } from '../hooks/queries';
 import { useToast } from '../hooks/useFeedback';
 import { AuthContext } from './authContext';
 
-const STORAGE_KEYS = ['levit_token', 'levit_user', 'levit_empresa'];
+// O token fica no cookie HttpOnly; aqui só o que a interface mostra e o valor
+// de CSRF. 'levit_token' é da versão antiga (token no localStorage).
+const STORAGE_KEYS = [CSRF_KEY, 'levit_user', 'levit_empresa', 'levit_token'];
 
 function limparSessao() {
   STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
@@ -22,19 +24,25 @@ function lerJson(key) {
 
 /** Lê a sessão salva. Dados incompletos ou corrompidos invalidam tudo (nunca meia-sessão). */
 function lerSessao() {
-  const token = localStorage.getItem('levit_token');
+  // Sessão da versão antiga (token no localStorage): descarta e pede login de novo.
+  if (localStorage.getItem('levit_token')) {
+    limparSessao();
+    return { usuario: null, empresa: null };
+  }
+
+  const csrf = localStorage.getItem(CSRF_KEY);
   const usuario = lerJson('levit_user');
   const empresa = lerJson('levit_empresa');
 
-  if (!token || !usuario || !empresa) {
-    if (token || usuario || empresa) limparSessao();
+  if (!csrf || !usuario || !empresa) {
+    if (csrf || usuario || empresa) limparSessao();
     return { usuario: null, empresa: null };
   }
   return { usuario, empresa };
 }
 
-function salvarSessao({ token, usuario, empresa }) {
-  localStorage.setItem('levit_token', token);
+function salvarSessao({ csrf, usuario, empresa }) {
+  localStorage.setItem(CSRF_KEY, csrf);
   localStorage.setItem('levit_user', JSON.stringify(usuario));
   localStorage.setItem('levit_empresa', JSON.stringify(empresa));
 }
@@ -72,7 +80,7 @@ export function AuthProvider({ children }) {
   // Logout (ou login) em outra aba reflete nesta.
   useEffect(() => {
     const onStorage = (event) => {
-      if (event.key !== 'levit_token' && event.key !== null) return;
+      if (event.key !== CSRF_KEY && event.key !== null) return;
       queryClient.clear();
       setSessao(lerSessao());
     };
@@ -112,8 +120,7 @@ export function AuthProvider({ children }) {
   const login = useCallback(
     async (email, senha) => {
       const res = await api.post('/auth/login', { email, senha });
-      const { token, usuario: usr, empresa: emp } = res.data.data;
-      return iniciarSessao({ token, usuario: usr, empresa: emp });
+      return iniciarSessao(res.data.data);
     },
     [iniciarSessao]
   );
@@ -121,8 +128,7 @@ export function AuthProvider({ children }) {
   const registrar = useCallback(
     async (dados) => {
       const res = await api.post('/auth/registrar', dados);
-      const { token, usuario: usr, empresa: emp } = res.data.data;
-      return iniciarSessao({ token, usuario: usr, empresa: emp });
+      return iniciarSessao(res.data.data);
     },
     [iniciarSessao]
   );
@@ -131,8 +137,7 @@ export function AuthProvider({ children }) {
   const aceitarConvite = useCallback(
     async (token, nome, senha) => {
       const res = await api.post('/publico/convite/aceitar', { token, nome, senha });
-      const { token: jwt, usuario: usr, empresa: emp } = res.data.data;
-      return iniciarSessao({ token: jwt, usuario: usr, empresa: emp });
+      return iniciarSessao(res.data.data);
     },
     [iniciarSessao]
   );

@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Libraries\SessaoWeb;
 use CodeIgniter\Database\Exceptions\DatabaseException;
 use CodeIgniter\HTTP\ResponseInterface;
 
@@ -18,6 +19,17 @@ class BaseApiController extends BaseController
                 'status' => 'success',
                 'data'   => $data,
             ]);
+    }
+
+    /**
+     * Resposta de login/troca de equipe: no navegador o token vai em cookie
+     * HttpOnly (ver SessaoWeb); no app, no corpo.
+     *
+     * @param array<string, mixed> $resposta
+     */
+    protected function respondSessao(array $resposta, int $statusCode = 200): ResponseInterface
+    {
+        return $this->respondSuccess(SessaoWeb::entregar($this->request, $this->response, $resposta), $statusCode);
     }
 
     /**
