@@ -1,322 +1,34 @@
-import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { Button, Input, Select, Alert, Badge, Card, EmptyState, PageHeader } from '../components/ui';
-import { moduloService } from '../services/moduloService';
-import { MODULO_ICON_OPTIONS } from '../utils/iconOptions';
-import { modulosQuery, useModulos } from '../hooks/queries';
-import { useToast, useConfirm } from '../hooks/useFeedback';
-import { mensagemDeErro } from '../lib/queryClient';
-import { MODELOS_TABELA } from '../utils/modelosTabela';
-
-const TIPO_INFO = {
-  dados: {
-    label: 'Uma lista do seu jeito',
-    icon: 'table_rows',
-    description: 'Clientes, pedidos, estoque, tarefas: você escolhe as colunas e pode ver como lista ou quadro.',
-  },
-  arquivo: {
-    label: 'Arquivos e documentos',
-    icon: 'folder_open',
-    description: 'Um lugar para enviar e guardar arquivos da equipe, como contratos e comprovantes.',
-  },
-  recrutamento: {
-    label: 'Vaga de recrutamento',
-    icon: 'groups',
-    description: 'Candidatos se inscrevem por um link e passam pelas etapas que você definir.',
-  },
-  financeiro: {
-    label: 'Entradas e saídas',
-    icon: 'account_balance_wallet',
-    description: 'Controle de dinheiro que entra e sai, com categorias e saldo do período.',
-  },
-};
-
-const CAMPO_TIPO_INFO = {
-  texto: { label: 'Texto', icon: 'text_fields' },
-  numero: { label: 'Número', icon: 'tag' },
-  data: { label: 'Data', icon: 'event' },
-  selecao: { label: 'Lista de opções', icon: 'list_alt' },
-  responsavel: { label: 'Responsável', icon: 'person' },
-  prazo: { label: 'Prazo', icon: 'event_available' },
-  recorrencia: { label: 'Repetição', icon: 'event_repeat' },
-  vinculo: { label: 'Ligação com tabela', icon: 'link' },
-};
-
-/** Modelos agrupados: primeiro os segmentos em que o Levit foca, depois os usos gerais. */
-const GRUPOS_DE_MODELOS = Object.entries(
-  MODELOS_TABELA.reduce((grupos, modelo) => {
-    const grupo = modelo.segmento || 'Outros usos';
-    (grupos[grupo] ||= []).push(modelo);
-    return grupos;
-  }, {})
-);
-
-/** O que cada tipo novo faz, mostrado embaixo da coluna. */
-const CAMPO_TIPO_DICA = {
-  responsavel: 'A pessoa vê os itens dela em "Meus itens" e pode ser avisada pelas automações.',
-  prazo: 'Itens atrasados aparecem em "Precisa da sua atenção" no Início.',
-  recorrencia: 'Ao concluir o item, o Levit cria o próximo com o prazo avançado.',
-  vinculo: 'Cada item aponta para itens de outra tabela, como o cliente de um pedido. Dá para filtrar pelos dados da tabela ligada.',
-};
-
-/** O que vai para a API de cada coluna. Ligação: a tabela de destino e se aceita vários itens. */
-function payloadDaColuna({ nome, tipo, opcoes, modulo_vinculado_id }) {
-  if (tipo === 'vinculo') {
-    return { nome, tipo, modulo_vinculado_id, opcoes: { multiplo: !!opcoes?.multiplo } };
-  }
-  return { nome, tipo, ...(Array.isArray(opcoes) && opcoes.length > 0 ? { opcoes } : {}) };
-}
+import { Button, Alert, PageHeader } from '../components/ui';
+import { useModulos } from '../hooks/queries';
+import { useFormularioModulo } from '../hooks/useFormularioModulo';
+import ModelosDeTabela from '../components/modulos/ModelosDeTabela';
+import InformacoesBasicas from '../components/modulos/InformacoesBasicas';
+import EtapasDoQuadro from '../components/modulos/EtapasDoQuadro';
+import EditorDeColunas from '../components/modulos/EditorDeColunas';
+import AvisoSemColunas from '../components/modulos/AvisoSemColunas';
 
 export default function ModuleForm() {
   const { id } = useParams();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const toast = useToast();
-  const confirm = useConfirm();
-  const isEditing = !!id;
   // Tabelas que uma coluna de ligação pode apontar (só as de lista).
   const tabelasDeDados = (useModulos().data ?? []).filter((m) => (m.tipo || 'dados') === 'dados');
 
-  const [formData, setFormData] = useState({
-    nome: '',
-    icone: 'extension',
-    tipo: 'dados'
-  });
-  const [campos, setCampos] = useState([]);
-  const [camposOriginais, setCamposOriginais] = useState([]);
-  const [fases, setFases] = useState(['']);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [modeloAplicado, setModeloAplicado] = useState(null);
-  const proximoIdTemporario = useRef(0);
+  const {
+    isEditing,
+    formData,
+    setFormData,
+    colunas,
+    fases,
+    setFases,
+    loading,
+    error,
+    modeloAplicado,
+    aplicarModelo,
+    handleInputChange,
+    handleSubmit,
+  } = useFormularioModulo(id);
 
-  /** Preenche nome, ícone, tipo e colunas a partir de um modelo (tudo editável depois). */
-  // Foto do que o último modelo preencheu: trocar de modelo sem ter editado nada não pede confirmação.
-  const fotoDoModelo = useRef(null);
-  const fotoAtual = () => JSON.stringify([formData.nome, campos.map((c) => [c.nome, c.tipo, c.opcoes])]);
-
-  const aplicarModelo = async (modelo) => {
-    const temConteudo = formData.nome.trim() || campos.some((c) => c.nome.trim());
-    const editou = fotoDoModelo.current === null || fotoDoModelo.current !== fotoAtual();
-    if (temConteudo && editou && modeloAplicado !== modelo.id) {
-      const ok = await confirm({
-        title: `Usar o modelo "${modelo.titulo}"?`,
-        message: 'O nome e as colunas que você já preencheu serão substituídos pelos do modelo.',
-        confirmLabel: 'Usar modelo',
-        cancelLabel: 'Manter o que fiz',
-      });
-      if (!ok) return;
-    }
-    setFormData({ nome: modelo.nome, icone: modelo.icone, tipo: modelo.tipo });
-    setCampos(modelo.colunas.map((c, i) => ({ ...c, opcoes: c.opcoes ? [...c.opcoes] : null, _isNew: true, _tempId: `modelo-${++proximoIdTemporario.current}-${i}` })));
-    setFases(modelo.fases ? [...modelo.fases] : ['']);
-    setModeloAplicado(modelo.id);
-    fotoDoModelo.current = JSON.stringify([modelo.nome, modelo.colunas.map((c) => [c.nome, c.tipo, c.opcoes])]);
-  };
-
-  useEffect(() => {
-    if (!isEditing) return undefined;
-
-    // Evita aplicar a resposta de um módulo anterior se a rota mudar no meio.
-    let cancelado = false;
-
-    const fetchModulo = async () => {
-      try {
-        setLoading(true);
-        const modulo = await moduloService.getById(id);
-        if (cancelado) return;
-        if (modulo) {
-          setFormData({
-            nome: modulo.nome,
-            icone: modulo.icone || 'extension',
-            tipo: modulo.tipo || 'dados'
-          });
-          if (modulo.campos) {
-            setCampos(modulo.campos);
-            setCamposOriginais(modulo.campos.map(c => ({ ...c })));
-          }
-        } else {
-          setError('Tabela não encontrada.');
-        }
-      } catch (err) {
-        if (!cancelado) setError(mensagemDeErro(err, 'Erro ao carregar tabela.'));
-      } finally {
-        if (!cancelado) setLoading(false);
-      }
-    };
-
-    fetchModulo();
-    return () => {
-      cancelado = true;
-    };
-  }, [id, isEditing]);
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleAddField = () => {
-    setCampos([...campos, {
-      nome: '',
-      tipo: 'texto',
-      opcoes: null,
-      _isNew: true,
-      _tempId: Date.now()
-    }]);
-  };
-
-  const handleFieldChange = (index, field, value) => {
-    const updated = [...campos];
-    updated[index] = { ...updated[index], [field]: value };
-    // Ligação guarda { multiplo } em opcoes; as listas, um array. Trocar de tipo não leva um para o outro.
-    if (field === 'tipo' && (value === 'vinculo' || campos[index].tipo === 'vinculo')) {
-      updated[index] = { ...updated[index], opcoes: value === 'vinculo' ? { multiplo: false } : null, modulo_vinculado_id: '' };
-    }
-    setCampos(updated);
-  };
-
-  const handleRemoveField = async (index) => {
-    const campo = campos[index];
-
-    if (isEditing && campo.id && !campo._isNew) {
-      const ok = await confirm({
-        title: `Excluir a coluna "${campo.nome}"?`,
-        message: 'Isso só é possível se não houver itens usando esta coluna.',
-        confirmLabel: 'Excluir coluna',
-        variant: 'danger',
-      });
-      if (!ok) return;
-      try {
-        await moduloService.deleteField(id, campo.id);
-        toast.success('Coluna excluída com sucesso.');
-      } catch (err) {
-        toast.error(mensagemDeErro(err, 'Erro ao excluir a coluna. Ela pode ter itens preenchidos.'));
-        return;
-      }
-    }
-
-    const updated = [...campos];
-    updated.splice(index, 1);
-    setCampos(updated);
-  };
-
-  const handleMoveField = async (index, direction) => {
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= campos.length) return;
-
-    const reordered = [...campos];
-    [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
-    setCampos(reordered);
-
-    const temCamposNovos = reordered.some((c) => c._isNew);
-    if (isEditing && !temCamposNovos) {
-      try {
-        await moduloService.reorderFields(id, reordered.map((c) => c.id));
-      } catch (err) {
-        toast.error(mensagemDeErro(err, 'Erro ao reordenar as colunas.'));
-      }
-    }
-  };
-
-  const handleAddOption = (campoIndex) => {
-    const updated = [...campos];
-    const campo = updated[campoIndex];
-    const opcoes = campo.opcoes || [];
-    updated[campoIndex] = { ...campo, opcoes: [...opcoes, ''] };
-    setCampos(updated);
-  };
-
-  const handleOptionChange = (campoIndex, optionIndex, value) => {
-    const updated = [...campos];
-    const opcoes = [...(updated[campoIndex].opcoes || [])];
-    opcoes[optionIndex] = value;
-    updated[campoIndex] = { ...updated[campoIndex], opcoes };
-    setCampos(updated);
-  };
-
-  const handleRemoveOption = (campoIndex, optionIndex) => {
-    const updated = [...campos];
-    const opcoes = [...(updated[campoIndex].opcoes || [])];
-    opcoes.splice(optionIndex, 1);
-    updated[campoIndex] = { ...updated[campoIndex], opcoes };
-    setCampos(updated);
-  };
-
-  const handleAddFase = () => setFases([...fases, '']);
-  const handleFaseChange = (index, value) => {
-    const updated = [...fases];
-    updated[index] = value;
-    setFases(updated);
-  };
-  const handleRemoveFase = (index) => {
-    const updated = [...fases];
-    updated.splice(index, 1);
-    setFases(updated.length ? updated : ['']);
-  };
-
-  // Traz a lista de módulos atualizada ANTES de navegar: quem chega em /modulos
-  // já vê o módulo novo/renomeado, sem um frame com a lista antiga.
-  const atualizarListaDeModulos = () => queryClient.fetchQuery({ ...modulosQuery, staleTime: 0 }).catch(() => undefined);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-
-    try {
-      if (isEditing) {
-        await moduloService.update(id, formData);
-
-        for (const campo of campos) {
-          if (campo._isNew) {
-            await moduloService.addField(id, payloadDaColuna(campo));
-          } else if (campo.id) {
-            const original = camposOriginais.find(c => c.id === campo.id);
-            if (original) {
-              const nomeChanged = campo.nome !== original.nome;
-              const opcoesChanged = JSON.stringify(campo.opcoes) !== JSON.stringify(original.opcoes);
-              if (nomeChanged || opcoesChanged) {
-                const updateData = {};
-                if (nomeChanged) updateData.nome = campo.nome;
-                if (opcoesChanged) updateData.opcoes = campo.opcoes;
-                await moduloService.updateField(id, campo.id, updateData);
-              }
-            }
-          }
-        }
-
-        await atualizarListaDeModulos();
-        toast.success('Tabela atualizada.');
-        navigate('/modulos');
-      } else {
-        const camposLimpos = campos.map(payloadDaColuna);
-        const payload = { ...formData, campos: camposLimpos };
-
-        if (formData.tipo === 'recrutamento') {
-          payload.fases = fases.map((f) => f.trim()).filter(Boolean);
-        }
-
-        await moduloService.create(payload);
-        await atualizarListaDeModulos();
-        toast.success('Tabela criada.');
-        navigate('/modulos');
-      }
-    } catch (err) {
-      if (err.response?.data?.errors) {
-        setError(Object.values(err.response.data.errors).join(' | '));
-      } else {
-        setError(mensagemDeErro(err, 'Erro ao salvar a tabela.'));
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const tipoAtual = TIPO_INFO[formData.tipo] ?? TIPO_INFO.dados;
   const fasesValidas = fases.map((f) => f.trim()).filter(Boolean);
   const precisaDeFases = !isEditing && formData.tipo === 'recrutamento';
   const podeSalvar = !loading && (!precisaDeFases || fasesValidas.length > 0);
@@ -335,156 +47,22 @@ export default function ModuleForm() {
         </div>
       )}
 
-      {!isEditing && (
-        <section aria-labelledby="modelos-titulo" className="mb-6">
-          <h2 id="modelos-titulo" className="text-sm font-semibold text-ink mb-3">Comece por um modelo</h2>
-          <div className="flex flex-col gap-4">
-            {GRUPOS_DE_MODELOS.map(([grupo, modelos]) => (
-              <div key={grupo}>
-                <h3 className="text-xs font-semibold text-light-text mb-2">{grupo}</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                  {modelos.map((modelo) => {
-                    const ativo = modeloAplicado === modelo.id;
-                    return (
-                      <button
-                        key={modelo.id}
-                        type="button"
-                        onClick={() => aplicarModelo(modelo)}
-                        aria-pressed={ativo}
-                        className={`text-left rounded-xl border p-4 transition-colors ${
-                          ativo
-                            ? 'border-primary bg-primary-50 shadow-xs'
-                            : 'border-divider bg-surface hover:border-primary-300 hover:bg-primary-50/50'
-                        }`}
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${ativo ? 'bg-primary text-white' : 'bg-primary-100 text-primary'}`}>
-                            <span className="material-icons text-[20px]" aria-hidden="true">{modelo.icone}</span>
-                          </span>
-                          <span className="text-sm font-semibold text-ink">{modelo.titulo}</span>
-                        </span>
-                        <span className="block text-xs text-light-text mt-2 truncate" title={modelo.descricao}>{modelo.descricao}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      {!isEditing && <ModelosDeTabela modeloAplicado={modeloAplicado} onAplicar={aplicarModelo} />}
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-[380px_minmax(0,1fr)] gap-6 items-start w-full">
 
         {/* Coluna esquerda: identidade do módulo */}
-        <Card className="lg:sticky lg:top-8 flex flex-col gap-5">
-          <h2 className="text-base font-semibold">Informações básicas</h2>
-
-          <Input
-            label="Nome da tabela"
-            type="text"
-            name="nome"
-            value={formData.nome}
-            onChange={handleInputChange}
-            required
-            placeholder="Ex: Clientes"
-          />
-
-          <Select
-            label="O que você quer organizar?"
-            name="tipo"
-            value={formData.tipo}
-            onChange={handleInputChange}
-            disabled={isEditing}
-            hint={tipoAtual.description}
-            options={Object.entries(TIPO_INFO).map(([value, info]) => ({ value, label: info.label }))}
-          />
-
-          <div>
-            <p className="block text-sm font-medium mb-1.5">Ícone</p>
-            <button
-              type="button"
-              onClick={() => setIconPickerOpen((v) => !v)}
-              aria-expanded={iconPickerOpen}
-              className="flex items-center gap-2.5 text-sm text-primary font-medium hover:underline"
-            >
-              <span className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center shrink-0">
-                <span className="material-icons text-[20px]" aria-hidden="true">{formData.icone}</span>
-              </span>
-              {iconPickerOpen ? 'Fechar' : 'Alterar ícone'}
-            </button>
-
-            {iconPickerOpen && (
-              <div className="mt-3 grid grid-cols-5 gap-2">
-                {MODULO_ICON_OPTIONS.map(icon => (
-                  <button
-                    key={icon}
-                    type="button"
-                    onClick={() => { setFormData({ ...formData, icone: icon }); setIconPickerOpen(false); }}
-                    title={icon}
-                    className={`aspect-square rounded-lg flex items-center justify-center transition-colors ${
-                      formData.icone === icon
-                        ? 'bg-primary text-white shadow-xs'
-                        : 'bg-surface border border-divider-strong text-light-text hover:border-primary-300 hover:bg-primary-50 hover:text-primary'
-                    }`}
-                  >
-                    <span className="material-icons text-[20px]">{icon}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </Card>
+        <InformacoesBasicas
+          formData={formData}
+          isEditing={isEditing}
+          onChange={handleInputChange}
+          onIcone={(icone) => setFormData({ ...formData, icone })}
+        />
 
         {/* Coluna direita: estrutura do módulo */}
         <div className="flex flex-col gap-6 min-w-0">
 
-          {precisaDeFases && (
-            <Card>
-              <div className="flex justify-between items-start mb-4">
-                <h2 className="text-base font-semibold">Etapas do quadro</h2>
-                <button
-                  type="button"
-                  onClick={handleAddFase}
-                  className="h-9 px-3.5 rounded-lg border border-divider text-sm font-medium text-light-text hover:border-primary hover:text-primary transition-colors flex items-center gap-1.5 shrink-0"
-                >
-                  <span className="material-icons text-[16px]">add</span>
-                  Etapa
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                {fases.map((fase, index) => (
-                  <div key={index} className="flex items-center gap-2.5">
-                    <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-2xs font-bold flex items-center justify-center shrink-0 tabular">
-                      {index + 1}
-                    </span>
-                    <input
-                      type="text"
-                      value={fase}
-                      onChange={(e) => handleFaseChange(index, e.target.value)}
-                      placeholder={`Ex: ${index === 0 ? 'Triagem' : 'Entrevista'}`}
-                      className="flex-1 h-10 px-3.5 bg-surface text-ink border border-divider-strong rounded-lg text-sm placeholder:text-light-text transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFase(index)}
-                      className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-danger hover:bg-danger-bg transition-colors shrink-0"
-                      title="Remover etapa"
-                    >
-                      <span className="material-icons text-[20px]">close</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {fasesValidas.length === 0 && (
-                <div className="mt-3">
-                  <Alert variant="warning">Adicione pelo menos uma etapa para criar a vaga.</Alert>
-                </div>
-              )}
-            </Card>
-          )}
+          {precisaDeFases && <EtapasDoQuadro fases={fases} onChange={setFases} />}
 
           {isEditing && formData.tipo === 'recrutamento' && (
             <div className="bg-background/60 border border-divider rounded-2xl p-5 flex items-start gap-3">
@@ -497,201 +75,15 @@ export default function ModuleForm() {
           )}
 
           {!['financeiro', 'arquivo'].includes(formData.tipo) ? (
-            <Card>
-              <div className="flex justify-between items-center mb-2">
-                <h2 className="text-base font-semibold">Colunas da tabela</h2>
-                <button
-                  type="button"
-                  onClick={handleAddField}
-                  className="h-9 px-3.5 rounded-lg border border-divider text-sm font-medium text-light-text hover:border-primary hover:text-primary transition-colors flex items-center gap-1.5 shrink-0"
-                >
-                  <span className="material-icons text-[16px]" aria-hidden="true">add</span>
-                  Coluna
-                </button>
-              </div>
-
-              {campos.length === 0 ? (
-                <div className="py-10">
-                  <EmptyState
-                    icon="view_column"
-                    size="sm"
-                    title="Nenhuma coluna ainda"
-                    description="As colunas definem o que cada item guarda, como nome, data ou valor. Elas aparecem na lista e no formulário de cada item."
-                    actionLabel="Adicionar primeira coluna"
-                    actionIcon="add"
-                    onAction={handleAddField}
-                  />
-                </div>
-              ) : (
-                <div className="flex flex-col divide-y divide-divider">
-                  {campos.map((campo, index) => (
-                    <div key={campo.id || campo._tempId} className="py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex flex-col shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleMoveField(index, -1)}
-                            disabled={index === 0}
-                            className="w-6 h-5 flex items-center justify-center text-light-text hover:text-primary disabled:opacity-25 disabled:hover:text-light-text transition-colors"
-                            title="Mover para cima"
-                          >
-                            <span className="material-icons text-[16px]">expand_less</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleMoveField(index, 1)}
-                            disabled={index === campos.length - 1}
-                            className="w-6 h-5 flex items-center justify-center text-light-text hover:text-primary disabled:opacity-25 disabled:hover:text-light-text transition-colors"
-                            title="Mover para baixo"
-                          >
-                            <span className="material-icons text-[16px]">expand_more</span>
-                          </button>
-                        </div>
-
-                        <span className="w-9 h-9 rounded-lg bg-primary-100 text-primary flex items-center justify-center shrink-0">
-                          <span className="material-icons text-[18px]">{CAMPO_TIPO_INFO[campo.tipo]?.icon || 'text_fields'}</span>
-                        </span>
-
-                        <input
-                          type="text"
-                          value={campo.nome}
-                          onChange={(e) => handleFieldChange(index, 'nome', e.target.value)}
-                          required
-                          placeholder="Nome da coluna"
-                          className="flex-1 min-w-0 h-10 px-3.5 bg-surface text-ink border border-divider-strong rounded-lg text-sm placeholder:text-light-text transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100"
-                        />
-
-                        <div className="relative shrink-0 w-40">
-                          <select
-                            value={campo.tipo}
-                            onChange={(e) => handleFieldChange(index, 'tipo', e.target.value)}
-                            disabled={isEditing && !campo._isNew}
-                            className="w-full h-10 appearance-none pl-3.5 pr-8 bg-surface text-ink border border-divider-strong rounded-lg text-sm cursor-pointer transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100 disabled:bg-background disabled:text-faint disabled:border-divider disabled:cursor-not-allowed"
-                          >
-                            {Object.entries(CAMPO_TIPO_INFO).map(([value, info]) => (
-                              <option key={value} value={value}>{info.label}</option>
-                            ))}
-                          </select>
-                          <span className="material-icons absolute right-2 top-1/2 -translate-y-1/2 text-[16px] text-light-text pointer-events-none">expand_more</span>
-                        </div>
-
-                        {campo._isNew && (
-                          <Badge variant="primary" size="sm" className="shrink-0">
-                            Novo
-                          </Badge>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveField(index)}
-                          className="w-9 h-9 rounded-lg flex items-center justify-center text-light-text hover:text-danger hover:bg-danger-bg transition-colors shrink-0"
-                          title="Remover coluna"
-                        >
-                          <span className="material-icons text-[20px]">delete_outline</span>
-                        </button>
-                      </div>
-
-                      {CAMPO_TIPO_DICA[campo.tipo] && (
-                        <p className="mt-1.5 pl-[84px] text-xs text-light-text">{CAMPO_TIPO_DICA[campo.tipo]}</p>
-                      )}
-
-                      {campo.tipo === 'vinculo' && (
-                        <div className="mt-3 pl-[84px] flex flex-col gap-3">
-                          {campo._isNew ? (
-                            <>
-                              <Select
-                                label="Liga à tabela"
-                                value={campo.modulo_vinculado_id || ''}
-                                onChange={(e) => handleFieldChange(index, 'modulo_vinculado_id', e.target.value)}
-                                required
-                                placeholder={tabelasDeDados.length ? 'Escolha a tabela' : 'Crie outra tabela de lista primeiro'}
-                                options={tabelasDeDados.map((m) => ({ value: m.id, label: m.id === id ? `${m.nome} (esta tabela)` : m.nome }))}
-                              />
-                              <label className="flex items-center gap-2 text-sm text-ink-soft cursor-pointer select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={!!campo.opcoes?.multiplo}
-                                  onChange={(e) => handleFieldChange(index, 'opcoes', { multiplo: e.target.checked })}
-                                  className="w-4 h-4 accent-primary"
-                                />
-                                Cada item pode ligar a vários itens dessa tabela
-                              </label>
-                            </>
-                          ) : (
-                            <p className="text-xs text-light-text">
-                              Liga à tabela <strong className="text-ink-soft font-semibold">{campo.modulo_vinculado?.nome || 'removida'}</strong>
-                              {campo.opcoes?.multiplo ? ', vários itens por vez.' : ', um item por vez.'}
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {campo.tipo === 'selecao' && (
-                        <div className="mt-3 pl-[84px]">
-                          <p className="text-xs font-medium text-light-text mb-2">Opções da lista</p>
-                          <div className="flex flex-col gap-2">
-                            {(campo.opcoes || []).map((opcao, optIdx) => (
-                              <div key={optIdx} className="flex items-center gap-2">
-                                <span className="w-4 h-4 rounded-full border-2 border-divider-strong shrink-0"></span>
-                                <input
-                                  type="text"
-                                  value={opcao}
-                                  onChange={(e) => handleOptionChange(index, optIdx, e.target.value)}
-                                  placeholder={`Opção ${optIdx + 1}`}
-                                  className="flex-1 h-9 px-3 bg-surface text-ink border border-divider-strong rounded-lg text-sm placeholder:text-light-text transition-[border-color,box-shadow] duration-150 hover:border-primary-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary-100"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveOption(index, optIdx)}
-                                  className="text-light-text hover:text-danger transition-colors shrink-0"
-                                >
-                                  <span className="material-icons text-[16px]">close</span>
-                                </button>
-                              </div>
-                            ))}
-                            <button
-                              type="button"
-                              onClick={() => handleAddOption(index)}
-                              className="text-xs text-primary hover:underline font-medium self-start mt-0.5"
-                            >
-                              + Adicionar opção
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+            <EditorDeColunas colunas={colunas} isEditing={isEditing} moduloId={id} tabelasDeDados={tabelasDeDados} />
           ) : formData.tipo === 'financeiro' ? (
-            <Card className="bg-primary-50/50 border-primary-200">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-xl bg-primary-100 text-primary flex items-center justify-center shrink-0">
-                  <span className="material-icons text-[24px]">account_balance_wallet</span>
-                </div>
-                <div>
-                  <h2 className="text-base font-semibold text-primary-900">Tabela financeira</h2>
-                  <p className="text-sm text-primary-800 mt-1">
-                    Já vem com data, descrição, valor e categoria. Não precisa criar colunas.
-                  </p>
-                </div>
-              </div>
-            </Card>
+            <AvisoSemColunas icone="account_balance_wallet" titulo="Tabela financeira">
+              Já vem com data, descrição, valor e categoria. Não precisa criar colunas.
+            </AvisoSemColunas>
           ) : (
-            <Card className="bg-primary-50/50 border-primary-200">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-xl bg-primary-100 text-primary flex items-center justify-center shrink-0">
-                  <span className="material-icons text-[24px]">folder_open</span>
-                </div>
-                <div>
-                  <h2 className="text-base font-semibold text-primary-900">Tabela de arquivos</h2>
-                  <p className="text-sm text-primary-800 mt-1">
-                    Guarda arquivos para enviar e baixar. Não precisa criar colunas.
-                  </p>
-                </div>
-              </div>
-            </Card>
+            <AvisoSemColunas icone="folder_open" titulo="Tabela de arquivos">
+              Guarda arquivos para enviar e baixar. Não precisa criar colunas.
+            </AvisoSemColunas>
           )}
 
           <div className="flex justify-end gap-3 pt-1 pb-2">
