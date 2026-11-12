@@ -32,3 +32,24 @@ export function localizarCandidato(funil, candidatoId) {
   }
   return null;
 }
+
+/** Texto para busca por nome sem ligar para acento nem maiúscula. */
+export const normalizarBusca = (texto) =>
+  String(texto || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLocaleLowerCase('pt-BR');
+
+/** Quantos candidatos há nas colunas ([colId, coluna] de Object.entries do funil). */
+export function contarCandidatos(colunas) {
+  return colunas.reduce((acc, [, col]) => acc + (col.candidatos?.length || 0), 0);
+}
+
+/**
+ * Deixa em cada coluna só os candidatos cujo nome contém `termo` (já passado
+ * por `normalizarBusca`), com o total da coluna ajustado. Sem termo, devolve as colunas.
+ */
+export function filtrarColunasPorNome(colunas, termo) {
+  if (!termo) return colunas;
+  return colunas.map(([colId, col]) => {
+    const candidatos = (col.candidatos || []).filter((c) => normalizarBusca(c.nome).includes(termo));
+    return [colId, { ...col, candidatos, total: candidatos.length }];
+  });
+}

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { localizarCandidato, moverCandidatoNoFunil } from './kanban';
+import {
+  contarCandidatos,
+  filtrarColunasPorNome,
+  localizarCandidato,
+  moverCandidatoNoFunil,
+  normalizarBusca,
+} from './kanban';
 
 const ana = { id: 'a', nome: 'Ana' };
 const beto = { id: 'b', nome: 'Beto' };
@@ -69,5 +75,49 @@ describe('localizarCandidato', () => {
     expect(localizarCandidato(funil(), 'x')).toBeNull();
     expect(localizarCandidato(null, 'a')).toBeNull();
     expect(localizarCandidato(funil(), '')).toBeNull();
+  });
+});
+
+describe('normalizarBusca', () => {
+  it('tira acentos e deixa em minúsculas', () => {
+    expect(normalizarBusca('ÁNA Conceição')).toBe('ana conceicao');
+  });
+
+  it('valor vazio vira texto vazio', () => {
+    expect(normalizarBusca(null)).toBe('');
+    expect(normalizarBusca(undefined)).toBe('');
+  });
+});
+
+describe('contarCandidatos', () => {
+  it('soma os candidatos de todas as colunas', () => {
+    expect(contarCandidatos(Object.entries(funil()))).toBe(2);
+  });
+
+  it('coluna sem lista conta como zero', () => {
+    expect(contarCandidatos([['x', { fase: 'X' }], ['novo', funil().novo]])).toBe(2);
+    expect(contarCandidatos([])).toBe(0);
+  });
+});
+
+describe('filtrarColunasPorNome', () => {
+  it('sem termo devolve as mesmas colunas', () => {
+    const colunas = Object.entries(funil());
+    expect(filtrarColunasPorNome(colunas, '')).toBe(colunas);
+  });
+
+  it('filtra pelo nome ignorando acento e ajusta o total de cada coluna', () => {
+    const novo = { fase: 'Novo', candidatos: [ana, beto, { id: 'c', nome: 'Bétânia' }], total: 3 };
+    const colunas = Object.entries({ ...funil(), novo });
+    const resultado = Object.fromEntries(filtrarColunasPorNome(colunas, 'bet'));
+    expect(resultado.novo.candidatos.map((c) => c.id)).toEqual(['b', 'c']);
+    expect(resultado.novo.total).toBe(2);
+    expect(resultado.entrevista).toEqual({ fase: 'Entrevista', candidatos: [], total: 0 });
+  });
+
+  it('não muta as colunas originais', () => {
+    const colunas = Object.entries(funil());
+    filtrarColunasPorNome(colunas, 'ana');
+    expect(colunas[0][1].candidatos).toHaveLength(2);
   });
 });
