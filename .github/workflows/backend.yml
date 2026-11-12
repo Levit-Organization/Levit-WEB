@@ -1,0 +1,64 @@
+name: Backend
+
+on:
+  push:
+    branches: [main, master]
+    paths: ['api-backend/**', '.github/workflows/backend.yml']
+  pull_request:
+    paths: ['api-backend/**', '.github/workflows/backend.yml']
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: api-backend
+
+jobs:
+  qualidade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.2 é o mínimo do composer.json; 8.5 é a versão usada no desenvolvimento.
+        php: ['8.2', '8.5']
+    name: PHP ${{ matrix.php }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          # sqlite3: banco em memória do grupo 'tests' (tests/database).
+          extensions: intl, mbstring, curl, xml, pgsql, pdo_pgsql, sqlite3
+          coverage: none
+          tools: composer:v2
+
+      - name: Validar composer.json
+        run: composer validate --no-check-publish
+
+      - name: Cache do Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ matrix.php }}-${{ hashFiles('api-backend/composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Sintaxe PHP
+        run: find app -name '*.php' -print0 | xargs -0 -n1 -P4 php -l > /dev/null
+
+      - name: Análise estática (PHPStan)
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+      - name: Testes
+        run: vendor/bin/phpunit --no-coverage
+
+      - name: Vulnerabilidades (dependências)
+        run: composer audit --no-dev

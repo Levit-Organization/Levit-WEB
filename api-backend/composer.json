@@ -20,6 +20,7 @@
     "require-dev": {
         "fakerphp/faker": "^1.9",
         "mikey179/vfsstream": "^1.6",
+        "phpstan/phpstan": "^2.1",
         "phpunit/phpunit": "^10.5.16"
     },
     "autoload": {
@@ -42,6 +43,7 @@
         "sort-packages": true
     },
     "scripts": {
-        "test": "phpunit"
+        "test": "phpunit",
+        "analyse": "phpstan analyse --memory-limit=1G"
     }
 }
