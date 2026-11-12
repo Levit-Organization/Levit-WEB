@@ -101,6 +101,29 @@ export function novaRegra() {
   return { campo: '', operador: 'igual', valor: '', valor_de: '' };
 }
 
+/** Ação nova no formulário: começa como e-mail. */
+export function novaAcao() {
+  return { tipo: 'enviar_email', configuracao: configuracaoInicial('enviar_email') };
+}
+
+/** Regra salva no formato do formulário: o que falta vira vazio e o operador padrão é "igual". */
+export function regraDoFormulario(regra) {
+  return {
+    campo: regra.campo || '',
+    operador: regra.operador || 'igual',
+    valor: regra.valor ?? '',
+    valor_de: regra.valor_de ?? '',
+  };
+}
+
+/** Ação salva no formato do formulário. A configuração pode vir como texto JSON. */
+export function acaoDoFormulario(acao) {
+  return {
+    tipo: acao.tipo,
+    configuracao: typeof acao.configuracao === 'string' ? JSON.parse(acao.configuracao) : acao.configuracao || {},
+  };
+}
+
 /** A regra está completa para o operador escolhido? */
 export function regraValida({ campo, operador, valor, valor_de: valorDe }) {
   if (!campo || !operador) return false;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  acaoDoFormulario,
   acaoValida,
   acoesDoModulo,
   condicoesDaAutomacao,
@@ -9,7 +10,9 @@ import {
   regraValida,
   gatilhosDaAutomacao,
   montarDefinicao,
+  novaAcao,
   quando,
+  regraDoFormulario,
   rotuloRegistro,
 } from './automacaoConstants';
 
@@ -163,5 +166,28 @@ describe('rotuloRegistro', () => {
 
   it('sem valores, usa o início do id', () => {
     expect(rotuloRegistro({ id: '0123456789', dados: {} })).toBe('Registro 01234567');
+  });
+});
+
+describe('formulário de automação', () => {
+  it('ação nova começa como e-mail vazio', () => {
+    expect(novaAcao()).toEqual({ tipo: 'enviar_email', configuracao: { destinatario: '', assunto: '', corpo: '' } });
+    expect(novaAcao()).not.toBe(novaAcao());
+  });
+
+  it('regra salva: o que falta vira vazio e o operador padrão é "igual"', () => {
+    expect(regraDoFormulario({ campo: 'c1' })).toEqual({ campo: 'c1', operador: 'igual', valor: '', valor_de: '' });
+    expect(regraDoFormulario({ campo: 'c1', operador: 'mudou_de_para', valor: 0, valor_de: 'A' })).toEqual({
+      campo: 'c1',
+      operador: 'mudou_de_para',
+      valor: 0,
+      valor_de: 'A',
+    });
+  });
+
+  it('ação salva: configuração em texto JSON, objeto ou ausente', () => {
+    expect(acaoDoFormulario({ tipo: 'webhook', configuracao: '{"url":"https://x.com"}' })).toEqual({ tipo: 'webhook', configuracao: { url: 'https://x.com' } });
+    expect(acaoDoFormulario({ tipo: 'webhook', configuracao: { url: 'https://y.com' } })).toEqual({ tipo: 'webhook', configuracao: { url: 'https://y.com' } });
+    expect(acaoDoFormulario({ tipo: 'webhook', configuracao: null })).toEqual({ tipo: 'webhook', configuracao: {} });
   });
 });
