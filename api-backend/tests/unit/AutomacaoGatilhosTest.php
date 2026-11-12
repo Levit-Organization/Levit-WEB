@@ -1,6 +1,6 @@
 <?php
 
-use App\Services\AutomacaoService;
+use App\Services\Automacao\ValidadorDeAutomacao;
 use CodeIgniter\Test\CIUnitTestCase;
 
 /**
@@ -10,10 +10,7 @@ final class AutomacaoGatilhosTest extends CIUnitTestCase
 {
     private function normalizar(array $dados): array
     {
-        $servico = (new ReflectionClass(AutomacaoService::class))->newInstanceWithoutConstructor();
-        $metodo  = new ReflectionMethod($servico, 'normalizarGatilhos');
-
-        return $metodo->invoke($servico, $dados);
+        return ValidadorDeAutomacao::normalizarGatilhos($dados);
     }
 
     public function testAceitaVariosGatilhos(): void
@@ -49,9 +46,7 @@ final class AutomacaoGatilhosTest extends CIUnitTestCase
     /** Validação de condições em vagas (campos do candidato: não precisa de banco). */
     private function condicoesDeVaga(array $condicoes, array $gatilhos = ['candidato_mudou_etapa']): ?array
     {
-        $servico = (new ReflectionClass(AutomacaoService::class))->newInstanceWithoutConstructor();
-
-        return (new ReflectionMethod($servico, 'normalizarCondicoes'))->invoke($servico, ['condicoes' => $condicoes], 'vaga', true, $gatilhos);
+        return (new ValidadorDeAutomacao())->normalizarCondicoes(['condicoes' => $condicoes], 'vaga', true, $gatilhos);
     }
 
     public function testCondicoesValidasSaoNormalizadas(): void

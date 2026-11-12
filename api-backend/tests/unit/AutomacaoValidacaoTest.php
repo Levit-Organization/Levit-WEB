@@ -1,6 +1,7 @@
 <?php
 
-use App\Services\AutomacaoService;
+use App\Services\Automacao\ListagemDeAutomacoes;
+use App\Services\Automacao\ValidadorDeAutomacao;
 use CodeIgniter\Test\CIUnitTestCase;
 
 /**
@@ -11,16 +12,26 @@ use CodeIgniter\Test\CIUnitTestCase;
  */
 final class AutomacaoValidacaoTest extends CIUnitTestCase
 {
-    private function chamar(string $metodo, mixed ...$argumentos): mixed
+    /** Validador com o tipo da tabela fixo (sem consultar o banco). */
+    private function validador(bool $ehVaga = false): ValidadorDeAutomacao
     {
-        $servico = (new ReflectionClass(AutomacaoService::class))->newInstanceWithoutConstructor();
+        return new class ($ehVaga) extends ValidadorDeAutomacao {
+            public function __construct(private bool $ehVaga)
+            {
+                parent::__construct();
+            }
 
-        return (new ReflectionMethod($servico, $metodo))->invoke($servico, ...$argumentos);
+            public function tipoDoModulo(string $moduloId): ?string
+            {
+                return $this->ehVaga ? 'recrutamento' : 'dados';
+            }
+        };
     }
 
     private function validarAcao(array $acao, bool $ehVaga = false, array $gatilhos = ['criacao']): void
     {
-        $this->chamar('validarAcao', $acao, 'empresa', 'modulo', $ehVaga, $gatilhos);
+        $definicao = $this->validador($ehVaga)->validarDefinicao('modulo', 'empresa', ['nome' => 'Teste', 'gatilhos' => $gatilhos, 'acoes' => [$acao]]);
+        $this->assertSame([$acao], $definicao['acoes']);
     }
 
     private function assertAcaoRecusada(string $mensagem, array $acao, bool $ehVaga = false, array $gatilhos = ['criacao']): void
@@ -37,12 +48,38 @@ final class AutomacaoValidacaoTest extends CIUnitTestCase
     {
         foreach (['', ' a ', str_repeat('x', 101)] as $nome) {
             try {
-                $this->chamar('validarDefinicao', 'modulo', 'empresa', ['nome' => $nome]);
+                (new ValidadorDeAutomacao())->validarDefinicao('modulo', 'empresa', ['nome' => $nome]);
                 $this->fail("Deveria recusar o nome '{$nome}'");
             } catch (DomainException $e) {
                 $this->assertSame('O nome precisa ter entre 2 e 100 caracteres.', $e->getMessage());
             }
         }
+    }
+
+    public function testGatilhosConformeOTipoDaTabelaEAcoesObrigatorias(): void
+    {
+        $casos = [
+            ['Gatilhos de candidato só existem em vagas de recrutamento.', false, ['criacao', 'candidato_criado'], [['tipo' => 'webhook']]],
+            ['Em vagas, as automações disparam com candidatos (novo candidato ou mudança de etapa).', true, ['criacao'], [['tipo' => 'webhook']]],
+            ['A automação precisa de pelo menos uma ação.', false, ['criacao'], []],
+        ];
+        foreach ($casos as [$mensagem, $ehVaga, $gatilhos, $acoes]) {
+            try {
+                $this->validador($ehVaga)->validarDefinicao('modulo', 'empresa', ['nome' => 'Teste', 'gatilhos' => $gatilhos, 'acoes' => $acoes]);
+                $this->fail("Deveria recusar: {$mensagem}");
+            } catch (DomainException $e) {
+                $this->assertSame($mensagem, $e->getMessage());
+            }
+        }
+
+        $definicao = $this->validador(true)->validarDefinicao('vaga', 'empresa', [
+            'nome' => '  Avisar a equipe ', 'gatilho' => 'candidato_mudou_etapa',
+            'acoes' => [['tipo' => 'notificacao', 'configuracao' => ['destinatarios' => 'todos', 'titulo' => 'Mudou']]],
+        ]);
+        $this->assertSame([
+            'nome' => 'Avisar a equipe', 'gatilho' => 'candidato_mudou_etapa', 'gatilhos' => ['candidato_mudou_etapa'], 'condicoes' => null,
+            'campo_condicao_id' => null, 'condicao_operador' => null, 'condicao_valor' => null, 'condicao_valor_de' => null,
+        ], $definicao['campos']);
     }
 
     public function testAcoesValidasSemBanco(): void
@@ -51,7 +88,6 @@ final class AutomacaoValidacaoTest extends CIUnitTestCase
         $this->validarAcao(['tipo' => 'enviar_email', 'configuracao' => ['destinatario_campo_id' => 'c1', 'assunto' => 'Oi', 'corpo' => 'Texto']]);
         $this->validarAcao(['tipo' => 'webhook', 'configuracao' => ['url' => 'https://exemplo.com.br/gancho']]);
         $this->validarAcao(['tipo' => 'notificacao', 'configuracao' => ['destinatarios' => 'todos', 'titulo' => 'Novo item']], true, ['candidato_criado']);
-        $this->addToAssertionCount(4);
     }
 
     public function testAcoesRecusadas(): void
@@ -61,8 +97,8 @@ final class AutomacaoValidacaoTest extends CIUnitTestCase
         $this->assertAcaoRecusada('Ação de e-mail precisa de destinatário, assunto e corpo.', ['tipo' => 'enviar_email', 'configuracao' => ['destinatario' => 'a@b.com', 'corpo' => 'x']]);
         $this->assertAcaoRecusada('Informe o endereço do outro sistema.', ['tipo' => 'webhook', 'configuracao' => []]);
         $this->assertAcaoRecusada('Esse endereço aponta para uma rede interna e não pode ser usado.', ['tipo' => 'webhook', 'configuracao' => ['url' => 'http://localhost/x']]);
-        $this->assertAcaoRecusada('Ações sobre itens não estão disponíveis em vagas.', ['tipo' => 'atualizar_campo', 'configuracao' => ['campo_id' => 'c1']], true);
-        $this->assertAcaoRecusada('Ações sobre itens não estão disponíveis em vagas.', ['tipo' => 'criar_registro', 'configuracao' => []], true);
+        $this->assertAcaoRecusada('Ações sobre itens não estão disponíveis em vagas.', ['tipo' => 'atualizar_campo', 'configuracao' => ['campo_id' => 'c1']], true, ['candidato_criado']);
+        $this->assertAcaoRecusada('Ações sobre itens não estão disponíveis em vagas.', ['tipo' => 'criar_registro', 'configuracao' => []], true, ['candidato_criado']);
         $this->assertAcaoRecusada(
             '"Atualizar coluna" não funciona com o gatilho "Exclusão": o item já não existe.',
             ['tipo' => 'atualizar_campo', 'configuracao' => ['campo_id' => 'c1']],
@@ -83,7 +119,7 @@ final class AutomacaoValidacaoTest extends CIUnitTestCase
 
     public function testListagemNoFormatoDaTela(): void
     {
-        $lista = $this->chamar('completarParaListagem', [
+        $lista = ListagemDeAutomacoes::completar([
             [
                 'id' => 'a1', 'gatilho' => 'criacao', 'gatilhos' => null, 'condicoes' => null,
                 'campo_condicao_id' => 'c1', 'condicao_operador' => 'igual', 'condicao_valor' => 'Feito',
