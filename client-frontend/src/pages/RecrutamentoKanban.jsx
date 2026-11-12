@@ -1,93 +1,51 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import Layout from '../components/Layout';
 import KanbanColumn from '../components/kanban/KanbanColumn';
-import {
-  Button,
-  Select,
-  Input,
-  Textarea,
-  Modal,
-  Drawer,
-  Alert,
-  FileInput,
-  Badge,
-  Avatar,
-  Skeleton,
-  PageHeader,
-  EmptyState,
-  ErrorState,
-  coresDaFase,
-  tempoRelativo,
-  estaParado,
-} from '../components/ui';
-import { recrutamentoService } from '../services/recrutamentoService';
-import { useModulos, useKanban, queryKeys } from '../hooks/queries';
+import KanbanCarregando from '../components/kanban/KanbanCarregando';
+import ModalNovaEtapa from '../components/kanban/ModalNovaEtapa';
+import ModalPerfilCandidato from '../components/kanban/ModalPerfilCandidato';
+import DrawerNovoCandidato from '../components/kanban/DrawerNovoCandidato';
+import { useFunilDaVaga } from '../components/kanban/useFunilDaVaga';
+import { useArrasteKanban } from '../components/kanban/useArrasteKanban';
+import { useBuscaNoFunil } from '../components/kanban/useBuscaNoFunil';
+import { usePerfilCandidato } from '../components/kanban/usePerfilCandidato';
+import { useNovaEtapa } from '../components/kanban/useNovaEtapa';
+import { useNovoCandidato } from '../components/kanban/useNovoCandidato';
+import { Button, Select, Input, PageHeader, EmptyState, ErrorState } from '../components/ui';
 import { useToast } from '../hooks/useFeedback';
 import { mensagemDeErro } from '../lib/queryClient';
-import { moverCandidatoNoFunil, localizarCandidato } from '../utils/kanban';
-import { mascararTelefone } from '../utils/masks';
-import { CANDIDATO_VAZIO, CURRICULO_ACCEPT, CURRICULO_DICA, linkDaVaga, validarCandidato } from '../utils/candidato';
-
-/** Busca por nome sem ligar para acento nem maiúscula. */
-const normalizar = (texto) => String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
-const SEM_DADOS = [];
-const BORDA_AUTOSCROLL = 100; // px da borda que dispara o auto-scroll durante o arraste
-const VELOCIDADE_AUTOSCROLL = 18;
+import { linkDaVaga } from '../utils/candidato';
 
 export default function RecrutamentoKanban() {
-  const queryClient = useQueryClient();
   const toast = useToast();
 
-  // --- Vagas e funil ---------------------------------------------------------
-  const modulosQuery = useModulos();
-  const vagas = useMemo(
-    () => (modulosQuery.data ?? SEM_DADOS).filter((m) => m.tipo === 'recrutamento'),
-    [modulosQuery.data]
-  );
-
-  const [vagaEscolhida, setVagaEscolhida] = useState(null);
-  // Sem escolha (ou com a vaga escolhida removida) usa a primeira vaga. Sem vagas
-  // nenhuma, mostra o funil global em modo somente leitura ('all').
-  const vagaSelecionada =
-    vagas.find((v) => v.id === vagaEscolhida)?.id ?? vagas[0]?.id ?? 'all';
-  const modoSomenteLeitura = vagaSelecionada === 'all';
-
-  // Espera saber quais vagas existem: evita buscar o funil global e logo em seguida o da vaga.
-  // Durante um arraste ou com movimentos ainda sendo gravados, o polling espera:
-  // um refetch nesse intervalo traria o cartão de volta à coluna antiga.
-  const dragRef = useRef(null);
-  const movimentosPendentes = useRef(0);
-  const sincronizacaoPausada = useCallback(
-    () => dragRef.current !== null || movimentosPendentes.current > 0,
-    []
-  );
-  const kanbanQuery = useKanban(modoSomenteLeitura ? undefined : vagaSelecionada, {
-    enabled: !modulosQuery.isLoading,
-    pausado: sincronizacaoPausada,
-  });
-  const kanbanData = kanbanQuery.data ?? null;
-  const loading = modulosQuery.isLoading || kanbanQuery.isLoading;
-
-  const colunas = useMemo(() => (kanbanData ? Object.entries(kanbanData) : []), [kanbanData]);
-  // Opções do seletor de etapa no cartão (mesma ideia do quadro das tabelas).
-  const etapasParaMover = useMemo(() => colunas.map(([colId, col]) => ({ id: colId, nome: col.fase || colId })), [colunas]);
-  const totalCandidatos = useMemo(
-    () => colunas.reduce((acc, [, col]) => acc + (col.candidatos?.length || 0), 0),
-    [colunas]
-  );
-
-  // --- Busca por nome (na vaga aberta) ---------------------------------------
-  const [busca, setBusca] = useState('');
-  const termo = normalizar(busca.trim());
-  const colunasVisiveis = useMemo(() => {
-    if (!termo) return colunas;
-    return colunas.map(([colId, col]) => {
-      const candidatos = (col.candidatos || []).filter((c) => normalizar(c.nome).includes(termo));
-      return [colId, { ...col, candidatos, total: candidatos.length }];
-    });
-  }, [colunas, termo]);
-  const totalEncontrados = termo ? colunasVisiveis.reduce((acc, [, col]) => acc + col.candidatos.length, 0) : totalCandidatos;
+  const {
+    vagas,
+    vagaSelecionada,
+    setVagaEscolhida,
+    modoSomenteLeitura,
+    dragRef,
+    kanbanQuery,
+    kanbanData,
+    loading,
+    colunas,
+    etapasParaMover,
+    totalCandidatos,
+    moverCandidato,
+  } = useFunilDaVaga();
+  const { busca, setBusca, termo, colunasVisiveis, totalEncontrados } = useBuscaNoFunil(colunas, totalCandidatos);
+  const {
+    dragOverColumn,
+    scrollContainerRef,
+    handleContainerDragOver,
+    handleCardDragStart,
+    handleCardDragEnd,
+    handleColumnDragOver,
+    handleColumnDragLeave,
+    handleColumnDrop,
+  } = useArrasteKanban({ dragRef, moverCandidato });
+  const { perfil, perfilCor, perfilAberto, abrirPerfil, fecharPerfil } = usePerfilCandidato(kanbanData, colunas);
+  const etapa = useNovaEtapa({ vagaSelecionada, modoSomenteLeitura });
+  const candidato = useNovoCandidato({ vagaSelecionada, modoSomenteLeitura });
 
   const trocarVaga = (id) => {
     setVagaEscolhida(id);
@@ -100,219 +58,6 @@ export default function RecrutamentoKanban() {
       toast.success('Link copiado. Quem abrir pode se candidatar a esta vaga.');
     } catch {
       toast.error('Não foi possível copiar. Copie da barra: ' + linkDaVaga(vagaSelecionada));
-    }
-  };
-
-  // --- Arrastar e soltar -----------------------------------------------------
-  // O item arrastado fica em ref: iniciar o arraste não precisa re-renderizar nada.
-  const [dragOverColumn, setDragOverColumn] = useState(null);
-  const scrollContainerRef = useRef(null);
-  const velocidadeScroll = useRef(0);
-  const rafScroll = useRef(null);
-
-  const pararAutoScroll = useCallback(() => {
-    velocidadeScroll.current = 0;
-    if (rafScroll.current) {
-      cancelAnimationFrame(rafScroll.current);
-      rafScroll.current = null;
-    }
-  }, []);
-
-  useEffect(() => pararAutoScroll, [pararAutoScroll]);
-
-  // Auto-scroll ao arrastar perto das bordas: um laço por frame, não um salto por evento.
-  const handleContainerDragOver = useCallback(
-    (e) => {
-      const container = scrollContainerRef.current;
-      if (!container || !dragRef.current) return;
-
-      const rect = container.getBoundingClientRect();
-      if (e.clientX - rect.left < BORDA_AUTOSCROLL) velocidadeScroll.current = -VELOCIDADE_AUTOSCROLL;
-      else if (rect.right - e.clientX < BORDA_AUTOSCROLL) velocidadeScroll.current = VELOCIDADE_AUTOSCROLL;
-      else velocidadeScroll.current = 0;
-
-      if (velocidadeScroll.current !== 0 && !rafScroll.current) {
-        const passo = () => {
-          const el = scrollContainerRef.current;
-          if (!el || velocidadeScroll.current === 0) {
-            rafScroll.current = null;
-            return;
-          }
-          el.scrollLeft += velocidadeScroll.current;
-          rafScroll.current = requestAnimationFrame(passo);
-        };
-        rafScroll.current = requestAnimationFrame(passo);
-      }
-    },
-    []
-  );
-
-  /**
-   * Move o candidato no cache (otimista) e persiste. Se a API falhar, desfaz só
-   * esse cartão — o resto do funil continua como está, sem skeleton nem refetch visível.
-   */
-  const moverCandidato = useCallback(
-    async (item, deColuna, paraColuna) => {
-      if (deColuna === paraColuna) return;
-
-      movimentosPendentes.current += 1;
-      const chave = queryKeys.kanban(vagaSelecionada);
-      await queryClient.cancelQueries({ queryKey: chave });
-
-      const movido = { ...item, fase_atual_id: paraColuna, atualizado_em: new Date().toISOString() };
-      queryClient.setQueryData(chave, (atual) => moverCandidatoNoFunil(atual, movido, deColuna, paraColuna));
-
-      try {
-        await recrutamentoService.moverFaseDaVaga(item.modulo_id || vagaSelecionada, item.id, paraColuna);
-      } catch (err) {
-        queryClient.setQueryData(chave, (atual) => moverCandidatoNoFunil(atual, item, paraColuna, deColuna));
-        toast.error(mensagemDeErro(err, 'Erro ao mover candidato.'));
-        queryClient.invalidateQueries({ queryKey: chave });
-      } finally {
-        movimentosPendentes.current -= 1;
-      }
-    },
-    [queryClient, toast, vagaSelecionada]
-  );
-
-  const handleCardDragStart = useCallback((e, item, sourceColumn) => {
-    dragRef.current = { item, sourceColumn };
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', item.id);
-    e.currentTarget.classList.add('opacity-50');
-  }, []);
-
-  const finalizarArraste = useCallback(() => {
-    dragRef.current = null;
-    pararAutoScroll();
-    setDragOverColumn(null);
-  }, [pararAutoScroll]);
-
-  const handleCardDragEnd = useCallback(
-    (e) => {
-      e.currentTarget.classList.remove('opacity-50');
-      finalizarArraste();
-    },
-    [finalizarArraste]
-  );
-
-  const handleColumnDragOver = useCallback(
-    (e, colId) => {
-      // Sem preventDefault o navegador mostra o cursor de "proibido".
-      if (!dragRef.current) return;
-      e.preventDefault();
-      setDragOverColumn((atual) => (atual === colId ? atual : colId));
-    },
-    []
-  );
-
-  const handleColumnDragLeave = useCallback((colId) => {
-    setDragOverColumn((atual) => (atual === colId ? null : atual));
-  }, []);
-
-  const handleColumnDrop = useCallback(
-    (e, colunaDestino) => {
-      e.preventDefault();
-      const arraste = dragRef.current;
-      finalizarArraste();
-      if (!arraste) return;
-      moverCandidato(arraste.item, arraste.sourceColumn, colunaDestino);
-    },
-    [finalizarArraste, moverCandidato]
-  );
-
-  // --- Perfil do candidato ---------------------------------------------------
-  // Guardamos só o id: o perfil lê o funil atual, então reflete a etapa nova
-  // assim que o candidato é movido (inclusive pelo seletor de etapa do modal).
-  const [perfilId, setPerfilId] = useState(null);
-  const [perfilAberto, setPerfilAberto] = useState(false);
-
-  const abrirPerfil = useCallback((candidatoId) => {
-    setPerfilId(candidatoId);
-    setPerfilAberto(true);
-  }, []);
-
-  const perfil = useMemo(() => localizarCandidato(kanbanData, perfilId), [kanbanData, perfilId]);
-  const perfilCor = useMemo(() => {
-    if (!perfil) return null;
-    const indice = colunas.findIndex(([colId]) => colId === perfil.colId);
-    return coresDaFase(Math.max(indice, 0), colunas.length);
-  }, [perfil, colunas]);
-
-  // --- Nova etapa ------------------------------------------------------------
-  const [showNovaEtapa, setShowNovaEtapa] = useState(false);
-  const [novaEtapaNome, setNovaEtapaNome] = useState('');
-  const [novaEtapaVagaId, setNovaEtapaVagaId] = useState('');
-  const [etapaErro, setEtapaErro] = useState('');
-  const [salvandoEtapa, setSalvandoEtapa] = useState(false);
-
-  const abrirNovaEtapa = () => {
-    setEtapaErro('');
-    setNovaEtapaNome('');
-    setNovaEtapaVagaId(modoSomenteLeitura ? '' : vagaSelecionada);
-    setShowNovaEtapa(true);
-  };
-
-  const handleNovaEtapa = async (e) => {
-    e?.preventDefault();
-    if (!novaEtapaNome.trim() || !novaEtapaVagaId) return;
-    try {
-      setSalvandoEtapa(true);
-      setEtapaErro('');
-      await recrutamentoService.criarEtapa(novaEtapaVagaId, novaEtapaNome.trim());
-      setShowNovaEtapa(false);
-      toast.success('Etapa criada com sucesso.');
-    } catch (err) {
-      setEtapaErro(mensagemDeErro(err, 'Erro ao criar etapa.'));
-    } finally {
-      setSalvandoEtapa(false);
-    }
-  };
-
-  // --- Novo candidato --------------------------------------------------------
-  const [showNovoCandidato, setShowNovoCandidato] = useState(false);
-  const [salvandoCandidato, setSalvandoCandidato] = useState(false);
-  const [novoCandidatoDados, setNovoCandidatoDados] = useState({ ...CANDIDATO_VAZIO, modulo_id: '' });
-  const [novoCurriculo, setNovoCurriculo] = useState(null);
-  const [candidatoErros, setCandidatoErros] = useState({});
-  const [candidatoErro, setCandidatoErro] = useState('');
-
-  const candidatoSujo =
-    !!novoCurriculo || Object.keys(CANDIDATO_VAZIO).some((campo) => novoCandidatoDados[campo].trim() !== '');
-
-  const abrirNovoCandidato = () => {
-    setCandidatoErros({});
-    setCandidatoErro('');
-    setNovoCandidatoDados({ ...CANDIDATO_VAZIO, modulo_id: modoSomenteLeitura ? '' : vagaSelecionada });
-    setNovoCurriculo(null);
-    setShowNovoCandidato(true);
-  };
-
-  const alterarCandidato = (campo, valor) => {
-    setNovoCandidatoDados((atual) => ({ ...atual, [campo]: valor }));
-    setCandidatoErros((atual) => (atual[campo] ? { ...atual, [campo]: undefined } : atual));
-  };
-
-  const handleNovoCandidatoSubmit = async (e) => {
-    e?.preventDefault();
-    const dados = novoCandidatoDados;
-
-    const erros = validarCandidato(dados, novoCurriculo);
-    if (!dados.modulo_id) erros.modulo_id = 'Selecione a vaga.';
-
-    setCandidatoErros(erros);
-    if (Object.keys(erros).length > 0) return;
-
-    try {
-      setSalvandoCandidato(true);
-      setCandidatoErro('');
-      await recrutamentoService.adicionarCandidato(dados.modulo_id, dados, novoCurriculo);
-      setShowNovoCandidato(false);
-      toast.success('Candidato adicionado com sucesso.');
-    } catch (err) {
-      setCandidatoErro(mensagemDeErro(err, 'Erro ao salvar candidato.'));
-    } finally {
-      setSalvandoCandidato(false);
     }
   };
 
@@ -366,10 +111,10 @@ export default function RecrutamentoKanban() {
                   disabled={totalCandidatos === 0}
                 />
               </div>
-              <Button variant="secondary" icon="add" onClick={abrirNovaEtapa} disabled={vagas.length === 0}>
+              <Button variant="secondary" icon="add" onClick={etapa.abrirNovaEtapa} disabled={vagas.length === 0}>
                 Nova etapa
               </Button>
-              <Button icon="person_add" onClick={abrirNovoCandidato} disabled={vagas.length === 0}>
+              <Button icon="person_add" onClick={candidato.abrirNovoCandidato} disabled={vagas.length === 0}>
                 Novo candidato
               </Button>
             </>
@@ -379,29 +124,7 @@ export default function RecrutamentoKanban() {
         {/* Funil */}
         <div className="min-h-0 flex-1 overflow-hidden">
           {loading ? (
-            <div className="h-full overflow-x-auto pb-6" aria-busy="true">
-              <div className="flex h-full min-w-max gap-5 items-start">
-                {[1, 2, 3, 4].map((coluna) => (
-                  <div key={coluna} className="flex w-[300px] flex-col gap-3">
-                    <div className="flex items-center justify-between px-1">
-                      <Skeleton className="h-3.5 w-24" />
-                      <Skeleton className="h-5 w-6 rounded-full" />
-                    </div>
-                    {[1, 2, 3].map((card) => (
-                      <div key={card} className="rounded-xl bg-surface border border-divider p-3.5">
-                        <div className="flex items-center gap-3">
-                          <Skeleton className="w-9 h-9 rounded-full shrink-0" />
-                          <div className="flex-1">
-                            <Skeleton className="h-3.5 w-28 mb-1.5" />
-                            <Skeleton className="h-3 w-20" />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <KanbanCarregando />
           ) : kanbanQuery.isError && !kanbanData ? (
             <div className="h-full flex items-center justify-center pb-16">
               <ErrorState
@@ -433,7 +156,7 @@ export default function RecrutamentoKanban() {
                 description="Um quadro de recrutamento é uma sequência de etapas — triagem, entrevista, proposta. Crie a primeira para começar a receber candidatos."
                 actionLabel="Criar primeira etapa"
                 actionIcon="add"
-                onAction={abrirNovaEtapa}
+                onAction={etapa.abrirNovaEtapa}
               />
             </div>
           ) : (
@@ -474,290 +197,23 @@ export default function RecrutamentoKanban() {
           )}
         </div>
 
-        <Modal
-          open={showNovaEtapa}
-          onClose={() => setShowNovaEtapa(false)}
-          title="Nova etapa"
-          subtitle="Ela entra no fim do quadro desta vaga"
-          dirty={novaEtapaNome.trim() !== ''}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setShowNovaEtapa(false)}>Cancelar</Button>
-              <Button
-                type="submit"
-                form="nova-etapa-form"
-                loading={salvandoEtapa}
-                disabled={!novaEtapaNome.trim() || !novaEtapaVagaId}
-              >
-                Criar etapa
-              </Button>
-            </>
-          }
-        >
-          {etapaErro && (
-            <div className="mb-4">
-              <Alert variant="error">{etapaErro}</Alert>
-            </div>
-          )}
-
-          <form id="nova-etapa-form" onSubmit={handleNovaEtapa} className="flex flex-col gap-4">
-            <Select
-              label="Vaga"
-              name="vaga"
-              value={novaEtapaVagaId}
-              onChange={(e) => setNovaEtapaVagaId(e.target.value)}
-              placeholder="Selecione uma vaga..."
-              options={opcoesVaga}
-              required
-            />
-
-            <Input
-              label="Nome da etapa"
-              name="nome_etapa"
-              value={novaEtapaNome}
-              onChange={(e) => setNovaEtapaNome(e.target.value)}
-              placeholder="Ex: Entrevista técnica"
-              autoComplete="off"
-              autoFocus
-              required
-            />
-          </form>
-        </Modal>
+        <ModalNovaEtapa etapa={etapa} opcoesVaga={opcoesVaga} />
 
         {/* Perfil do candidato */}
-        <Modal
-          open={perfilAberto && !!perfil}
-          onClose={() => setPerfilAberto(false)}
-          title={perfil?.candidato.nome || 'Candidato'}
-          subtitle={perfil?.candidato.vaga || vagas.find((v) => v.id === perfil?.candidato.modulo_id)?.nome || undefined}
-          maxWidth="lg"
-          footer={
-            perfil?.candidato.email ? (
-              <>
-                <Button variant="secondary" onClick={() => setPerfilAberto(false)}>Fechar</Button>
-                <Button
-                  icon="mail"
-                  onClick={() => { window.location.href = `mailto:${perfil.candidato.email}`; }}
-                >
-                  Enviar e-mail
-                </Button>
-              </>
-            ) : (
-              <Button variant="secondary" onClick={() => setPerfilAberto(false)}>Fechar</Button>
-            )
-          }
-        >
-          {perfil && (
-            <PerfilCandidato
-              perfil={perfil}
-              cor={perfilCor}
-              colunas={colunas}
-              podeMover={!modoSomenteLeitura}
-              onMover={(paraColuna) => moverCandidato(perfil.candidato, perfil.colId, paraColuna)}
-            />
-          )}
-        </Modal>
+        <ModalPerfilCandidato
+          perfil={perfil}
+          perfilCor={perfilCor}
+          perfilAberto={perfilAberto}
+          onClose={fecharPerfil}
+          vagas={vagas}
+          colunas={colunas}
+          podeMover={!modoSomenteLeitura}
+          onMover={moverCandidato}
+        />
 
         {/* Novo candidato */}
-        <Drawer
-          open={showNovoCandidato}
-          onClose={() => setShowNovoCandidato(false)}
-          title="Novo candidato"
-          subtitle="Entra na primeira etapa do quadro da vaga"
-          dirty={candidatoSujo}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setShowNovoCandidato(false)}>Cancelar</Button>
-              <Button type="submit" form="novo-candidato-form" loading={salvandoCandidato}>
-                {salvandoCandidato ? 'Salvando...' : 'Adicionar candidato'}
-              </Button>
-            </>
-          }
-        >
-          {candidatoErro && (
-            <div className="mb-4">
-              <Alert variant="error">{candidatoErro}</Alert>
-            </div>
-          )}
-
-          <form id="novo-candidato-form" onSubmit={handleNovoCandidatoSubmit} noValidate className="flex flex-col gap-4">
-            <Select
-              label="Vaga"
-              name="vaga"
-              value={novoCandidatoDados.modulo_id}
-              onChange={(e) => alterarCandidato('modulo_id', e.target.value)}
-              placeholder="Selecione uma vaga..."
-              options={opcoesVaga}
-              error={candidatoErros.modulo_id}
-              required
-            />
-            <Input
-              label="Nome"
-              name="nome"
-              autoComplete="off"
-              value={novoCandidatoDados.nome}
-              onChange={(e) => alterarCandidato('nome', e.target.value)}
-              placeholder="Nome completo"
-              error={candidatoErros.nome}
-              required
-            />
-            <Input
-              label="E-mail"
-              name="email"
-              type="email"
-              inputMode="email"
-              autoComplete="off"
-              value={novoCandidatoDados.email}
-              onChange={(e) => alterarCandidato('email', e.target.value)}
-              placeholder="candidato@email.com"
-              error={candidatoErros.email}
-              required
-            />
-            <Input
-              label="Telefone"
-              name="telefone"
-              type="tel"
-              inputMode="tel"
-              autoComplete="off"
-              value={novoCandidatoDados.telefone}
-              onChange={(e) => alterarCandidato('telefone', mascararTelefone(e.target.value))}
-              placeholder="(11) 90000-0000"
-              error={candidatoErros.telefone}
-            />
-            <FileInput
-              label="Currículo"
-              name="curriculo"
-              accept={CURRICULO_ACCEPT}
-              hint={CURRICULO_DICA}
-              value={novoCurriculo}
-              onChange={(arquivo) => {
-                setNovoCurriculo(arquivo);
-                setCandidatoErros((atual) => ({ ...atual, curriculo: undefined }));
-              }}
-              error={candidatoErros.curriculo}
-            />
-            <Textarea
-              label="Mensagem"
-              name="mensagem"
-              hint="Opcional"
-              value={novoCandidatoDados.mensagem}
-              onChange={(e) => alterarCandidato('mensagem', e.target.value)}
-            />
-          </form>
-        </Drawer>
+        <DrawerNovoCandidato candidato={candidato} opcoesVaga={opcoesVaga} />
       </div>
     </Layout>
-  );
-}
-
-function PerfilCandidato({ perfil, cor, colunas, podeMover, onMover }) {
-  const { candidato, colId, fase } = perfil;
-  const referencia = candidato.atualizado_em || candidato.criado_em;
-  const toast = useToast();
-  const [baixando, setBaixando] = useState(false);
-
-  const baixarCurriculo = async () => {
-    setBaixando(true);
-    try {
-      await recrutamentoService.baixarCurriculo(candidato.modulo_id, candidato);
-    } catch (err) {
-      toast.error(mensagemDeErro(err, 'Não foi possível baixar o currículo.'));
-    } finally {
-      setBaixando(false);
-    }
-  };
-
-  const campos = [
-    { label: 'E-mail', value: candidato.email, icon: 'mail_outline', href: candidato.email ? `mailto:${candidato.email}` : null },
-    {
-      label: 'Telefone',
-      value: candidato.telefone,
-      icon: 'call',
-      href: candidato.telefone ? `tel:${candidato.telefone.replace(/[^\d+]/g, '')}` : null,
-    },
-  ];
-
-  return (
-    <>
-      <div className="flex items-center gap-4 pb-5 border-b border-divider">
-        <Avatar name={candidato.nome} size="xl" />
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-semibold ${cor?.bg || 'bg-primary-100'} ${cor?.text || 'text-primary'}`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${cor?.dot || 'bg-primary'}`} />
-              {fase}
-            </span>
-            {estaParado(referencia) && (
-              <Badge variant="warning" size="sm" dot>Parado há mais de 14 dias</Badge>
-            )}
-          </div>
-          <p className="text-xs text-light-text mt-1.5">
-            Candidatou-se {tempoRelativo(candidato.criado_em) || '—'}
-            {candidato.vaga ? ` · ${candidato.vaga}` : ''}
-          </p>
-        </div>
-      </div>
-
-      {/* Mover pela tela: alternativa ao arrastar, funciona no teclado e no toque. */}
-      {podeMover && colunas.length > 1 && (
-        <div className="py-4 border-b border-divider">
-          <Select
-            label="Etapa do quadro"
-            name="etapa"
-            icon="swap_horiz"
-            value={colId}
-            onChange={(e) => onMover(e.target.value)}
-            options={colunas.map(([id, coluna]) => ({ value: id, label: coluna.fase || id }))}
-          />
-        </div>
-      )}
-
-      <dl className="divide-y divide-divider">
-        {campos.map((campo) => (
-          <div key={campo.label} className="flex items-center gap-3 py-3">
-            <span className="material-icons text-[18px] text-light-text shrink-0" aria-hidden="true">{campo.icon}</span>
-            <dt className="text-xs text-light-text w-32 shrink-0">{campo.label}</dt>
-            <dd className="text-sm text-ink truncate min-w-0 flex-1">
-              {campo.value ? (
-                campo.href ? (
-                  <a href={campo.href} className="hover:text-primary hover:underline">{campo.value}</a>
-                ) : (
-                  campo.value
-                )
-              ) : (
-                <span className="text-light-text">Não informado</span>
-              )}
-            </dd>
-          </div>
-        ))}
-        <div className="flex items-center gap-3 py-3">
-          <span className="material-icons text-[18px] text-light-text shrink-0" aria-hidden="true">description</span>
-          <dt className="text-xs text-light-text w-32 shrink-0">Currículo</dt>
-          <dd className="text-sm text-ink min-w-0 flex-1 flex items-center gap-3">
-            {candidato.tem_curriculo ? (
-              <>
-                <span className="truncate min-w-0">{candidato.curriculo_nome || 'Currículo'}</span>
-                <Button variant="subtle" size="sm" icon="download" onClick={baixarCurriculo} loading={baixando} className="ml-auto">
-                  Baixar
-                </Button>
-              </>
-            ) : (
-              <span className="text-light-text">Não enviado</span>
-            )}
-          </dd>
-        </div>
-      </dl>
-
-      {candidato.mensagem && (
-        <div className="mt-2 pt-4 border-t border-divider">
-          <p className="text-xs font-semibold text-ink mb-2">Mensagem do candidato</p>
-          <p className="text-sm text-ink-soft whitespace-pre-wrap break-words leading-relaxed">
-            {candidato.mensagem}
-          </p>
-        </div>
-      )}
-    </>
   );
 }
