@@ -621,7 +621,7 @@ class IndicadoresService
         $nomes  = [];
         if ($grupo['tipo'] === 'responsavel' && $chaves !== []) {
             $nomes = array_column(
-                $db->table('usuario')->select('id, nome')->where('empresa_id', $empresaId)->whereIn('id', $chaves)->get()->getResultArray(),
+                $db->table('usuario_equipe')->select('id, nome')->where('empresa_id', $empresaId)->whereIn('id', $chaves)->get()->getResultArray(),
                 'nome',
                 'id'
             );
@@ -664,7 +664,7 @@ class IndicadoresService
                 return $valor;
             }
             if ($campo['tipo'] === 'responsavel') {
-                return $db->table('usuario')->select('nome')->where('id', $valor)->where('empresa_id', $empresaId)->get()->getRowArray()['nome'] ?? 'Pessoa removida';
+                return $db->table('usuario_equipe')->select('nome')->where('id', $valor)->where('empresa_id', $empresaId)->get()->getRowArray()['nome'] ?? 'Pessoa removida';
             }
             $titulos = (new RegistroService())->titulosDosItens((string) $campo['modulo_vinculado_id'], [$valor]);
 

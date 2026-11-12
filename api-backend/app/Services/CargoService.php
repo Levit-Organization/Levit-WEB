@@ -6,21 +6,18 @@ use App\Exceptions\NaoEncontradoException;
 use App\Models\CargoModel;
 use App\Models\CargoPermissaoModel;
 use App\Models\PermissaoModel;
-use App\Models\UsuarioModel;
 
 class CargoService
 {
     protected CargoModel $cargoModel;
     protected PermissaoModel $permissaoModel;
     protected CargoPermissaoModel $cargoPermissaoModel;
-    protected UsuarioModel $usuarioModel;
 
     public function __construct()
     {
         $this->cargoModel          = new CargoModel();
         $this->permissaoModel      = new PermissaoModel();
         $this->cargoPermissaoModel = new CargoPermissaoModel();
-        $this->usuarioModel        = new UsuarioModel();
     }
 
     /**
@@ -191,7 +188,7 @@ class CargoService
 
         (new LimiteDeAcesso())->exigirPodeAtuarNoCargo($cargoId);
 
-        $totalMembros = $this->usuarioModel->where('cargo_id', $cargoId)->countAllResults();
+        $totalMembros = db_connect()->table('membro')->where('cargo_id', $cargoId)->countAllResults();
 
         if ($totalMembros > 0) {
             throw new \DomainException('Não é possível excluir um cargo que possui membros vinculados.');

@@ -142,7 +142,7 @@ class RelatorioService
         if ($destinatarios === []) {
             throw new \DomainException('Escolha quem recebe o relatório.');
         }
-        $validos = db_connect()->table('usuario')->select('id')->where('empresa_id', $empresaId)->whereIn('id', array_filter(
+        $validos = db_connect()->table('usuario_equipe')->select('id')->where('empresa_id', $empresaId)->whereIn('id', array_filter(
             $destinatarios,
             static fn ($id) => preg_match('/^[0-9a-f-]{36}$/i', $id)
         ) ?: ['00000000-0000-0000-0000-000000000000'])->get()->getResultArray();
@@ -273,7 +273,7 @@ class RelatorioService
         try {
             $pdf     = $this->gerarPdf($relatorio['empresa_id'], $inicio, $fim, $relatorio['nome'], self::secoesDoRelatorio($relatorio));
             $ids     = is_string($relatorio['destinatarios']) ? (json_decode($relatorio['destinatarios'], true) ?: []) : $relatorio['destinatarios'];
-            $pessoas = $ids === [] ? [] : $db->table('usuario')->select('email')->where('empresa_id', $relatorio['empresa_id'])->whereIn('id', $ids)->get()->getResultArray();
+            $pessoas = $ids === [] ? [] : $db->table('usuario_equipe')->select('email')->where('empresa_id', $relatorio['empresa_id'])->whereIn('id', $ids)->get()->getResultArray();
             if ($pessoas === []) {
                 throw new \DomainException('Nenhum destinatário continua na equipe.');
             }

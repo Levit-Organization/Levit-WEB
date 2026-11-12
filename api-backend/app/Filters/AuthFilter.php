@@ -31,7 +31,7 @@ class AuthFilter implements FilterInterface
         }
 
         // Revogação, cargo e permissões numa única consulta.
-        $dadosAutorizacao = (new AuthService())->contextoDeAutenticacao($claims->sub, $claims->jti);
+        $dadosAutorizacao = (new AuthService())->contextoDeAutenticacao($claims->sub, (string) ($claims->empresa_id ?? ''), $claims->jti);
 
         // Senha trocada depois que o token foi emitido: sessão antiga não vale mais.
         $senhaTrocadaDepois = $dadosAutorizacao !== null

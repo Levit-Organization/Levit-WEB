@@ -3,7 +3,6 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Input, Button, Alert } from '../components/ui';
 import AuthLayout from './AuthLayout';
-import { mascararCpfCnpj } from '../utils/masks';
 
 function calcularForcaSenha(senha) {
   let forca = 0;
@@ -23,7 +22,6 @@ export default function Register() {
   const { registrar, autenticado } = useAuth();
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
-  const [cnpjCpf, setCnpjCpf] = useState('');
   const [nomeEmpresa, setNomeEmpresa] = useState('');
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
@@ -44,8 +42,6 @@ export default function Register() {
     const novosErros = {};
     if (senha.length < 8) novosErros.senha = 'A senha deve ter no mínimo 8 caracteres.';
     if (senha !== confirmarSenha) novosErros.confirmarSenha = 'As senhas não coincidem.';
-    const digitosDoc = cnpjCpf.replace(/\D/g, '').length;
-    if (digitosDoc !== 11 && digitosDoc !== 14) novosErros.cnpjCpf = 'Informe um CPF (11 dígitos) ou CNPJ (14 dígitos).';
 
     setErros(novosErros);
     if (Object.keys(novosErros).length > 0) return;
@@ -57,7 +53,6 @@ export default function Register() {
         nome,
         email,
         senha,
-        cnpj_cpf: cnpjCpf,
         nome_empresa: nomeEmpresa || nome,
       });
       navigate('/dashboard');
@@ -106,26 +101,14 @@ export default function Register() {
         />
 
         <Input
-          label="CPF ou CNPJ"
-          type="text"
-          name="cnpj_cpf"
-          inputMode="numeric"
-          autoComplete="off"
-          value={cnpjCpf}
-          onChange={(e) => setCnpjCpf(mascararCpfCnpj(e.target.value))}
-          error={erros.cnpjCpf}
-          placeholder="XXX.XXX.XXX-XX | XX.XXX.XXX/XXXX-XX"
-          required
-        />
-
-        <Input
-          label="Nome da empresa"
+          label="Nome da equipe"
           type="text"
           name="nome_empresa"
           autoComplete="organization"
           value={nomeEmpresa}
           onChange={(e) => setNomeEmpresa(e.target.value)}
-          placeholder="Empresa XYZ Ltda"
+          placeholder="Ex.: Loja do Centro, Agência Pixel"
+          hint="Pode ser a empresa, um setor ou um projeto. Dá para criar outras depois."
           required
         />
 
@@ -182,6 +165,9 @@ export default function Register() {
 
       <p className="mt-6 text-xs text-ink-soft">
         Já tem conta? <Link to="/login" className="text-primary font-medium hover:underline">Faça login</Link>
+      </p>
+      <p className="mt-2 text-2xs text-light-text text-center max-w-[36ch]">
+        Para criar mais uma equipe na conta que você já tem, use o mesmo e-mail e senha.
       </p>
     </AuthLayout>
   );

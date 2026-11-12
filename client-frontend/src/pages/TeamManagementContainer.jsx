@@ -145,7 +145,7 @@ export default function TeamManagementContainer() {
   const handleDeleteMember = async (member) => {
     const ok = await confirm({
       title: `Remover ${member.nome || 'colaborador'}?`,
-      message: 'A pessoa perde o acesso à plataforma imediatamente. Essa ação não pode ser desfeita.',
+      message: 'A pessoa perde o acesso a esta equipe na hora. A conta dela e as outras equipes de que ela participa continuam. Para voltar, ela precisa de um novo convite.',
       confirmLabel: 'Remover',
       variant: 'danger',
     });
@@ -153,7 +153,7 @@ export default function TeamManagementContainer() {
 
     try {
       await equipeService.removerMembro(member.id);
-      toast.success('Colaborador removido.');
+      toast.success('Colaborador removido da equipe.');
     } catch (error) {
       toast.error(mensagemDeErro(error, 'Erro ao remover o colaborador.'));
     }

@@ -8,8 +8,11 @@ import { automacaoService } from '../services/automacaoService';
 import { prazoService } from '../services/prazoService';
 import { relatorioService } from '../services/relatorioService';
 import { queryClient } from '../lib/queryClient';
+import api from '../services/api';
 
 export const queryKeys = {
+  /** Equipes de que a pessoa logada faz parte (não confundir com `equipe`, os membros da equipe atual). */
+  minhasEquipes: ['minhasEquipes'],
   modulos: ['modulos'],
   modulo: (id) => ['modulo', id],
   registros: (id, busca, filtros) => ['registros', id, busca || '', filtros || null],
@@ -297,5 +300,15 @@ export function useSimulacao(moduloId, definicao, registroId, { enabled }) {
     staleTime: 0,
     gcTime: 0,
     retry: false,
+  });
+}
+
+/** Equipes da pessoa logada, com o cargo em cada uma. Já vem preenchida pelo login. */
+export function useMinhasEquipes(opcoes = {}) {
+  return useQuery({
+    queryKey: queryKeys.minhasEquipes,
+    queryFn: async ({ signal }) => (await api.get('/auth/equipes', { signal })).data?.data ?? [],
+    staleTime: 60_000,
+    ...opcoes,
   });
 }

@@ -153,7 +153,7 @@ class RotinaDiariaService
     {
         $linhas = db_connect()->query(
             'SELECT u.id, u.nome, u.email, (c.acesso_total OR e.administrador_principal_id = u.id) AS acesso_total, cmp.modulo_id
-               FROM usuario u
+               FROM usuario_equipe u
                JOIN cargo c ON c.id = u.cargo_id
                JOIN empresa e ON e.id = u.empresa_id
           LEFT JOIN cargo_modulo_permissao cmp ON cmp.cargo_id = u.cargo_id

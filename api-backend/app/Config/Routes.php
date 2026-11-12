@@ -15,6 +15,10 @@ $routes->group('api/v1', function ($routes) {
     $routes->post('auth/forgot-password', 'AuthController::esqueciSenha', ['filter' => 'ratelimit:senha,5,3']);
     $routes->post('auth/reset-password', 'AuthController::redefinirSenha', ['filter' => 'ratelimit:senha_nova,10']);
     $routes->post('auth/logout', 'AuthController::logout', ['filter' => 'auth']);
+    // Uma pessoa, várias equipes: listar, trocar a equipe ativa e criar outra.
+    $routes->get('auth/equipes', 'AuthController::equipes', ['filter' => 'auth']);
+    $routes->post('auth/equipes', 'AuthController::criarEquipe', ['filter' => 'auth']);
+    $routes->post('auth/trocar-equipe', 'AuthController::trocarEquipe', ['filter' => 'auth']);
 
     $routes->get('modulos', 'ModuloController::listar', ['filter' => 'auth']);
     $routes->post('modulos', 'ModuloController::criar', ['filter' => 'auth:criar_modulos']);

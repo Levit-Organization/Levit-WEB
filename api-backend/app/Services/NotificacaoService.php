@@ -109,7 +109,7 @@ class NotificacaoService
      */
     public function usuariosComAcessoAoModulo(string $moduloId, string $empresaId, ?string $cargoId = null, ?string $usuarioId = null): array
     {
-        $query = db_connect()->table('usuario u')
+        $query = db_connect()->table('usuario_equipe u')
             ->select('u.id')
             ->join('cargo c', 'c.id = u.cargo_id')
             ->join('empresa e', 'e.id = u.empresa_id')
@@ -135,7 +135,7 @@ class NotificacaoService
     public function administradores(string $empresaId): array
     {
         return array_column(
-            db_connect()->table('usuario u')
+            db_connect()->table('usuario_equipe u')
                 ->select('u.id')
                 ->join('cargo c', 'c.id = u.cargo_id')
                 ->join('empresa e', 'e.id = u.empresa_id')

@@ -110,6 +110,32 @@ describe('AceitarConvite', () => {
     expect(await screen.findByRole('heading', { name: 'Este convite não existe mais' })).toBeInTheDocument();
   });
 
+  it('quem já tem conta só confirma a senha e entra em mais esta equipe', async () => {
+    conviteService.detalhes.mockResolvedValue({ ...convite, ja_tem_conta: true });
+    const { aceitarConvite } = renderizar();
+    await screen.findByRole('button', { name: 'Aceitar convite e entrar' });
+
+    expect(screen.queryByLabelText(/Seu nome/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Repita a senha/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Você já tem conta no Levit/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Aceitar convite e entrar' }));
+    expect(screen.getByText('Digite a senha da sua conta.')).toBeInTheDocument();
+    expect(aceitarConvite).not.toHaveBeenCalled();
+
+    await userEvent.type(screen.getByLabelText(/Sua senha/), 'minhaSenha1');
+    await userEvent.click(screen.getByRole('button', { name: 'Aceitar convite e entrar' }));
+    expect(aceitarConvite).toHaveBeenCalledWith(TOKEN, '', 'minhaSenha1');
+    expect(await screen.findByText('Painel da equipe')).toBeInTheDocument();
+  });
+
+  it('logado com o mesmo e-mail do convite: aceita sem sair da conta', async () => {
+    conviteService.detalhes.mockResolvedValue({ ...convite, ja_tem_conta: true });
+    renderizar({ autenticado: true, usuario: { email: 'ANA@empresa.com' } });
+    expect(await screen.findByLabelText(/Sua senha/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sair desta conta' })).not.toBeInTheDocument();
+  });
+
   it('logado em outra conta: pede para sair antes', async () => {
     conviteService.detalhes.mockResolvedValue(convite);
     renderizar({ autenticado: true, usuario: { email: 'outra@x.com' } });

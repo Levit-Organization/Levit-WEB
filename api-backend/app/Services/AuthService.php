@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Exceptions\NaoEncontradoException;
 use App\Models\EmpresaModel;
+use App\Models\MembroModel;
 use App\Models\UsuarioModel;
 use App\Models\TokenRevogadoModel;
 use App\Models\CargoModel;
@@ -18,6 +20,7 @@ class AuthService
     protected CargoModel $cargoModel;
     protected PermissaoModel $permissaoModel;
     protected CargoPermissaoModel $cargoPermissaoModel;
+    protected MembroModel $membroModel;
 
     public function __construct()
     {
@@ -27,62 +30,44 @@ class AuthService
         $this->cargoModel          = new CargoModel();
         $this->permissaoModel      = new PermissaoModel();
         $this->cargoPermissaoModel = new CargoPermissaoModel();
+        $this->membroModel         = new MembroModel();
     }
 
     /**
-     * Cria uma empresa nova e o usuário fundador (admin) dela,
-     * em uma única transação.
+     * Cadastro: cria a equipe (empresa) e deixa quem cadastrou como
+     * administrador dela. CPF/CNPJ é opcional.
      *
-     * @throws \DomainException se e-mail ou CNPJ/CPF já estiverem em uso
+     * Se o e-mail já tem conta, a mesma pessoa está criando mais uma equipe:
+     * com a senha certa, a equipe nova entra na conta que já existe (uma
+     * pessoa, várias equipes). Com a senha errada, nada é criado.
+     *
+     * @throws \DomainException se o e-mail já tiver conta e a senha não conferir, ou se o documento já estiver em uso
      * @throws \RuntimeException se a transação falhar por outro motivo
      */
     public function registrarFundador(array $dados): array
     {
         // E-mail sempre em minúsculas: Foo@x.com e foo@x.com são a mesma conta.
         $dados['email'] = mb_strtolower(trim($dados['email']));
+        $documento      = self::documentoOuNulo($dados['cnpj_cpf'] ?? null);
 
-        if ($this->usuarioModel->where('LOWER(email)', $dados['email'])->first()) {
-            throw new \DomainException('Este e-mail já está em uso.');
+        $existente = $this->usuarioModel->where('LOWER(email)', $dados['email'])->first();
+
+        if ($existente && ! password_verify($dados['senha'], $existente['senha_hash'])) {
+            throw new \DomainException('Este e-mail já tem conta no Levit. Para criar outra equipe com ele, use a senha dessa conta, ou entre e crie a equipe pelo menu.');
         }
 
-        if ($this->empresaModel->where('cnpj_cpf', $dados['cnpj_cpf'])->first()) {
-            throw new \DomainException('Este CNPJ/CPF já está cadastrado.');
-        }
+        $this->exigirDocumentoLivre($documento);
 
         $db = db_connect();
         $db->transStart();
 
-        $empresaId = $this->empresaModel->insert([
-            'nome'     => $dados['nome_empresa'],
-            'cnpj_cpf' => $dados['cnpj_cpf'],
-        ]);
-
-        $cargoAdminId = $this->cargoModel->insert([
-            'empresa_id'   => $empresaId,
-            'nome'         => 'Admin',
-            'acesso_total' => true,
-        ]);
-
-        $todasPermissoes = $this->permissaoModel->findAll();
-
-        foreach ($todasPermissoes as $permissao) {
-            $this->cargoPermissaoModel->insert([
-                'cargo_id'     => $cargoAdminId,
-                'permissao_id' => $permissao['id'],
-            ]);
-        }
-
-        $usuarioId = $this->usuarioModel->insert([
-            'empresa_id' => $empresaId,
-            'cargo_id'   => $cargoAdminId,
+        $usuarioId = $existente['id'] ?? $this->usuarioModel->insert([
             'nome'       => $dados['nome'],
             'email'      => $dados['email'],
             'senha_hash' => password_hash($dados['senha'], PASSWORD_BCRYPT, ['cost' => 10]),
         ]);
 
-        $this->empresaModel->update($empresaId, [
-            'administrador_principal_id' => $usuarioId,
-        ]);
+        $empresa = $this->criarEquipe($usuarioId, $dados['nome_empresa'], $documento);
 
         $db->transComplete();
 
@@ -91,23 +76,85 @@ class AuthService
         }
 
         return [
-            'empresa' => $this->empresaModel->find($empresaId),
             'usuario' => $this->usuarioModel->find($usuarioId),
+            'empresa' => $empresa,
         ];
     }
 
     /**
-     * Autentica um usuário pelo e-mail e senha.
+     * Equipe nova com a pessoa como administradora principal: cargo "Admin"
+     * com acesso total e todas as permissões.
      *
-     * @throws \DomainException se e-mail ou senha estiverem incorretos
+     * @throws \DomainException se o CPF/CNPJ informado já estiver em uso
+     */
+    public function criarEquipe(string $usuarioId, string $nome, ?string $documento = null): array
+    {
+        $documento = self::documentoOuNulo($documento);
+        $this->exigirDocumentoLivre($documento);
+
+        $db = db_connect();
+        $db->transStart();
+
+        $empresaId = $this->empresaModel->insert([
+            'nome'     => trim($nome),
+            'cnpj_cpf' => $documento,
+        ]);
+
+        $cargoAdminId = $this->cargoModel->insert([
+            'empresa_id'   => $empresaId,
+            'nome'         => 'Admin',
+            'acesso_total' => true,
+        ]);
+
+        foreach ($this->permissaoModel->findAll() as $permissao) {
+            $this->cargoPermissaoModel->insert([
+                'cargo_id'     => $cargoAdminId,
+                'permissao_id' => $permissao['id'],
+            ]);
+        }
+
+        $this->membroModel->insert([
+            'usuario_id' => $usuarioId,
+            'empresa_id' => $empresaId,
+            'cargo_id'   => $cargoAdminId,
+        ]);
+
+        $this->empresaModel->update($empresaId, ['administrador_principal_id' => $usuarioId]);
+
+        $db->transComplete();
+
+        if ($db->transStatus() === false) {
+            throw new \RuntimeException('Não foi possível criar a equipe. Tente novamente.');
+        }
+
+        return $this->empresaModel->find($empresaId);
+    }
+
+    /** CPF/CNPJ só com dígitos, ou null quando não foi informado. */
+    public static function documentoOuNulo(?string $documento): ?string
+    {
+        $digitos = preg_replace('/\D/', '', (string) $documento);
+
+        return $digitos === '' ? null : $digitos;
+    }
+
+    private function exigirDocumentoLivre(?string $documento): void
+    {
+        if ($documento !== null && $this->empresaModel->where('cnpj_cpf', $documento)->first()) {
+            throw new \DomainException('Este CNPJ/CPF já está cadastrado em outra equipe.');
+        }
+    }
+
+    /**
+     * Autentica pelo e-mail e senha e escolhe a equipe de entrada: a última
+     * aberta, se a pessoa ainda faz parte dela, senão a mais antiga.
+     *
+     * @throws \DomainException se e-mail ou senha estiverem incorretos, ou se a pessoa não estiver em nenhuma equipe
      */
     public function autenticar(string $email, string $senha): array
     {
-        // Usuário e empresa numa consulta só (antes eram duas idas ao banco).
         $usuario = $this->usuarioModel
-            ->select('usuario.*, empresa.nome AS empresa_nome')
-            ->join('empresa', 'empresa.id = usuario.empresa_id')
-            ->where('LOWER(usuario.email)', mb_strtolower(trim($email)))
+            ->where('LOWER(email)', mb_strtolower(trim($email)))
             ->first();
 
         // Mesmo que o e-mail não exista, fazemos um password_hash() de
@@ -120,10 +167,65 @@ class AuthService
             throw new \DomainException('E-mail ou senha incorretos.');
         }
 
-        return [
-            'usuario' => $usuario,
-            'empresa' => ['id' => $usuario['empresa_id'], 'nome' => $usuario['empresa_nome']],
-        ];
+        $empresa = db_connect()->query(
+            'SELECT e.id, e.nome FROM membro m JOIN empresa e ON e.id = m.empresa_id
+              WHERE m.usuario_id = ?
+              ORDER BY (m.empresa_id = ?) IS TRUE DESC, m.criado_em ASC
+              LIMIT 1',
+            [$usuario['id'], $usuario['ultima_empresa_id']]
+        )->getRowArray();
+
+        if (! $empresa) {
+            throw new \DomainException('Você ainda não faz parte de nenhuma equipe. Peça um convite a quem administra a equipe, ou crie uma nova em "Criar conta" com este mesmo e-mail e senha.');
+        }
+
+        return ['usuario' => $usuario, 'empresa' => $empresa];
+    }
+
+    /**
+     * Equipes de que a pessoa faz parte, com o cargo em cada uma.
+     *
+     * @return list<array{id: string, nome: string, cargo_nome: string, administrador_principal: bool}>
+     */
+    public function equipesDoUsuario(string $usuarioId): array
+    {
+        $equipes = db_connect()->query(
+            'SELECT e.id, e.nome, c.nome AS cargo_nome,
+                    (e.administrador_principal_id = m.usuario_id) IS TRUE AS administrador_principal
+               FROM membro m
+               JOIN empresa e ON e.id = m.empresa_id
+               JOIN cargo c ON c.id = m.cargo_id
+              WHERE m.usuario_id = ?
+              ORDER BY e.nome',
+            [$usuarioId]
+        )->getResultArray();
+
+        foreach ($equipes as &$equipe) {
+            $equipe['administrador_principal'] = $this->paraBooleano($equipe['administrador_principal']);
+        }
+
+        return $equipes;
+    }
+
+    /**
+     * Equipe para onde a pessoa quer ir, desde que faça parte dela.
+     *
+     * @throws NaoEncontradoException se a pessoa não faz parte da equipe
+     */
+    public function equipeDoUsuario(string $usuarioId, string $empresaId): array
+    {
+        $empresa = $this->empresaModel
+            ->select('empresa.id, empresa.nome')
+            ->join('membro', 'membro.empresa_id = empresa.id')
+            ->where('membro.usuario_id', $usuarioId)
+            ->where('empresa.id', $empresaId)
+            ->first();
+
+        if (! $empresa) {
+            throw new NaoEncontradoException('Você não faz parte dessa equipe.');
+        }
+
+        return $empresa;
     }
 
     /**
@@ -139,9 +241,6 @@ class AuthService
         ]);
     }
 
-    /**
-     * Verifica se um token (pelo seu jti) já foi revogado.
-     */
     private const VALIDADE_REDEFINICAO_MINUTOS = 60;
 
     /**
@@ -214,31 +313,6 @@ class AuthService
         $this->usuarioModel->update($usuario['id'], $campos);
     }
 
-    public function tokenRevogado(string $jti): bool
-    {
-        return (bool) $this->tokenRevogadoModel->where('jti', $jti)->first();
-    }
-
-    /**
-     * Retorna os códigos de permissão do usuário, com base no cargo dele.
-     */
-    public function permissoesDoUsuario(string $usuarioId): array
-    {
-        $usuario = $this->usuarioModel->find($usuarioId);
-
-        if (! $usuario) {
-            return [];
-        }
-
-        $permissoes = $this->cargoPermissaoModel
-            ->select('permissao.codigo')
-            ->join('permissao', 'permissao.id = cargo_permissao.permissao_id')
-            ->where('cargo_permissao.cargo_id', $usuario['cargo_id'])
-            ->findAll();
-
-        return array_column($permissoes, 'codigo');
-    }
-
     /**
      * Tudo o que o filtro de autenticação precisa, numa única ida ao banco:
      * se o token foi revogado, o cargo, a flag de acesso total, as permissões
@@ -247,12 +321,19 @@ class AuthService
      * a menos em toda requisição (os níveis evitam mais uma consulta em toda
      * rota de tabela).
      *
-     * Retorna `null` se o usuário não existir mais.
+     * Retorna `null` se o usuário não existir mais ou não fizer mais parte
+     * da equipe do token (foi removido dela).
      *
      * @return array{revogado: bool, cargo_id: string, acesso_total: bool, permissoes: string[], niveis: array<string, string>, senha_alterada_em: ?string}|null
      */
-    public function contextoDeAutenticacao(string $usuarioId, string $jti): ?array
+    public function contextoDeAutenticacao(string $usuarioId, string $empresaId, string $jti): ?array
     {
+        // Token sem equipe válida não chega ao banco (o cast para UUID quebraria a consulta).
+        $uuid = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
+        if (! preg_match($uuid, $usuarioId) || ! preg_match($uuid, $empresaId)) {
+            return null;
+        }
+
         // Enquanto a migração da coluna não rodou, a consulta segue sem ela.
         $senhaAlterada = self::temColunaSenhaAlteradaEm() ? 'u.senha_alterada_em' : 'NULL';
 
@@ -260,20 +341,22 @@ class AuthService
             // O criador da empresa (administrador principal) tem sempre acesso
             // total, mesmo que o cargo dele tenha perdido a marca: senão a
             // empresa pode ficar sem ninguém capaz de administrá-la.
-            "SELECT u.cargo_id, (c.acesso_total OR e.administrador_principal_id = u.id) AS acesso_total,
+            // O cargo é o da pessoa na equipe do token: em outra equipe ela pode ter outro.
+            "SELECT m.cargo_id, (c.acesso_total OR e.administrador_principal_id = u.id) AS acesso_total,
                     {$senhaAlterada} AS senha_alterada_em,
                     EXISTS (SELECT 1 FROM token_revogado tr WHERE tr.jti = ?) AS revogado,
                     (SELECT COALESCE(json_agg(p.codigo), '[]')
                        FROM cargo_permissao cp JOIN permissao p ON p.id = cp.permissao_id
-                      WHERE cp.cargo_id = u.cargo_id) AS permissoes,
+                      WHERE cp.cargo_id = m.cargo_id) AS permissoes,
                     (SELECT COALESCE(json_object_agg(cmp.modulo_id, cmp.nivel), '{}')
                        FROM cargo_modulo_permissao cmp
-                      WHERE cmp.cargo_id = u.cargo_id) AS niveis
+                      WHERE cmp.cargo_id = m.cargo_id) AS niveis
                FROM usuario u
-               JOIN cargo c ON c.id = u.cargo_id
-               JOIN empresa e ON e.id = u.empresa_id
+               JOIN membro m ON m.usuario_id = u.id AND m.empresa_id = ?
+               JOIN cargo c ON c.id = m.cargo_id
+               JOIN empresa e ON e.id = m.empresa_id
               WHERE u.id = ?",
-            [$jti, $usuarioId]
+            [$jti, $empresaId, $usuarioId]
         )->getRowArray();
 
         if (! $linha) {
@@ -309,34 +392,6 @@ class AuthService
         return $existe;
     }
 
-    /**
-     * Retorna cargo, permissões globais e a flag de acesso total do
-     * usuário — ou `null` se ele não existir mais.
-     */
-    public function dadosDeAutorizacao(string $usuarioId): ?array
-    {
-        $usuario = $this->usuarioModel->find($usuarioId);
-
-        if (! $usuario) {
-            return null;
-        }
-
-        $cargo   = $this->cargoModel->find($usuario['cargo_id']);
-        $empresa = $this->empresaModel->find($usuario['empresa_id']);
-
-        $permissoes = $this->cargoPermissaoModel
-            ->select('permissao.codigo')
-            ->join('permissao', 'permissao.id = cargo_permissao.permissao_id')
-            ->where('cargo_permissao.cargo_id', $usuario['cargo_id'])
-            ->findAll();
-
-        return [
-            'cargo_id'     => $usuario['cargo_id'],
-            'acesso_total' => $this->paraBooleano($cargo['acesso_total'] ?? false)
-                || ($empresa['administrador_principal_id'] ?? null) === $usuarioId,
-            'permissoes'   => array_column($permissoes, 'codigo'),
-        ];
-    }
 
     /**
      * Normaliza um valor BOOLEAN vindo do banco para bool do PHP.
@@ -359,10 +414,16 @@ class AuthService
     /**
      * Monta a resposta padrão de autenticação (token + usuário + empresa),
      * reaproveitada por qualquer fluxo que autentique alguém: cadastro,
-     * login, ou aceite de convite.
+     * login, aceite de convite, troca e criação de equipe. `equipes` lista
+     * todas as equipes da pessoa, para o seletor do menu.
      */
     public function montarRespostaAutenticacao(array $usuario, array $empresa): array
     {
+        // O próximo login volta para esta equipe.
+        if (($usuario['ultima_empresa_id'] ?? null) !== $empresa['id']) {
+            $this->usuarioModel->update($usuario['id'], ['ultima_empresa_id' => $empresa['id']]);
+        }
+
         $token = (new JwtService())->gerar([
             'sub'        => $usuario['id'],
             'empresa_id' => $empresa['id'],
@@ -379,6 +440,7 @@ class AuthService
                 'id'   => $empresa['id'],
                 'nome' => $empresa['nome'],
             ],
+            'equipes' => $this->equipesDoUsuario($usuario['id']),
         ];
     }
 }

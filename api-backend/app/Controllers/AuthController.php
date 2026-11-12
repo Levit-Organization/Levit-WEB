@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Exceptions\NaoEncontradoException;
 use App\Services\AuthService;
 
 class AuthController extends BaseApiController
@@ -64,7 +65,7 @@ class AuthController extends BaseApiController
             'nome'         => ['required', 'min_length[3]', 'max_length[150]'],
             'email'        => ['required', 'valid_email', 'max_length[150]'],
             'senha'        => ['required', 'min_length[8]', 'regex_match[/^(?=.*[A-Za-z])(?=.*\d).+$/]'],
-            'cnpj_cpf'     => ['required', 'max_length[18]'],
+            'cnpj_cpf'     => ['permit_empty', 'max_length[18]'],
             'nome_empresa' => ['required', 'min_length[2]', 'max_length[150]'],
         ];
 
@@ -116,6 +117,70 @@ class AuthController extends BaseApiController
             $this->authService->montarRespostaAutenticacao($resultado['usuario'], $resultado['empresa']),
             200
         );
+    }
+
+    /** Equipes da pessoa logada, para o seletor do menu. */
+    public function equipes()
+    {
+        return $this->respondSuccess($this->authService->equipesDoUsuario(service('authenticatedUser')->id));
+    }
+
+    /**
+     * Entra em outra equipe da pessoa: o token atual é revogado e um novo,
+     * com a equipe escolhida, volta na resposta.
+     */
+    public function trocarEquipe()
+    {
+        $dados = $this->request->getJSON(true) ?? [];
+
+        if (! $this->validateData($dados, ['empresa_id' => ['required', 'regex_match[/^[0-9a-f-]{36}$/i]']])) {
+            return $this->respondError('Escolha uma equipe.', 422, $this->validator->getErrors());
+        }
+
+        $user = service('authenticatedUser');
+
+        try {
+            $empresa = $this->authService->equipeDoUsuario($user->id, $dados['empresa_id']);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        }
+
+        return $this->novaSessao($empresa);
+    }
+
+    /** Cria uma equipe nova com a pessoa logada como administradora, e já entra nela. */
+    public function criarEquipe()
+    {
+        $dados = $this->request->getJSON(true) ?? [];
+
+        $rules = [
+            'nome'     => ['required', 'min_length[2]', 'max_length[150]'],
+            'cnpj_cpf' => ['permit_empty', 'max_length[18]'],
+        ];
+
+        if (! $this->validateData($dados, $rules)) {
+            return $this->respondError('Dados inválidos.', 422, $this->validator->getErrors());
+        }
+
+        try {
+            $empresa = $this->authService->criarEquipe(service('authenticatedUser')->id, $dados['nome'], $dados['cnpj_cpf'] ?? null);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 409);
+        } catch (\RuntimeException $e) {
+            return $this->respondFalha($e, 500);
+        }
+
+        return $this->novaSessao($empresa, 201);
+    }
+
+    private function novaSessao(array $empresa, int $status = 200)
+    {
+        $user    = service('authenticatedUser');
+        $usuario = model(\App\Models\UsuarioModel::class)->find($user->id);
+
+        $this->authService->revogarToken($user->jti, $user->id, $user->expiraEm);
+
+        return $this->respondSuccess($this->authService->montarRespostaAutenticacao($usuario, $empresa), $status);
     }
 
     public function logout()

@@ -96,20 +96,18 @@ class EquipeController extends BaseApiController
 
         $rules = [
             'token' => ['required'],
-            'nome'  => ['required', 'min_length[3]', 'max_length[150]'],
-            'senha' => ['required', 'min_length[8]', 'regex_match[/^(?=.*[A-Za-z])(?=.*\d).+$/]'],
+            // Quem já tem conta só confirma a senha; nome e força da senha
+            // nova são conferidos no service, para quem está criando a conta.
+            'nome'  => ['permit_empty', 'max_length[150]'],
+            'senha' => ['required'],
         ];
 
-        $messages = [
-            'senha' => ['regex_match' => 'A senha deve conter letras e números.'],
-        ];
-
-        if (! $this->validateData($dados, $rules, $messages)) {
+        if (! $this->validateData($dados, $rules)) {
             return $this->respondError('Dados inválidos.', 422, $this->validator->getErrors());
         }
 
         try {
-            $resultado = $this->equipeService->aceitarConvite($dados['token'], $dados['nome'], $dados['senha']);
+            $resultado = $this->equipeService->aceitarConvite($dados['token'], trim((string) ($dados['nome'] ?? '')), $dados['senha']);
         } catch (AcessoNegadoException $e) {
             return $this->respondError($e->getMessage(), 403);
         } catch (\DomainException $e) {

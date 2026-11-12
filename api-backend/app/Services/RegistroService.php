@@ -703,7 +703,7 @@ class RegistroService
         }
 
         return $this->pessoasConferidas["{$usuarioId}|{$moduloId}"] ??= (bool) db_connect()->query(
-            'SELECT 1 FROM usuario u JOIN modulo m ON m.empresa_id = u.empresa_id WHERE u.id = ? AND m.id = ?',
+            'SELECT 1 FROM usuario_equipe u JOIN modulo m ON m.empresa_id = u.empresa_id WHERE u.id = ? AND m.id = ?',
             [$usuarioId, $moduloId]
         )->getRow();
     }

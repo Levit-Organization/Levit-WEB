@@ -13,12 +13,10 @@ use App\Models\FaseRecrutamentoModel;
 use App\Models\HistoricoFaseModel;
 use App\Models\ModuloModel;
 use App\Models\RegistroModel;
-use App\Models\UsuarioModel;
 
 class BackupService
 {
     protected EmpresaModel $empresaModel;
-    protected UsuarioModel $usuarioModel;
     protected CargoModel $cargoModel;
     protected CargoPermissaoModel $cargoPermissaoModel;
     protected ModuloModel $moduloModel;
@@ -32,7 +30,6 @@ class BackupService
     public function __construct()
     {
         $this->empresaModel          = new EmpresaModel();
-        $this->usuarioModel          = new UsuarioModel();
         $this->cargoModel            = new CargoModel();
         $this->cargoPermissaoModel   = new CargoPermissaoModel();
         $this->moduloModel           = new ModuloModel();
@@ -55,10 +52,11 @@ class BackupService
             throw new NaoEncontradoException('Empresa não encontrada.');
         }
 
-        $usuarios = $this->usuarioModel
-            ->select('id, empresa_id, cargo_id, nome, email, criado_em, atualizado_em')
+        // Quem faz parte desta equipe, com o cargo daqui (criado_em = entrada na equipe).
+        $usuarios = db_connect()->table('usuario_equipe')
+            ->select('id, empresa_id, cargo_id, nome, email, criado_em')
             ->where('empresa_id', $empresaId)
-            ->findAll();
+            ->get()->getResultArray();
 
         $cargos   = $this->cargoModel->where('empresa_id', $empresaId)->findAll();
         $cargoIds = array_column($cargos, 'id');

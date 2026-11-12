@@ -8,6 +8,7 @@ import { prefetchDadosDaRota } from '../hooks/queries';
 import Avatar from './ui/Avatar';
 import BotaoNotificacoes from './notificacoes/BotaoNotificacoes';
 import PainelNotificacoes from './notificacoes/PainelNotificacoes';
+import SeletorDeEquipe from './equipes/SeletorDeEquipe';
 import { useNaoLidas } from '../hooks/useNotificacoes';
 
 const NAV_GROUPS = [
@@ -155,21 +156,13 @@ export default function Layout({ children, noPadding = false }) {
           <div className={`h-[68px] flex items-center shrink-0 ${sidebarOpen ? 'px-4' : 'px-3 justify-center'}`}>
             {sidebarOpen ? (
               <>
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <img src="/Logo.png" alt="" className="h-8 w-8 object-contain shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-ink truncate leading-tight">
-                      {empresa?.nome || 'Levit'}
-                    </p>
-                    <p className="text-2xs text-light-text truncate">Espaço da equipe</p>
-                  </div>
-                </div>
+                <SeletorDeEquipe onNavegar={() => setMobileOpen(false)} />
                 <button
                   type="button"
                   onClick={() => (isDesktop ? alternarSidebar(true) : setMobileOpen(false))}
                   title={isDesktop ? 'Recolher menu' : 'Fechar menu'}
                   aria-label={isDesktop ? 'Recolher menu' : 'Fechar menu'}
-                  className="ml-auto w-8 h-8 flex items-center justify-center rounded-md text-light-text hover:bg-primary-100 hover:text-primary-700 transition-colors shrink-0"
+                  className="ml-1 w-8 h-8 flex items-center justify-center rounded-md text-light-text hover:bg-primary-100 hover:text-primary-700 transition-colors shrink-0"
                 >
                   <span className="material-icons text-[18px]" aria-hidden="true">{isDesktop ? 'menu_open' : 'close'}</span>
                 </button>

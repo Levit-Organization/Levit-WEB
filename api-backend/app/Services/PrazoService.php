@@ -211,7 +211,7 @@ class PrazoService
         }
 
         $nomes = array_column(
-            db_connect()->table('usuario')->select('id, nome')->where('empresa_id', $empresaId)->whereIn('id', $ids)->get()->getResultArray(),
+            db_connect()->table('usuario_equipe')->select('id, nome')->where('empresa_id', $empresaId)->whereIn('id', $ids)->get()->getResultArray(),
             'nome',
             'id'
         );

@@ -6,6 +6,7 @@ use App\Exceptions\NaoEncontradoException;
 use App\Models\CargoModel;
 use App\Models\ConviteModel;
 use App\Models\EmpresaModel;
+use App\Models\MembroModel;
 use App\Models\UsuarioModel;
 use App\Services\Email\ModeloConvite;
 
@@ -17,6 +18,7 @@ class EquipeService
     protected UsuarioModel $usuarioModel;
     protected CargoModel $cargoModel;
     protected ConviteModel $conviteModel;
+    protected MembroModel $membroModel;
 
     public function __construct()
     {
@@ -24,6 +26,7 @@ class EquipeService
         $this->usuarioModel = new UsuarioModel();
         $this->cargoModel   = new CargoModel();
         $this->conviteModel = new ConviteModel();
+        $this->membroModel  = new MembroModel();
     }
 
     /**
@@ -35,7 +38,8 @@ class EquipeService
      * e-mail: o banco guarda o hash e a API não o devolve.
      *
      * @throws NaoEncontradoException se o cargo não existir/pertencer à empresa
-     * @throws \DomainException se o e-mail já tiver conta em algum lugar do sistema
+     * @throws \DomainException se a pessoa já fizer parte desta equipe
+     *         (ter conta em outra equipe não impede: ela aceita com a senha dela)
      * @throws \RuntimeException se o e-mail não puder ser enviado (o convite não fica criado)
      */
     public function convidar(string $empresaId, string $convidadoPorId, string $email, string $cargoId, ?string $mensagem = null): array
@@ -54,8 +58,8 @@ class EquipeService
 
         (new LimiteDeAcesso())->exigirPodeAtuarNoCargo($cargoId);
 
-        if ($this->usuarioModel->where('LOWER(email)', $email)->first()) {
-            throw new \DomainException('Este e-mail já está associado a uma conta existente.');
+        if ($this->membroPorEmail($empresaId, $email)) {
+            throw new \DomainException('Essa pessoa já faz parte da equipe.');
         }
 
         $existente = $this->conviteModel
@@ -174,6 +178,8 @@ class EquipeService
             'mensagem'      => $convite['mensagem'] ?? null,
             'expira_em'     => $convite['expira_em'],
             'status'        => $convite['aceito_em'] !== null ? 'aceito' : (strtotime($convite['expira_em']) < time() ? 'expirado' : 'valido'),
+            // Com conta, a pessoa só confirma a senha para entrar em mais esta equipe.
+            'ja_tem_conta'  => (bool) $this->usuarioModel->where('LOWER(email)', mb_strtolower($convite['email_destinatario']))->first(),
         ];
     }
 
@@ -237,11 +243,12 @@ class EquipeService
     }
 
     /**
-     * Aceita um convite: cria o usuário vinculado à empresa/cargo do
-     * convite, e marca o convite como usado.
+     * Aceita um convite: a pessoa entra na equipe com o cargo do convite.
+     * Sem conta, ela é criada com o nome e a senha informados; com conta (de
+     * outra equipe), basta a senha dela. O convite fica marcado como usado.
      *
      * @throws \DomainException se o token for inválido, expirado, já usado,
-     *         ou o e-mail já tiver sido registrado por outro caminho
+     *         se a senha não conferir ou se os dados da conta nova forem inválidos
      */
     public function aceitarConvite(string $tokenTexto, string $nome, string $senha): array
     {
@@ -261,19 +268,40 @@ class EquipeService
             throw new \DomainException('Este convite expirou.');
         }
 
-        if ($this->usuarioModel->where('LOWER(email)', mb_strtolower($convite['email_destinatario']))->first()) {
-            throw new \DomainException('Este e-mail já está associado a uma conta existente.');
+        $email   = mb_strtolower($convite['email_destinatario']);
+        $usuario = $this->usuarioModel->where('LOWER(email)', $email)->first();
+
+        if ($usuario) {
+            if (! password_verify($senha, $usuario['senha_hash'])) {
+                throw new \DomainException('Senha incorreta. Use a senha da sua conta no Levit.');
+            }
+
+            if ($this->membroPorEmail($convite['empresa_id'], $email)) {
+                throw new \DomainException('Você já faz parte desta equipe. É só entrar.');
+            }
+        } else {
+            if (mb_strlen($nome) < 3) {
+                throw new \DomainException('Informe seu nome (pelo menos 3 letras).');
+            }
+
+            if (strlen($senha) < 8 || ! preg_match('/^(?=.*[A-Za-z])(?=.*\d).+$/', $senha)) {
+                throw new \DomainException('A senha precisa ter pelo menos 8 caracteres, com letras e números.');
+            }
         }
 
         $db = db_connect();
         $db->transStart();
 
-        $usuarioId = $this->usuarioModel->insert([
-            'empresa_id' => $convite['empresa_id'],
-            'cargo_id'   => $convite['cargo_id'],
+        $usuarioId = $usuario['id'] ?? $this->usuarioModel->insert([
             'nome'       => $nome,
             'email'      => $convite['email_destinatario'],
             'senha_hash' => password_hash($senha, PASSWORD_BCRYPT, ['cost' => 10]),
+        ]);
+
+        $this->membroModel->insert([
+            'usuario_id' => $usuarioId,
+            'empresa_id' => $convite['empresa_id'],
+            'cargo_id'   => $convite['cargo_id'],
         ]);
 
         $this->conviteModel->update($convite['id'], [
@@ -285,6 +313,8 @@ class EquipeService
         if ($db->transStatus() === false) {
             throw new \RuntimeException('Não foi possível aceitar o convite. Tente novamente.');
         }
+
+        $nome = $usuario['nome'] ?? $nome;
 
         $notificacoes = new NotificacaoService();
         $notificacoes->notificarSemFalhar(
@@ -307,14 +337,33 @@ class EquipeService
         ];
     }
 
+    /** A pessoa (pelo e-mail) dentro desta equipe, ou null. */
+    private function membroPorEmail(string $empresaId, string $email): ?array
+    {
+        return db_connect()->table('usuario_equipe')
+            ->where('empresa_id', $empresaId)
+            ->where('LOWER(email)', mb_strtolower($email))
+            ->get()->getRowArray();
+    }
+
+    /** A pessoa dentro desta equipe (com o cargo dela aqui), ou null. */
+    private function membroDaEquipe(string $empresaId, string $usuarioId): ?array
+    {
+        return db_connect()->table('usuario_equipe')
+            ->where('empresa_id', $empresaId)
+            ->where('id', $usuarioId)
+            ->get()->getRowArray();
+    }
+
     public function listarMembros(string $empresaId): array
     {
-        return $this->usuarioModel
-            ->select('usuario.id, usuario.nome, usuario.email, usuario.criado_em, cargo.nome as cargo_nome')
-            ->join('cargo', 'cargo.id = usuario.cargo_id')
-            ->where('usuario.empresa_id', $empresaId)
-            ->orderBy('usuario.criado_em', 'ASC')
-            ->findAll();
+        // criado_em = quando entrou nesta equipe (a conta pode ser mais antiga).
+        return db_connect()->table('usuario_equipe ue')
+            ->select('ue.id, ue.nome, ue.email, ue.criado_em, ue.cargo_id, cargo.nome AS cargo_nome')
+            ->join('cargo', 'cargo.id = ue.cargo_id')
+            ->where('ue.empresa_id', $empresaId)
+            ->orderBy('ue.criado_em', 'ASC')
+            ->get()->getResultArray();
     }
 
     /**
@@ -324,11 +373,11 @@ class EquipeService
      */
     public function listarPessoas(string $empresaId): array
     {
-        return $this->usuarioModel
+        return db_connect()->table('usuario_equipe')
             ->select('id, nome')
             ->where('empresa_id', $empresaId)
             ->orderBy('nome', 'ASC')
-            ->findAll();
+            ->get()->getResultArray();
     }
 
     /**
@@ -348,10 +397,7 @@ class EquipeService
      */
     public function atualizarMembro(string $empresaId, string $usuarioId, array $dados): array
     {
-        $usuario = $this->usuarioModel
-            ->where('id', $usuarioId)
-            ->where('empresa_id', $empresaId)
-            ->first();
+        $usuario = $this->membroDaEquipe($empresaId, $usuarioId);
 
         if (! $usuario) {
             throw new NaoEncontradoException('Membro não encontrado.');
@@ -388,17 +434,24 @@ class EquipeService
         }
 
         if (! empty($camposParaAtualizar)) {
-            $this->usuarioModel->update($usuarioId, $camposParaAtualizar);
+            // O nome é da pessoa (vale em todas as equipes); o cargo é só desta.
+            if (isset($camposParaAtualizar['nome'])) {
+                $this->usuarioModel->update($usuarioId, ['nome' => $camposParaAtualizar['nome']]);
+            }
+            if (isset($camposParaAtualizar['cargo_id'])) {
+                $this->membroModel->update($usuario['membro_id'], ['cargo_id' => $camposParaAtualizar['cargo_id']]);
+            }
             AtividadeService::registrar('membro_alterado', isset($camposParaAtualizar['cargo_id'])
                 ? "Mudou o cargo de {$usuario['nome']} para {$novoCargo['nome']}"
                 : "Alterou os dados de {$usuario['nome']}");
         }
 
-        return $this->usuarioModel
-            ->select('usuario.id, usuario.nome, usuario.email, usuario.criado_em, usuario.cargo_id, cargo.nome as cargo_nome')
-            ->join('cargo', 'cargo.id = usuario.cargo_id')
-            ->where('usuario.id', $usuarioId)
-            ->first();
+        return db_connect()->table('usuario_equipe ue')
+            ->select('ue.id, ue.nome, ue.email, ue.criado_em, ue.cargo_id, cargo.nome AS cargo_nome')
+            ->join('cargo', 'cargo.id = ue.cargo_id')
+            ->where('ue.empresa_id', $empresaId)
+            ->where('ue.id', $usuarioId)
+            ->get()->getRowArray();
     }
 
     /**
@@ -407,10 +460,7 @@ class EquipeService
      */
     public function removerMembro(string $usuarioId, string $empresaId): void
     {
-        $usuario = $this->usuarioModel
-            ->where('id', $usuarioId)
-            ->where('empresa_id', $empresaId)
-            ->first();
+        $usuario = $this->membroDaEquipe($empresaId, $usuarioId);
 
         if (! $usuario) {
             throw new NaoEncontradoException('Membro não encontrado.');
@@ -426,7 +476,9 @@ class EquipeService
         $limite->exigirQueNaoSejaVoceMesmo($usuarioId, 'Você não pode remover a si mesmo da equipe.');
         $limite->exigirPodeAtuarNoCargo($usuario['cargo_id']);
 
-        $this->usuarioModel->delete($usuarioId);
+        // Sai só desta equipe: a conta e as outras equipes da pessoa continuam.
+        // A sessão dela aqui cai na próxima requisição (o vínculo não existe mais).
+        $this->membroModel->delete($usuario['membro_id']);
         AtividadeService::registrar('membro_removido', "Removeu {$usuario['nome']} da equipe");
     }
 }

@@ -15,9 +15,16 @@ function dataLegivel(valor) {
   return Number.isNaN(data.getTime()) ? '' : formatoData.format(data);
 }
 
-/** Mesma regra do backend: 8+ caracteres, com letras e números. */
-function validar({ nome, senha, confirmacao }) {
+/**
+ * Mesma regra do backend: 8+ caracteres, com letras e números. Quem já tem
+ * conta só informa a senha dela.
+ */
+function validar({ nome, senha, confirmacao }, jaTemConta) {
   const erros = {};
+  if (jaTemConta) {
+    if (!senha) erros.senha = 'Digite a senha da sua conta.';
+    return erros;
+  }
   if (nome.trim().length < 3) erros.nome = 'Escreva seu nome completo (pelo menos 3 letras).';
   if (senha.length < 8) erros.senha = 'Use pelo menos 8 caracteres.';
   else if (!/[A-Za-z]/.test(senha) || !/\d/.test(senha)) erros.senha = 'Misture letras e números.';
@@ -38,7 +45,8 @@ function Situacao({ icone, titulo, texto, children }) {
 
 /**
  * Página que o link do e-mail abre. Mostra quem convidou, para qual equipe e
- * a mensagem; a pessoa escolhe nome e senha e já entra na equipe.
+ * a mensagem. Sem conta, a pessoa escolhe nome e senha; com conta (de outra
+ * equipe), só confirma a senha. Em seguida já entra na equipe.
  */
 export default function AceitarConvite() {
   const { token } = useParams();
@@ -66,7 +74,7 @@ export default function AceitarConvite() {
 
   const aceitar = async (e) => {
     e.preventDefault();
-    const encontrados = validar(form);
+    const encontrados = validar(form, convite.ja_tem_conta);
     setErros(encontrados);
     if (Object.keys(encontrados).length) return;
 
@@ -159,7 +167,7 @@ export default function AceitarConvite() {
           </figure>
         )}
 
-        {autenticado ? (
+        {autenticado && usuario?.email?.toLowerCase() !== convite.email.toLowerCase() ? (
           <div className="mt-6 flex flex-col gap-3">
             <Alert variant="info">
               Você está conectado como {usuario?.email}. Para aceitar este convite com {convite.email}, saia desta conta primeiro.
@@ -170,38 +178,61 @@ export default function AceitarConvite() {
           <form onSubmit={aceitar} noValidate className="mt-6 flex flex-col gap-4">
             {erroGeral && <div role="alert"><Alert variant="error">{erroGeral}</Alert></div>}
 
-            <Input label="E-mail" name="email" type="email" value={convite.email} readOnly disabled hint="É com ele que você vai entrar no Levit." />
-            <Input
-              label="Seu nome"
-              name="nome"
-              autoComplete="name"
-              value={form.nome}
-              onChange={(e) => mudar('nome', e.target.value)}
-              error={erros.nome}
-              placeholder="Como a equipe vai ver você"
-              required
-            />
-            <Input
-              label="Crie uma senha"
-              name="senha"
-              type="password"
-              autoComplete="new-password"
-              value={form.senha}
-              onChange={(e) => mudar('senha', e.target.value)}
-              error={erros.senha}
-              hint={erros.senha ? undefined : 'Pelo menos 8 caracteres, com letras e números.'}
-              required
-            />
-            <Input
-              label="Repita a senha"
-              name="confirmacao"
-              type="password"
-              autoComplete="new-password"
-              value={form.confirmacao}
-              onChange={(e) => mudar('confirmacao', e.target.value)}
-              error={erros.confirmacao}
-              required
-            />
+            <Input label="E-mail" name="email" type="email" value={convite.email} readOnly disabled hint={convite.ja_tem_conta ? undefined : 'É com ele que você vai entrar no Levit.'} />
+            {convite.ja_tem_conta ? (
+              <>
+                <Alert variant="info">
+                  Você já tem conta no Levit. Confirme sua senha para fazer parte também desta equipe; as outras continuam como estão.
+                </Alert>
+                <Input
+                  label="Sua senha"
+                  name="senha"
+                  type="password"
+                  autoComplete="current-password"
+                  value={form.senha}
+                  onChange={(e) => mudar('senha', e.target.value)}
+                  error={erros.senha}
+                  required
+                />
+                <Link to="/forgot-password" className="-mt-2 self-end text-xs text-primary font-medium hover:underline">
+                  Esqueceu a senha?
+                </Link>
+              </>
+            ) : (
+              <>
+                <Input
+                  label="Seu nome"
+                  name="nome"
+                  autoComplete="name"
+                  value={form.nome}
+                  onChange={(e) => mudar('nome', e.target.value)}
+                  error={erros.nome}
+                  placeholder="Como a equipe vai ver você"
+                  required
+                />
+                <Input
+                  label="Crie uma senha"
+                  name="senha"
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.senha}
+                  onChange={(e) => mudar('senha', e.target.value)}
+                  error={erros.senha}
+                  hint={erros.senha ? undefined : 'Pelo menos 8 caracteres, com letras e números.'}
+                  required
+                />
+                <Input
+                  label="Repita a senha"
+                  name="confirmacao"
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.confirmacao}
+                  onChange={(e) => mudar('confirmacao', e.target.value)}
+                  error={erros.confirmacao}
+                  required
+                />
+              </>
+            )}
 
             <Button type="submit" loading={enviando} className="w-full justify-center mt-1">
               {enviando ? 'Entrando na equipe...' : 'Aceitar convite e entrar'}

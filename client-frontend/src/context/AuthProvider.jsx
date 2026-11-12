@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import api, { SESSION_EXPIRED_EVENT } from '../services/api';
-import { modulosQuery } from '../hooks/queries';
+import { modulosQuery, queryKeys } from '../hooks/queries';
 import { useToast } from '../hooks/useFeedback';
 import { AuthContext } from './authContext';
 
@@ -82,12 +82,31 @@ export function AuthProvider({ children }) {
 
   const iniciarSessao = useCallback(
     (data) => {
-      queryClient.clear(); // nunca mostra cache de outra conta
+      queryClient.clear(); // nunca mostra cache de outra conta (nem de outra equipe)
       salvarSessao(data);
+      if (data.equipes) queryClient.setQueryData(queryKeys.minhasEquipes, data.equipes);
       setSessao({ usuario: data.usuario, empresa: data.empresa });
       return data;
     },
     [queryClient]
+  );
+
+  /** Entra em outra equipe da mesma pessoa: token novo, cache zerado. */
+  const trocarEquipe = useCallback(
+    async (empresaId) => {
+      const res = await api.post('/auth/trocar-equipe', { empresa_id: empresaId });
+      return iniciarSessao(res.data.data);
+    },
+    [iniciarSessao]
+  );
+
+  /** Cria uma equipe nova (a pessoa vira administradora) e já entra nela. */
+  const criarEquipe = useCallback(
+    async (nome) => {
+      const res = await api.post('/auth/equipes', { nome });
+      return iniciarSessao(res.data.data);
+    },
+    [iniciarSessao]
   );
 
   const login = useCallback(
@@ -108,7 +127,7 @@ export function AuthProvider({ children }) {
     [iniciarSessao]
   );
 
-  /** Aceita o convite da equipe: cria a conta e já entra nela. */
+  /** Aceita o convite da equipe: cria a conta (ou usa a que já existe) e já entra nela. */
   const aceitarConvite = useCallback(
     async (token, nome, senha) => {
       const res = await api.post('/publico/convite/aceitar', { token, nome, senha });
@@ -141,9 +160,11 @@ export function AuthProvider({ children }) {
       login,
       registrar,
       aceitarConvite,
+      trocarEquipe,
+      criarEquipe,
       logout,
     };
-  }, [usuario, empresa, autenticado, login, registrar, aceitarConvite, logout]);
+  }, [usuario, empresa, autenticado, login, registrar, aceitarConvite, trocarEquipe, criarEquipe, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
