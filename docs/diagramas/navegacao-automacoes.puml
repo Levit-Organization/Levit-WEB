@@ -1,0 +1,77 @@
+@startuml Navegacao_Automacoes_Web_Mobile
+skinparam style strictuml
+top to bottom direction
+
+package "Interfaces do Usuário (Frontend)" {
+    package "Plataforma Web (React / Vite)" {
+        rectangle "Dashboard.jsx\n(Início)" as WebInicio
+        rectangle "AutomacoesContainer.jsx\n(Lista de Automações)" as WebLista
+        rectangle "AutomacaoForm.jsx\n(Nova / Editar: gatilhos,\ncondições e ações)" as WebForm
+        rectangle "SimulacaoModal.jsx\n(Testar a regra)" as WebSimulacao
+        rectangle "HistoricoExecucoes.jsx\n(Execuções e reexecutar)" as WebHistorico
+        rectangle "ModuleRecords.jsx\n(Itens: criar / editar\ndispara a automação)" as WebItens
+    }
+
+    package "Plataforma Mobile (Android / Kotlin)" {
+        rectangle "DashboardActivity\n(Início)" as MobileInicio
+        rectangle "AutomacoesActivity\n(Lista de Automações)" as MobileLista
+        rectangle "AutomacaoFormActivity\n(Nova / Editar: gatilhos,\ncondições e ações)" as MobileForm
+        rectangle "SimulacaoAutomacao\n(Testar a regra)" as MobileSimulacao
+        rectangle "HistoricoExecucoes\n(Execuções e reexecutar)" as MobileHistorico
+        rectangle "ItensActivity\n(Itens: criar / editar\ndispara a automação)" as MobileItens
+    }
+}
+
+package "Camada de Serviços & Controle (Backend)" {
+    package "Backend Web (PHP / CodeIgniter 4 - API REST)" {
+        usecase "AutomacaoController\nlistarTodas() / criar() / atualizar()\nalternarAtivo() / excluir()\nsimular() / execucoes() / reexecutar()" as PHPAutomacao
+        usecase "RegistroController\ncriar() / atualizar() / excluir()" as PHPRegistro
+        usecase "Fila de Automações\nEvents.php -> queue_jobs ->\nProcessarAutomacoes (queue:work)" as PHPFila
+    }
+
+    package "Backend Mobile (Kotlin / API Rest)" {
+        usecase "AutomacaoApi\nlistarTodas() / criar() / atualizar()\nalternarAtivo() / excluir()\nsimular() / execucoes() / reexecutar()" as KotlinAutomacao
+        usecase "RegistroApi\ncriar() / atualizar() / excluir()" as KotlinRegistro
+    }
+}
+
+database "Banco de Dados Unificado\n(PostgreSQL)" as DB
+cloud "Brevo (E-mail) e\nWebhooks externos" as Externo
+
+' Fluxos Web (Frontend <-> Backend <-> BD)
+WebLista --> PHPAutomacao : GET /automacoes\nPUT .../automacoes/{id}/ativo\nDELETE .../automacoes/{id}
+WebForm --> PHPAutomacao : POST / PUT\n/modulos/{id}/automacoes
+WebSimulacao --> PHPAutomacao : POST .../automacoes/simular
+WebHistorico --> PHPAutomacao : GET .../execucoes\nPOST .../reexecutar
+WebItens --> PHPRegistro : POST / PUT / DELETE\n/modulos/{id}/registros
+PHPAutomacao --> DB : Leitura / Escrita\n(automação, ações, log)
+PHPRegistro --> PHPFila : Dispara evento\n(registro criado / alterado / excluído)
+PHPAutomacao --> PHPFila : Reexecutar
+PHPFila --> DB : Leitura / Escrita\n(fila, log, notificação, item)
+PHPFila --> Externo : Envia e-mail / chama webhook
+
+' Fluxos Mobile (Frontend <-> Backend <-> BD)
+MobileLista --> KotlinAutomacao : listarTodas() / alternarAtivo()\nexcluir()
+MobileForm --> KotlinAutomacao : criar() / atualizar()
+MobileSimulacao --> KotlinAutomacao : simular()
+MobileHistorico --> KotlinAutomacao : execucoes() / reexecutar()
+MobileItens --> KotlinRegistro : criar() / atualizar() / excluir()
+KotlinAutomacao --> PHPAutomacao : Envia JSON\n(mesma API REST)
+KotlinRegistro --> PHPRegistro : Envia JSON
+
+' Navegação Interna das Interfaces
+WebInicio --> WebLista : Clica no aviso 'automação pausada'
+WebLista --> WebForm : Clica em 'Nova automação' / 'Editar'
+WebForm --> WebLista : Retorna após salvar
+WebLista --> WebSimulacao : Menu da linha 'Testar'
+WebForm --> WebSimulacao : Clica em 'Testar'
+WebLista --> WebHistorico : Menu da linha 'Histórico'
+
+MobileInicio --> MobileLista : Toque no aviso 'automação pausada'
+MobileLista --> MobileForm : Toque em 'Nova automação' / 'Editar'
+MobileForm --> MobileLista : Retorna após salvar
+MobileLista --> MobileSimulacao : Menu da linha 'Testar'
+MobileForm --> MobileSimulacao : Toque em 'Testar'
+MobileLista --> MobileHistorico : Menu da linha 'Histórico'
+
+@enduml

@@ -1,0 +1,100 @@
+@startuml Navegacao_Modulos_Web_Mobile
+skinparam style strictuml
+top to bottom direction
+
+package "Interfaces do Usuário (Frontend)" {
+    package "Plataforma Web (React / Vite)" {
+        rectangle "Dashboard.jsx\n(Início)" as WebInicio
+        rectangle "Modules.jsx\n(Lista de Tabelas)" as WebLista
+        rectangle "ModuleForm.jsx\n(Criar / Editar Tabela,\nColunas e Etapas)" as WebForm
+        rectangle "ModuleRecords.jsx\n(Itens: Lista ou Quadro)" as WebItens
+        rectangle "TabelaDeArquivos.jsx\n(Tabela de Arquivos)" as WebArquivos
+        rectangle "RecrutamentoKanban.jsx\n(Etapas + Candidatos)" as WebKanban
+        rectangle "FinancialModule.jsx\n(Entradas e Saídas)" as WebFinanceiro
+    }
+
+    package "Plataforma Mobile (Android / Kotlin)" {
+        rectangle "DashboardActivity\n(Início)" as MobileInicio
+        rectangle "ModulosActivity\n(Lista de Tabelas)" as MobileLista
+        rectangle "TabelaFormActivity\n(Criar / Editar Tabela)" as MobileForm
+        rectangle "ItensActivity\n(Itens e Arquivos)" as MobileItens
+        rectangle "RecrutamentoActivity\n(Etapas + Candidatos)" as MobileKanban
+        rectangle "FinanceiroActivity\n(Entradas e Saídas)" as MobileFinanceiro
+    }
+}
+
+package "Camada de Serviços & Controle (Backend)" {
+    package "Backend Web (PHP / CodeIgniter 4 - API REST)" {
+        usecase "ModuloController\nlistar() / criar() / atualizar() / excluir()\nadicionarCampo() / adicionarFase()" as PHPModulo
+        usecase "RegistroController\nlistar() / criar() / atualizar()\nexcluir() / importar()" as PHPRegistro
+        usecase "ArquivoController\nenviar() / baixar() / excluir()" as PHPArquivo
+        usecase "CandidatoController\nkanban() / moverFase()\nadicionar() / curriculo()" as PHPCandidato
+        usecase "FinanceiroController\nlistarLancamentos() / criarLancamento()\nlistarCategorias() / criarCategoria()" as PHPFinanceiro
+    }
+
+    package "Backend Mobile (Kotlin / API Rest)" {
+        usecase "ModuloApi + ModuloRepository\nlistar() / criar() / detalhes()\natualizar() / excluir() / colunas" as KotlinModulo
+        usecase "RegistroApi\nlistar() / criar() / atualizar() / excluir()\nimportar() / enviarArquivo() / baixarArquivo()" as KotlinRegistro
+        usecase "RecrutamentoApi\nkanbanDaVaga() / moverFase()\ncriarEtapa() / curriculo()" as KotlinRecrutamento
+        usecase "FinanceiroApi\nlancamentos() / criarLancamento()\ncategorias() / criarCategoria()" as KotlinFinanceiro
+    }
+}
+
+database "Banco de Dados Unificado\n(PostgreSQL)" as DB
+cloud "Backblaze B2\n(Arquivos)" as B2
+
+' Fluxos Web (Frontend <-> Backend <-> BD)
+WebLista --> PHPModulo : GET /modulos
+WebForm --> PHPModulo : POST / PUT /modulos\n(+ campos / fases)
+WebItens --> PHPRegistro : GET / POST / PUT / DELETE\n/modulos/{id}/registros
+WebArquivos --> PHPArquivo : POST / GET / DELETE\n/modulos/{id}/arquivos
+WebKanban --> PHPCandidato : GET /modulos/{id}/kanban\nPUT .../candidatos/{id}/fase
+WebFinanceiro --> PHPFinanceiro : GET / POST\n/modulos/{id}/lancamentos
+PHPModulo --> DB : Leitura / Escrita
+PHPRegistro --> DB : Leitura / Escrita
+PHPArquivo --> DB : Leitura / Escrita
+PHPArquivo --> B2 : Salva / baixa / exclui
+PHPCandidato --> DB : Leitura / Escrita
+PHPFinanceiro --> DB : Leitura / Escrita
+
+' Fluxos Mobile (Frontend <-> Backend <-> BD)
+MobileLista --> KotlinModulo : listar() / excluir()
+MobileForm --> KotlinModulo : criar() / atualizar()\nadicionarColuna()
+MobileItens --> KotlinRegistro : listar() / criar() / atualizar()\nenviarArquivo()
+MobileKanban --> KotlinRecrutamento : kanbanDaVaga() / moverFase()
+MobileFinanceiro --> KotlinFinanceiro : lancamentos() / criarLancamento()
+KotlinModulo --> PHPModulo : Envia JSON\n(mesma API REST)
+KotlinRegistro --> PHPRegistro : Envia JSON
+KotlinRegistro --> PHPArquivo : Envia arquivo\n(multipart)
+KotlinRecrutamento --> PHPCandidato : Envia JSON
+KotlinFinanceiro --> PHPFinanceiro : Envia JSON
+
+' Navegação Interna das Interfaces
+WebInicio --> WebLista : Clica em 'Ver todas'
+WebInicio --> WebForm : Clica em 'Nova tabela'
+WebInicio --> WebItens : Clica em uma tabela
+WebInicio --> WebKanban : Clica em 'Recrutamento'
+WebLista --> WebForm : Clica em 'Nova tabela' / 'Editar'
+WebForm --> WebLista : Retorna após salvar
+WebLista --> WebItens : Clica na tabela (tipo dados)
+WebLista --> WebArquivos : Clica na tabela (tipo arquivo)
+WebLista --> WebKanban : Clica na tabela (tipo vagas)
+WebLista --> WebFinanceiro : Clica na tabela (tipo financeiro)
+WebItens --> WebForm : Clica em 'Configurar'
+WebArquivos --> WebForm : Clica em 'Configurar'
+WebItens --> WebLista : Volta
+WebFinanceiro --> WebLista : Volta
+
+MobileInicio --> MobileLista : Toque em 'Ver todas'
+MobileInicio --> MobileForm : Toque em 'Nova tabela'
+MobileInicio --> MobileItens : Toque em uma tabela
+MobileInicio --> MobileKanban : Toque em 'Recrutamento'
+MobileLista --> MobileForm : Toque em 'Nova tabela' / 'Editar'
+MobileForm --> MobileLista : Retorna após salvar
+MobileLista --> MobileItens : Toque na tabela (dados ou arquivo)
+MobileLista --> MobileKanban : Toque na tabela (tipo vagas)
+MobileLista --> MobileFinanceiro : Toque na tabela (tipo financeiro)
+MobileItens --> MobileForm : Toque em 'Configurar'
+MobileKanban --> MobileForm : Toque em 'Nova vaga'
+
+@enduml

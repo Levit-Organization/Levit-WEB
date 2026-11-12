@@ -1,0 +1,79 @@
+@startuml Navegacao_Autenticacao_Web_Mobile
+skinparam style strictuml
+top to bottom direction
+
+package "Interfaces do Usuário (Frontend)" {
+    package "Plataforma Web (React / Vite)" {
+        rectangle "Landing.jsx\n(Página Inicial)" as WebLanding
+        rectangle "Login.jsx\n(Entrar)" as WebLogin
+        rectangle "Register.jsx\n(Criar Conta - sem CPF/CNPJ)" as WebCadastro
+        rectangle "ForgotPassword.jsx\n(Recuperar Senha)" as WebRecuperar
+        rectangle "ResetPassword.jsx\n(Redefinir Senha)" as WebRedefinir
+        rectangle "Dashboard.jsx\n(Início)" as WebInicio
+    }
+
+    package "Plataforma Mobile (Android / Kotlin)" {
+        rectangle "SplashActivity\n(Abertura do App)" as MobileSplash
+        rectangle "MainActivity\n(Boas-vindas)" as MobileMain
+        rectangle "LoginActivity\n(Entrar)" as MobileLogin
+        rectangle "CadastroActivity\n(Criar Conta - com CPF/CNPJ)" as MobileCadastro
+        rectangle "RecuperarSenhaActivity\n(Recuperar Senha)" as MobileRecuperar
+        rectangle "RedefinirSenhaActivity\n(Redefinir Senha)" as MobileRedefinir
+        rectangle "DashboardActivity\n(Início)" as MobileInicio
+    }
+}
+
+package "Camada de Serviços & Controle (Backend)" {
+    package "Backend Web (PHP / CodeIgniter 4 - API REST)" {
+        usecase "AuthController\nregistrar() / login() / logout()\nesqueciSenha() / redefinirSenha()" as PHPAuth
+    }
+
+    package "Backend Mobile (Kotlin / API Rest)" {
+        usecase "AuthApi + AuthRepository\nlogin() / registrar() / logout()\nforgotPassword() / redefinirSenha()" as KotlinAuth
+    }
+}
+
+database "Banco de Dados Unificado\n(PostgreSQL)" as DB
+
+' Fluxos Web (Frontend <-> Backend <-> BD)
+WebLogin --> PHPAuth : POST /auth/login
+WebCadastro --> PHPAuth : POST /auth/registrar
+WebRecuperar --> PHPAuth : POST /auth/forgot-password
+WebRedefinir --> PHPAuth : POST /auth/reset-password
+WebInicio --> PHPAuth : POST /auth/logout
+PHPAuth --> DB : Leitura / Escrita\n(usuário, equipe, token revogado)
+
+' Fluxos Mobile (Frontend <-> Backend <-> BD)
+MobileLogin --> KotlinAuth : login()
+MobileCadastro --> KotlinAuth : registrar()
+MobileRecuperar --> KotlinAuth : forgotPassword()
+MobileRedefinir --> KotlinAuth : redefinirSenha()
+MobileInicio --> KotlinAuth : logout()
+KotlinAuth --> PHPAuth : Envia JSON\n(mesma API REST /api/v1/auth)
+
+' Navegação Interna das Interfaces
+WebLanding --> WebLogin : Clica em 'Entrar'
+WebLanding --> WebCadastro : Clica em 'Criar conta'
+WebLogin --> WebCadastro : Clica em 'Criar conta'
+WebCadastro --> WebLogin : Clica em 'Faça login'
+WebLogin --> WebRecuperar : Clica em 'Esqueceu a senha?'
+WebRecuperar --> WebLogin : Volta ao login
+WebRedefinir --> WebLogin : Retorna após salvar a senha
+WebLogin --> WebInicio : Entra na última equipe usada
+WebCadastro --> WebInicio : Conta criada
+WebInicio --> WebLogin : Menu lateral 'Sair da conta'
+
+MobileSplash --> MobileMain : Sem sessão salva
+MobileSplash --> MobileInicio : Com sessão salva
+MobileMain --> MobileLogin : Toque em 'Entrar'
+MobileMain --> MobileCadastro : Toque em 'Registre-se grátis'
+MobileLogin --> MobileCadastro : Toque em 'Registre-se grátis'
+MobileCadastro --> MobileLogin : Toque em 'Faça login'
+MobileLogin --> MobileRecuperar : Toque em 'Redefinir'
+MobileRedefinir --> MobileLogin : Retorna após salvar a senha
+MobileRedefinir --> MobileRecuperar : Toque em 'Solicitar novo link'
+MobileLogin --> MobileInicio : Login aceito
+MobileCadastro --> MobileInicio : Conta criada
+MobileInicio --> MobileLogin : Menu ☰ 'Sair'
+
+@enduml
