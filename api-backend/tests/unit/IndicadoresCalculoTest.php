@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Indicadores\Agrupamento;
 use App\Services\IndicadoresService;
 use CodeIgniter\Test\CIUnitTestCase;
 
@@ -62,6 +63,16 @@ final class IndicadoresCalculoTest extends CIUnitTestCase
         $this->assertSame(['Pessoa removida', 'Sem responsável'], array_column($r['grupos'], 'rotulo'));
         $this->assertSame([null, 3.46], array_column($r['grupos'], 'valor'));
         $this->assertSame([2, 1], array_column($r['grupos'], 'itens'));
+    }
+
+    public function testDataDoPeriodoDoRelatorioMontado(): void
+    {
+        $this->assertSame('2026-02-28', Agrupamento::dataValida('2026-02-28'));
+        $this->assertNull(Agrupamento::dataValida('2026-02-30'));
+        $this->assertNull(Agrupamento::dataValida('2026-2-1'));
+        $this->assertNull(Agrupamento::dataValida(' 2026-01-01'));
+        $this->assertNull(Agrupamento::dataValida(null));
+        $this->assertNull(Agrupamento::dataValida(20260101));
     }
 
     public function testEmpateOrdenaPeloRotulo(): void
