@@ -1,1 +1,27 @@
+# Segredos: nunca versionar. Cada projeto tem o seu .env.example.
+.env
+.env.*
+!.env.example
+
+# Dependências e saídas de build
+node_modules/
+vendor/
+dist/
+coverage/
+api-backend/build/
+
+# Logs
+*.log
+
+# Editor e sistema
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.swp
+
+# Saídas de ferramentas de revisão/IA (rascunhos locais)
 .superpowers/
+.impeccable/
+.tmp_review/
