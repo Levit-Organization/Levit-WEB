@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\ArquivoService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class ArquivoController extends BaseApiController
 {
@@ -15,7 +16,7 @@ class ArquivoController extends BaseApiController
         $this->arquivoService = new ArquivoService();
     }
 
-    public function enviar($moduloId)
+    public function enviar(string $moduloId): ResponseInterface
     {
         $arquivo = $this->request->getFile('arquivo');
         $user    = service('authenticatedUser');
@@ -40,7 +41,7 @@ class ArquivoController extends BaseApiController
         return $this->respondSuccess($resultado, 201);
     }
 
-    public function baixar($moduloId, $registroId)
+    public function baixar(string $moduloId, string $registroId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -61,7 +62,7 @@ class ArquivoController extends BaseApiController
             ->setBody($arquivo['conteudo']);
     }
 
-    public function excluir($moduloId, $registroId)
+    public function excluir(string $moduloId, string $registroId): ResponseInterface
     {
         $user = service('authenticatedUser');
 

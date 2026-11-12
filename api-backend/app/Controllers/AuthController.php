@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Exceptions\NaoEncontradoException;
 use App\Services\AuthService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class AuthController extends BaseApiController
 {
@@ -15,7 +16,7 @@ class AuthController extends BaseApiController
     }
 
     /** Sempre a mesma resposta, exista ou não a conta. */
-    public function esqueciSenha()
+    public function esqueciSenha(): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -31,7 +32,7 @@ class AuthController extends BaseApiController
         ]);
     }
 
-    public function redefinirSenha()
+    public function redefinirSenha(): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -57,7 +58,7 @@ class AuthController extends BaseApiController
         return $this->response->setJSON(['status' => 'success', 'message' => 'Senha alterada. Entre com a senha nova.']);
     }
 
-    public function registrar()
+    public function registrar(): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -94,7 +95,7 @@ class AuthController extends BaseApiController
     }
 
 
-    public function login()
+    public function login(): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -120,7 +121,7 @@ class AuthController extends BaseApiController
     }
 
     /** Equipes da pessoa logada, para o seletor do menu. */
-    public function equipes()
+    public function equipes(): ResponseInterface
     {
         return $this->respondSuccess($this->authService->equipesDoUsuario(service('authenticatedUser')->id));
     }
@@ -129,7 +130,7 @@ class AuthController extends BaseApiController
      * Entra em outra equipe da pessoa: o token atual é revogado e um novo,
      * com a equipe escolhida, volta na resposta.
      */
-    public function trocarEquipe()
+    public function trocarEquipe(): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -149,7 +150,7 @@ class AuthController extends BaseApiController
     }
 
     /** Cria uma equipe nova com a pessoa logada como administradora, e já entra nela. */
-    public function criarEquipe()
+    public function criarEquipe(): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -173,7 +174,7 @@ class AuthController extends BaseApiController
         return $this->novaSessao($empresa, 201);
     }
 
-    private function novaSessao(array $empresa, int $status = 200)
+    private function novaSessao(array $empresa, int $status = 200): ResponseInterface
     {
         $user    = service('authenticatedUser');
         $usuario = model(\App\Models\UsuarioModel::class)->find($user->id);
@@ -183,7 +184,7 @@ class AuthController extends BaseApiController
         return $this->respondSuccess($this->authService->montarRespostaAutenticacao($usuario, $empresa), $status);
     }
 
-    public function logout()
+    public function logout(): ResponseInterface
     {
         $user = service('authenticatedUser');
 

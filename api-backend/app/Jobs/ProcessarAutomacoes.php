@@ -36,7 +36,7 @@ class ProcessarAutomacoes extends BaseJob
 
     private AutomacaoExecutor $executor;
 
-    public function process()
+    public function process(): void
     {
         $this->executor = new AutomacaoExecutor();
 
@@ -89,7 +89,7 @@ class ProcessarAutomacoes extends BaseJob
             ->findAll();
 
         try {
-            $resultado = $this->executor->executar($automacao, array_values($acoes), $dados, $this->data['gatilho'], $aPartirDe, [
+            $resultado = $this->executor->executar($automacao, $acoes, $dados, $this->data['gatilho'], $aPartirDe, [
                 'registro_id' => $this->data['registro_id'] ?? null,
                 'cadeia'      => [...($this->data['cadeia'] ?? []), $automacao['id']],
             ]);

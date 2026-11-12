@@ -6,6 +6,7 @@ use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\AuthService;
 use App\Services\EquipeService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class EquipeController extends BaseApiController
 {
@@ -18,7 +19,7 @@ class EquipeController extends BaseApiController
         $this->authService   = new AuthService();
     }
 
-    public function convidar()
+    public function convidar(): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -49,12 +50,12 @@ class EquipeController extends BaseApiController
         return $this->respondSuccess($resultado, 201);
     }
 
-    public function listarConvites()
+    public function listarConvites(): ResponseInterface
     {
         return $this->respondSuccess($this->equipeService->listarConvitesPendentes(service('authenticatedUser')->empresaId));
     }
 
-    public function reenviarConvite($conviteId)
+    public function reenviarConvite(string $conviteId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -69,7 +70,7 @@ class EquipeController extends BaseApiController
         return $this->respondSuccess($convite);
     }
 
-    public function cancelarConvite($conviteId)
+    public function cancelarConvite(string $conviteId): ResponseInterface
     {
         try {
             $this->equipeService->cancelarConvite(service('authenticatedUser')->empresaId, $conviteId);
@@ -81,7 +82,7 @@ class EquipeController extends BaseApiController
     }
 
     /** Público: o que a página do convite mostra antes de aceitar. */
-    public function detalhesDoConvite($token)
+    public function detalhesDoConvite(string $token): ResponseInterface
     {
         try {
             return $this->respondSuccess($this->equipeService->detalhesDoConvite($token));
@@ -90,7 +91,7 @@ class EquipeController extends BaseApiController
         }
     }
 
-    public function aceitarConvite()
+    public function aceitarConvite(): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -122,19 +123,19 @@ class EquipeController extends BaseApiController
         );
     }
 
-    public function listarPessoas()
+    public function listarPessoas(): ResponseInterface
     {
         return $this->respondSuccess($this->equipeService->listarPessoas(service('authenticatedUser')->empresaId));
     }
 
-    public function listarMembros()
+    public function listarMembros(): ResponseInterface
     {
         $membros = $this->equipeService->listarMembros(service('authenticatedUser')->empresaId);
 
         return $this->respondSuccess($membros, 200);
     }
 
-    public function atualizarMembro($usuarioId)
+    public function atualizarMembro(string $usuarioId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -160,7 +161,7 @@ class EquipeController extends BaseApiController
         return $this->respondSuccess($membro, 200);
     }
 
-    public function removerMembro($usuarioId)
+    public function removerMembro(string $usuarioId): ResponseInterface
     {
         try {
             $this->equipeService->removerMembro($usuarioId, service('authenticatedUser')->empresaId);

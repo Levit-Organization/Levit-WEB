@@ -64,10 +64,13 @@ class AuthFilter implements FilterInterface
                     ->setJSON(['status' => 'error', 'message' => 'Você não tem permissão para realizar esta ação.']);
             }
         }
+
+        return null;
     }
 
     public function after(RequestInterface $request, ResponseInterface $response, $arguments = null)
     {
         // Nada a fazer depois da resposta, por enquanto.
+        return null;
     }
 }

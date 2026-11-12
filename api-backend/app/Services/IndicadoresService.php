@@ -754,7 +754,7 @@ class IndicadoresService
 
     private static function dataValida(mixed $d): ?string
     {
-        return is_string($d) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && \DateTimeImmutable::createFromFormat('Y-m-d', $d)?->format('Y-m-d') === $d
+        return is_string($d) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && (\DateTimeImmutable::createFromFormat('Y-m-d', $d) ?: null)?->format('Y-m-d') === $d
             ? $d
             : null;
     }

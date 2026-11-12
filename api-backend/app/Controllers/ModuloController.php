@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\ModuloService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class ModuloController extends BaseApiController
 {
@@ -15,7 +16,7 @@ class ModuloController extends BaseApiController
         $this->moduloService = new ModuloService();
     }
 
-    public function criar()
+    public function criar(): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -46,7 +47,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess($modulo, 201);
     }
 
-    public function listar()
+    public function listar(): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -55,7 +56,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess($modulos, 200);
     }
 
-    public function detalhes($moduloId)
+    public function detalhes(string $moduloId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -70,7 +71,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess($modulo, 200);
     }
 
-    public function atualizar($moduloId)
+    public function atualizar(string $moduloId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -96,7 +97,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess($modulo, 200);
     }
 
-    public function adicionarCampo($moduloId)
+    public function adicionarCampo(string $moduloId): ResponseInterface
     {
         $campo = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -114,7 +115,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess($modulo, 201);
     }
 
-    public function atualizarCampo($moduloId, $campoId)
+    public function atualizarCampo(string $moduloId, string $campoId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -130,7 +131,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess($modulo, 200);
     }
 
-    public function reordenarCampos($moduloId)
+    public function reordenarCampos(string $moduloId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -150,7 +151,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess($modulo, 200);
     }
 
-    public function excluirCampo($moduloId, $campoId)
+    public function excluirCampo(string $moduloId, string $campoId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -167,7 +168,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess(null, 200);
     }
 
-    public function excluir($moduloId)
+    public function excluir(string $moduloId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -184,7 +185,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess(null, 200);
     }
 
-    public function adicionarFase($moduloId)
+    public function adicionarFase(string $moduloId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -202,7 +203,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess($modulo, 201);
     }
 
-    public function atualizarFase($moduloId, $faseId)
+    public function atualizarFase(string $moduloId, string $faseId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -220,7 +221,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess($modulo, 200);
     }
 
-    public function reordenarFases($moduloId)
+    public function reordenarFases(string $moduloId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -240,7 +241,7 @@ class ModuloController extends BaseApiController
         return $this->respondSuccess($modulo, 200);
     }
 
-    public function excluirFase($moduloId, $faseId)
+    public function excluirFase(string $moduloId, string $faseId): ResponseInterface
     {
         $user = service('authenticatedUser');
 

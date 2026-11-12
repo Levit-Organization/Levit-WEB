@@ -6,6 +6,7 @@ use App\Exceptions\NaoEncontradoException;
 use App\Libraries\Relogio;
 use App\Services\IndicadoresService;
 use App\Services\RelatorioService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 /**
  * Relatórios agendados e PDFs sob demanda. Só para quem tem acesso total:
@@ -20,19 +21,19 @@ class RelatorioController extends BaseApiController
         $this->relatorios = new RelatorioService();
     }
 
-    private function semAcesso()
+    private function semAcesso(): ?ResponseInterface
     {
         return service('authenticatedUser')->acessoTotal
             ? null
             : $this->respondError('Só quem tem acesso total pode ver e agendar relatórios.', 403);
     }
 
-    public function listar()
+    public function listar(): ResponseInterface
     {
         return $this->semAcesso() ?? $this->respondSuccess($this->relatorios->listar(service('authenticatedUser')->empresaId));
     }
 
-    public function criar()
+    public function criar(): ResponseInterface
     {
         if ($r = $this->semAcesso()) {
             return $r;
@@ -45,7 +46,7 @@ class RelatorioController extends BaseApiController
         }
     }
 
-    public function atualizar($id)
+    public function atualizar(string $id): ResponseInterface
     {
         if ($r = $this->semAcesso()) {
             return $r;
@@ -59,7 +60,7 @@ class RelatorioController extends BaseApiController
         }
     }
 
-    public function excluir($id)
+    public function excluir(string $id): ResponseInterface
     {
         if ($r = $this->semAcesso()) {
             return $r;
@@ -73,7 +74,7 @@ class RelatorioController extends BaseApiController
         return $this->respondSuccess(null);
     }
 
-    public function envios($id)
+    public function envios(string $id): ResponseInterface
     {
         if ($r = $this->semAcesso()) {
             return $r;
@@ -86,7 +87,7 @@ class RelatorioController extends BaseApiController
     }
 
     /** Envia agora para os destinatários, com o período que o próximo envio cobriria. */
-    public function enviarAgora($id)
+    public function enviarAgora(string $id): ResponseInterface
     {
         if ($r = $this->semAcesso()) {
             return $r;
@@ -113,7 +114,7 @@ class RelatorioController extends BaseApiController
     {
         $inicio = (string) $this->request->getGet('inicio');
         $fim    = (string) $this->request->getGet('fim');
-        $valida = static fn ($d) => preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && \DateTimeImmutable::createFromFormat('Y-m-d', $d)?->format('Y-m-d') === $d;
+        $valida = static fn ($d) => preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && (\DateTimeImmutable::createFromFormat('Y-m-d', $d) ?: null)?->format('Y-m-d') === $d;
         if (! $valida($inicio) || ! $valida($fim) || $inicio > $fim) {
             return 'Escolha um período válido (início antes do fim).';
         }
@@ -128,7 +129,7 @@ class RelatorioController extends BaseApiController
     }
 
     /** Indicadores do período (recrutamento, financeiro, prazos), com o período anterior para comparar. */
-    public function indicadores()
+    public function indicadores(): ResponseInterface
     {
         if ($r = $this->semAcesso()) {
             return $r;
@@ -142,13 +143,13 @@ class RelatorioController extends BaseApiController
     }
 
     /** Tabelas e colunas disponíveis para montar um relatório. */
-    public function tabelas()
+    public function tabelas(): ResponseInterface
     {
         return $this->semAcesso() ?? $this->respondSuccess((new IndicadoresService())->tabelas(service('authenticatedUser')->empresaId));
     }
 
     /** Relatório montado: uma tabela agrupada por uma coluna. */
-    public function agrupar()
+    public function agrupar(): ResponseInterface
     {
         if ($r = $this->semAcesso()) {
             return $r;
@@ -163,7 +164,7 @@ class RelatorioController extends BaseApiController
     }
 
     /** PDF do relatório montado: mesmos parâmetros de `agrupar`, mais `titulo` (opcional). */
-    public function agruparPdf()
+    public function agruparPdf(): ResponseInterface
     {
         if ($r = $this->semAcesso()) {
             return $r;
@@ -189,7 +190,7 @@ class RelatorioController extends BaseApiController
     }
 
     /** PDF de um período qualquer (`inicio` e `fim` inclusivos, AAAA-MM-DD). */
-    public function pdf()
+    public function pdf(): ResponseInterface
     {
         if ($r = $this->semAcesso()) {
             return $r;

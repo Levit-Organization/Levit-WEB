@@ -25,7 +25,7 @@ class LogEmailService implements EmailServiceInterface
         preg_match_all('/href="([^"]+)"/', $corpoHtml, $links);
         $listaLinks = implode(PHP_EOL, array_map(
             static fn (string $l) => '  ' . html_entity_decode($l, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
-            array_unique($links[1] ?? [])
+            array_unique($links[1])
         ));
 
         $registro = sprintf(

@@ -402,7 +402,7 @@ class AuthService
      * caso 't'/'f', então tratamos manualmente para não depender de um
      * formato específico de driver/config.
      */
-    private function paraBooleano($valor): bool
+    private function paraBooleano(mixed $valor): bool
     {
         if (is_bool($valor)) {
             return $valor;

@@ -3,13 +3,14 @@
 namespace App\Controllers;
 
 use CodeIgniter\Database\Exceptions\DatabaseException;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class BaseApiController extends BaseController
 {
     /**
      * Resposta de sucesso padronizada.
      */
-    protected function respondSuccess($data = null, int $statusCode = 200)
+    protected function respondSuccess(mixed $data = null, int $statusCode = 200): ResponseInterface
     {
         return $this->response
             ->setStatusCode($statusCode)
@@ -22,7 +23,7 @@ class BaseApiController extends BaseController
     /**
      * Resposta de erro padronizada.
      */
-    protected function respondError(string $message, int $statusCode = 400, ?array $errors = null)
+    protected function respondError(string $message, int $statusCode = 400, ?array $errors = null): ResponseInterface
     {
         $body = [
             'status'  => 'error',
@@ -56,7 +57,7 @@ class BaseApiController extends BaseController
      * RuntimeException) trazem SQL, nomes de tabela e coluna. Essas vão só para
      * o log e o usuário recebe uma mensagem genérica.
      */
-    protected function respondFalha(\Throwable $e, int $statusCode = 500)
+    protected function respondFalha(\Throwable $e, int $statusCode = 500): ResponseInterface
     {
         if ($e instanceof DatabaseException || ! $e instanceof \RuntimeException) {
             log_message('error', '[{classe}] {mensagem} em {arquivo}:{linha}', [

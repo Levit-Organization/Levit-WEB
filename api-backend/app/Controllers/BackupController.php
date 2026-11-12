@@ -6,6 +6,7 @@ use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\AutorizacaoModuloService;
 use App\Services\BackupService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class BackupController extends BaseApiController
 {
@@ -16,7 +17,7 @@ class BackupController extends BaseApiController
         $this->backupService = new BackupService();
     }
 
-    public function exportarJson()
+    public function exportarJson(): ResponseInterface
     {
         // O backup completo leva todas as tabelas, candidatos e e-mails da
         // equipe, inclusive das tabelas que o cargo de quem pede não enxerga.
@@ -34,7 +35,7 @@ class BackupController extends BaseApiController
             ->setBody(json_encode($dados, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     }
 
-    public function exportarCsv($moduloId)
+    public function exportarCsv(string $moduloId): ResponseInterface
     {
         $usuario = service('authenticatedUser');
 
@@ -64,7 +65,7 @@ class BackupController extends BaseApiController
             ->setBody($conteudoCsv);
     }
 
-    public function resetarFabrica()
+    public function resetarFabrica(): ResponseInterface
     {
         $user = service('authenticatedUser');
 

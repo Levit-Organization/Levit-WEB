@@ -53,7 +53,7 @@ class AddExecucaoDetalhesToAutomacao extends Migration
     public function down()
     {
         $this->forge->dropColumn('automacao', 'pausada_por_falhas_em');
-        $this->db->query('DROP INDEX automacao_log_automacao_executado_idx' . ($this->db->DBDriver === 'MySQLi' ? ' ON automacao_log' : ''));
+        $this->db->query('DROP INDEX automacao_log_automacao_executado_idx' . ($this->db->getPlatform() === 'MySQLi' ? ' ON automacao_log' : ''));
         $this->forge->dropColumn('automacao_log', ['gatilho', 'tentativa', 'duracao_ms', 'passos', 'dados']);
     }
 }

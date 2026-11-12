@@ -212,7 +212,7 @@ class RegistroService
      * coluna, se não houver texto). É o "nome" do item onde ele aparece ligado.
      * Sem checagem de acesso: quem chama decide.
      *
-     * @param list<string>|null $ids só estes itens (null = todos)
+     * @param array<mixed>|null $ids só estes itens (null = todos)
      *
      * @return array<string, string|null> id => título, em ordem alfabética
      */
@@ -309,7 +309,7 @@ class RegistroService
      * Não dispara automações: importar 500 clientes não deve mandar 500
      * e-mails. Fica uma linha no histórico de atividades.
      *
-     * @param array<int, array{linha?: int, dados: array}> $itens
+     * @param array<int, array{linha?: int, dados?: array<string, mixed>}> $itens
      *
      * @return array{criados: int, erros: array<int, array{linha: int, mensagem: string}>}
      */

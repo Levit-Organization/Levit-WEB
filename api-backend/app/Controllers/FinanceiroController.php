@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\FinanceiroService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class FinanceiroController extends BaseApiController
 {
@@ -19,14 +20,14 @@ class FinanceiroController extends BaseApiController
     // Categorias
     // ==========================================================
 
-    public function listarCategorias()
+    public function listarCategorias(): ResponseInterface
     {
         $categorias = $this->financeiroService->listarCategorias(service('authenticatedUser')->empresaId);
 
         return $this->respondSuccess($categorias, 200);
     }
 
-    public function criarCategoria()
+    public function criarCategoria(): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -49,7 +50,7 @@ class FinanceiroController extends BaseApiController
         return $this->respondSuccess($categoria, 201);
     }
 
-    public function excluirCategoria($categoriaId)
+    public function excluirCategoria(string $categoriaId): ResponseInterface
     {
         try {
             $this->financeiroService->excluirCategoria(service('authenticatedUser')->empresaId, $categoriaId);
@@ -66,7 +67,7 @@ class FinanceiroController extends BaseApiController
     // Lançamentos
     // ==========================================================
 
-    public function listarLancamentos($moduloId)
+    public function listarLancamentos(string $moduloId): ResponseInterface
     {
         $user        = service('authenticatedUser');
         $categoriaId = $this->request->getGet('categoria_id');
@@ -82,7 +83,7 @@ class FinanceiroController extends BaseApiController
         return $this->respondSuccess($resultado, 200);
     }
 
-    public function criarLancamento($moduloId)
+    public function criarLancamento(string $moduloId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -100,7 +101,7 @@ class FinanceiroController extends BaseApiController
         return $this->respondSuccess($lancamento, 201);
     }
 
-    public function atualizarLancamento($moduloId, $lancamentoId)
+    public function atualizarLancamento(string $moduloId, string $lancamentoId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -118,7 +119,7 @@ class FinanceiroController extends BaseApiController
         return $this->respondSuccess($lancamento, 200);
     }
 
-    public function excluirLancamento($moduloId, $lancamentoId)
+    public function excluirLancamento(string $moduloId, string $lancamentoId): ResponseInterface
     {
         $user = service('authenticatedUser');
 

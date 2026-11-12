@@ -3,6 +3,7 @@
 namespace App\Filters;
 
 use CodeIgniter\Filters\FilterInterface;
+use CodeIgniter\HTTP\IncomingRequest;
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
 
@@ -31,10 +32,16 @@ class RateLimitFilter implements FilterInterface
                 return $this->muitasTentativas();
             }
         }
+
+        return null;
     }
 
     private function emailDoCorpo(RequestInterface $request): string
     {
+        if (! $request instanceof IncomingRequest) {
+            return '';
+        }
+
         try {
             $corpo = $request->getJSON(true);
         } catch (\Throwable) {
@@ -55,5 +62,6 @@ class RateLimitFilter implements FilterInterface
     public function after(RequestInterface $request, ResponseInterface $response, $arguments = null)
     {
         // Nada a fazer depois da resposta, por enquanto.
+        return null;
     }
 }

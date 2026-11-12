@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\CargoService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class CargoController extends BaseApiController
 {
@@ -15,14 +16,14 @@ class CargoController extends BaseApiController
         $this->cargoService = new CargoService();
     }
 
-    public function listar()
+    public function listar(): ResponseInterface
     {
         $cargos = $this->cargoService->listarCargos(service('authenticatedUser')->empresaId);
 
         return $this->respondSuccess($cargos, 200);
     }
 
-    public function criar()
+    public function criar(): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -50,7 +51,7 @@ class CargoController extends BaseApiController
         return $this->respondSuccess($cargo, 201);
     }
 
-    public function atualizar($cargoId)
+    public function atualizar(string $cargoId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -81,7 +82,7 @@ class CargoController extends BaseApiController
         return $this->respondSuccess($cargo, 200);
     }
 
-    public function excluir($cargoId)
+    public function excluir(string $cargoId): ResponseInterface
     {
         try {
             $this->cargoService->excluirCargo(service('authenticatedUser')->empresaId, $cargoId);

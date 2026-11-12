@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\AutomacaoService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class AutomacaoController extends BaseApiController
 {
@@ -15,7 +16,7 @@ class AutomacaoController extends BaseApiController
         $this->automacaoService = new AutomacaoService();
     }
 
-    public function criar($moduloId)
+    public function criar(string $moduloId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -45,7 +46,7 @@ class AutomacaoController extends BaseApiController
         return $this->respondSuccess($automacao, 201);
     }
 
-    public function listar($moduloId)
+    public function listar(string $moduloId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -60,7 +61,7 @@ class AutomacaoController extends BaseApiController
         return $this->respondSuccess($automacoes, 200);
     }
 
-    public function alternarAtivo($moduloId, $automacaoId)
+    public function alternarAtivo(string $moduloId, string $automacaoId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -76,7 +77,7 @@ class AutomacaoController extends BaseApiController
         return $this->respondSuccess($automacao, 200);
     }
 
-    public function excluir($moduloId, $automacaoId)
+    public function excluir(string $moduloId, string $automacaoId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -91,14 +92,14 @@ class AutomacaoController extends BaseApiController
         return $this->respondSuccess(null, 200);
     }
 
-    public function listarTodas()
+    public function listarTodas(): ResponseInterface
     {
         $user = service('authenticatedUser');
 
         return $this->responder(fn () => $this->automacaoService->listarTodas($user->empresaId, $user->cargoId, $user->acessoTotal));
     }
 
-    public function atualizar($moduloId, $automacaoId)
+    public function atualizar(string $moduloId, string $automacaoId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -108,7 +109,7 @@ class AutomacaoController extends BaseApiController
         ));
     }
 
-    public function execucoes($moduloId, $automacaoId)
+    public function execucoes(string $moduloId, string $automacaoId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -123,7 +124,7 @@ class AutomacaoController extends BaseApiController
         ));
     }
 
-    public function simular($moduloId)
+    public function simular(string $moduloId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -133,7 +134,7 @@ class AutomacaoController extends BaseApiController
         ));
     }
 
-    public function reexecutar($moduloId, $automacaoId, $execucaoId)
+    public function reexecutar(string $moduloId, string $automacaoId, string $execucaoId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -145,7 +146,7 @@ class AutomacaoController extends BaseApiController
     }
 
     /** Traduz as exceções do service para as respostas HTTP padrão da API. */
-    private function responder(callable $acao, int $status = 200)
+    private function responder(callable $acao, int $status = 200): ResponseInterface
     {
         try {
             return $this->respondSuccess($acao(), $status);

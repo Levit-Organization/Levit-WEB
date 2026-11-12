@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\RegistroService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class RegistroController extends BaseApiController
 {
@@ -16,7 +17,7 @@ class RegistroController extends BaseApiController
     }
 
     /** `busca`: texto livre. `filtros`: pesquisa avançada em JSON ({ logica, regras }). */
-    public function listar($moduloId)
+    public function listar(string $moduloId): ResponseInterface
     {
         $user    = service('authenticatedUser');
         $busca   = $this->request->getGet('busca');
@@ -44,7 +45,7 @@ class RegistroController extends BaseApiController
     }
 
     /** Itens de outras tabelas que apontam para este (o outro lado das ligações). */
-    public function ligados($moduloId, $registroId)
+    public function ligados(string $moduloId, string $registroId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -60,7 +61,7 @@ class RegistroController extends BaseApiController
     }
 
     /** Nome de cada item ({ id, titulo }), para escolher e mostrar itens ligados. */
-    public function titulos($moduloId)
+    public function titulos(string $moduloId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -75,7 +76,7 @@ class RegistroController extends BaseApiController
         return $this->respondSuccess($titulos, 200);
     }
 
-    public function criar($moduloId)
+    public function criar(string $moduloId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -94,7 +95,7 @@ class RegistroController extends BaseApiController
     }
 
     /** Itens de uma planilha, já convertidos pelo frontend: { itens: [{ linha, dados }] }. */
-    public function importar($moduloId)
+    public function importar(string $moduloId): ResponseInterface
     {
         $itens = ($this->request->getJSON(true) ?? [])['itens'] ?? null;
         if (! is_array($itens)) {
@@ -117,7 +118,7 @@ class RegistroController extends BaseApiController
         return $this->respondSuccess($resultado, 201);
     }
 
-    public function atualizar($moduloId, $registroId)
+    public function atualizar(string $moduloId, string $registroId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -135,7 +136,7 @@ class RegistroController extends BaseApiController
         return $this->respondSuccess($registro, 200);
     }
 
-    public function excluir($moduloId, $registroId)
+    public function excluir(string $moduloId, string $registroId): ResponseInterface
     {
         $user = service('authenticatedUser');
 

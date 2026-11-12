@@ -641,7 +641,7 @@ class RelatorioService
 
         $filtros = $d['filtros'] === []
             ? 'Nenhum: entram todos os itens.'
-            : ($d['filtros'] !== [] && count($d['filtros']) > 1 ? 'Itens que atendem a ' . ($d['logica'] === 'ou' ? 'qualquer um' : 'todos') . ' destes:' : '')
+            : (count($d['filtros']) > 1 ? 'Itens que atendem a ' . ($d['logica'] === 'ou' ? 'qualquer um' : 'todos') . ' destes:' : '')
                 . '<ul class="filtros"><li>' . implode('</li><li>', array_map($e, $d['filtros'])) . '</li></ul>';
 
         // Ligação a vários itens põe o mesmo item em mais de um grupo.

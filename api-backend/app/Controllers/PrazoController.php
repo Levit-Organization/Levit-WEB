@@ -3,11 +3,12 @@
 namespace App\Controllers;
 
 use App\Services\PrazoService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 /** Prazos de todas as tabelas que o usuário enxerga (tela inicial). */
 class PrazoController extends BaseApiController
 {
-    public function listar()
+    public function listar(): ResponseInterface
     {
         $escopo = $this->request->getGet('escopo') === 'meus' ? 'meus' : 'todos';
 

@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Models\EmpresaModel;
 use App\Models\CategoriaFinanceiraModel;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class SeedController extends BaseController
 {
@@ -12,7 +13,7 @@ class SeedController extends BaseController
      * todas as empresas, então fora de `development` responde 404 (a rota
      * continua existindo para não mudar o mapa da API).
      */
-    public function seedCategorias()
+    public function seedCategorias(): ResponseInterface
     {
         if (ENVIRONMENT !== 'development') {
             return $this->response->setStatusCode(404)->setJSON(['status' => 'error', 'message' => 'Recurso não encontrado.']);

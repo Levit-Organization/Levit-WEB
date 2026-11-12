@@ -19,6 +19,7 @@ class PessoaEmVariasEquipes extends Migration
 {
     public function up()
     {
+        /** @var \CodeIgniter\Database\BaseConnection<mixed, mixed> $db */
         $db = $this->db;
         // Tudo ou nada: no Postgres, DDL também volta atrás se algo falhar no meio.
         $db->transException(true)->transStart();
@@ -63,6 +64,7 @@ class PessoaEmVariasEquipes extends Migration
 
     public function down()
     {
+        /** @var \CodeIgniter\Database\BaseConnection<mixed, mixed> $db */
         $db = $this->db;
 
         $db->query('DROP VIEW IF EXISTS usuario_equipe');

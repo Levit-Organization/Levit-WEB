@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\AutorizacaoModuloService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class CargoModuloPermissaoController extends BaseApiController
 {
@@ -15,7 +16,7 @@ class CargoModuloPermissaoController extends BaseApiController
         $this->autorizacaoModuloService = new AutorizacaoModuloService();
     }
 
-    public function listar($cargoId)
+    public function listar(string $cargoId): ResponseInterface
     {
         try {
             $niveis = $this->autorizacaoModuloService->listarNiveisDoCargo(service('authenticatedUser')->empresaId, $cargoId);
@@ -26,7 +27,7 @@ class CargoModuloPermissaoController extends BaseApiController
         return $this->respondSuccess($niveis, 200);
     }
 
-    public function definir($cargoId, $moduloId)
+    public function definir(string $cargoId, string $moduloId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
 
@@ -49,7 +50,7 @@ class CargoModuloPermissaoController extends BaseApiController
         return $this->respondSuccess($niveis, 200);
     }
 
-    public function remover($cargoId, $moduloId)
+    public function remover(string $cargoId, string $moduloId): ResponseInterface
     {
         try {
             $this->autorizacaoModuloService->removerNivel(service('authenticatedUser')->empresaId, $cargoId, $moduloId);
