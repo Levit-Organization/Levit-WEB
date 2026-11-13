@@ -85,3 +85,43 @@ export function normalizar(texto) {
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase();
 }
+
+// --- Lista da tabela de arquivos: busca, ordem e totais -----------------------
+
+const COLATOR = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' });
+
+/** Como cada coluna da lista ordena (sempre crescente; a direção inverte o sinal). */
+const COMPARADORES = {
+  arquivo_nome: (a, b) => COLATOR.compare(a.arquivo_nome || '', b.arquivo_nome || ''),
+  arquivo_tamanho: (a, b) => (a.arquivo_tamanho || 0) - (b.arquivo_tamanho || 0),
+  enviado_por_nome: (a, b) => COLATOR.compare(a.enviado_por_nome || '', b.enviado_por_nome || ''),
+  criado_em: (a, b) => new Date(a.criado_em) - new Date(b.criado_em),
+};
+
+/** Ordem inicial da lista: os enviados por último primeiro. */
+export const ORDEM_INICIAL = { key: 'criado_em', direcao: 'desc' };
+
+/** Arquivos cujo nome bate com a busca (sem acento nem maiúsculas), na ordem escolhida. */
+export function arquivosVisiveis(arquivos, busca, ordem) {
+  const termo = normalizar(busca.trim());
+  const filtrados = termo ? arquivos.filter((a) => normalizar(a.arquivo_nome).includes(termo)) : arquivos;
+  const sinal = ordem.direcao === 'asc' ? 1 : -1;
+  return [...filtrados].sort((a, b) => sinal * COMPARADORES[ordem.key](a, b));
+}
+
+/** Clicar na coluna ativa inverte; numa nova, texto começa crescente e o resto decrescente. */
+export function proximaOrdemDosArquivos(atual, key) {
+  if (atual.key === key) return { key, direcao: atual.direcao === 'asc' ? 'desc' : 'asc' };
+  return { key, direcao: key === 'arquivo_nome' || key === 'enviado_por_nome' ? 'asc' : 'desc' };
+}
+
+export function totalDeBytes(arquivos) {
+  return arquivos.reduce((soma, a) => soma + (Number(a.arquivo_tamanho) || 0), 0);
+}
+
+/** Subtítulo da tela: "3 arquivos · 2,5 MB". */
+export function resumoDosArquivos(arquivos, carregando) {
+  if (carregando) return 'Carregando…';
+  if (arquivos.length === 0) return 'Nenhum arquivo ainda';
+  return `${arquivos.length} ${arquivos.length === 1 ? 'arquivo' : 'arquivos'} · ${tamanhoLegivel(totalDeBytes(arquivos))}`;
+}
