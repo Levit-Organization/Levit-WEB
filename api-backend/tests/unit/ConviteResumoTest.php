@@ -12,9 +12,9 @@ final class ConviteResumoTest extends CIUnitTestCase
 {
     private function resumo(array $convite): array
     {
-        $servico = new EquipeService();
+        $convites = (new ReflectionProperty(EquipeService::class, 'convites'))->getValue(new EquipeService());
 
-        return (new ReflectionMethod($servico, 'resumoDoConvite'))->invoke($servico, $convite);
+        return (new ReflectionMethod($convites, 'resumoDoConvite'))->invoke($convites, $convite);
     }
 
     private function convite(array $extra = []): array

@@ -8,17 +8,26 @@ use App\Models\ConviteModel;
 use App\Models\EmpresaModel;
 use App\Models\MembroModel;
 use App\Models\UsuarioModel;
-use App\Services\Email\ModeloConvite;
+use App\Services\Equipe\AceiteDeConvite;
+use App\Services\Equipe\ConvitesDaEquipe;
+use App\Services\Equipe\MembrosDaEquipe;
 
+/**
+ * A equipe de uma empresa: quem faz parte, com que cargo, e os convites.
+ * Os convites ficam em Equipe\ConvitesDaEquipe, o aceite em
+ * Equipe\AceiteDeConvite e as consultas dos membros em
+ * Equipe\MembrosDaEquipe; aqui ficam as alterações nos membros.
+ */
 class EquipeService
 {
-    private const VALIDADE_CONVITE_SEGUNDOS = 7 * 24 * 60 * 60; // 7 dias
-
     protected EmpresaModel $empresaModel;
     protected UsuarioModel $usuarioModel;
     protected CargoModel $cargoModel;
     protected ConviteModel $conviteModel;
     protected MembroModel $membroModel;
+    protected MembrosDaEquipe $membros;
+    protected ConvitesDaEquipe $convites;
+    protected AceiteDeConvite $aceite;
 
     public function __construct()
     {
@@ -27,357 +36,62 @@ class EquipeService
         $this->cargoModel   = new CargoModel();
         $this->conviteModel = new ConviteModel();
         $this->membroModel  = new MembroModel();
+        $this->membros      = new MembrosDaEquipe();
+        $this->convites     = new ConvitesDaEquipe($this->cargoModel, $this->conviteModel, $this->usuarioModel, $this->membros);
+        $this->aceite       = new AceiteDeConvite($this->conviteModel, $this->usuarioModel, $this->membroModel, $this->empresaModel, $this->membros);
     }
 
-    /**
-     * Convida alguém para a equipe e envia o e-mail com o link de aceite.
-     *
-     * Se a pessoa já tiver um convite pendente nesta empresa, ele é
-     * reaproveitado (novo link, nova validade, cargo e mensagem atualizados)
-     * em vez de criar outro. O token só existe em texto puro dentro do
-     * e-mail: o banco guarda o hash e a API não o devolve.
-     *
-     * @throws NaoEncontradoException se o cargo não existir/pertencer à empresa
-     * @throws \DomainException se a pessoa já fizer parte desta equipe
-     *         (ter conta em outra equipe não impede: ela aceita com a senha dela)
-     * @throws \RuntimeException se o e-mail não puder ser enviado (o convite não fica criado)
-     */
+    /** Ver Equipe\ConvitesDaEquipe::convidar(). */
     public function convidar(string $empresaId, string $convidadoPorId, string $email, string $cargoId, ?string $mensagem = null): array
     {
-        $email    = mb_strtolower(trim($email));
-        $mensagem = $mensagem !== null && trim($mensagem) !== '' ? trim($mensagem) : null;
-
-        $cargo = $this->cargoModel
-            ->where('id', $cargoId)
-            ->where('empresa_id', $empresaId)
-            ->first();
-
-        if (! $cargo) {
-            throw new NaoEncontradoException('Cargo não encontrado.');
-        }
-
-        (new LimiteDeAcesso())->exigirPodeAtuarNoCargo($cargoId);
-
-        if ($this->membroPorEmail($empresaId, $email)) {
-            throw new \DomainException('Essa pessoa já faz parte da equipe.');
-        }
-
-        $existente = $this->conviteModel
-            ->where('empresa_id', $empresaId)
-            ->where('email_destinatario', $email)
-            ->where('aceito_em', null)
-            ->first();
-
-        $tokenTexto = bin2hex(random_bytes(32));
-        $campos     = [
-            'convidado_por' => $convidadoPorId,
-            'cargo_id'      => $cargoId,
-            'mensagem'      => $mensagem,
-            'token_hash'    => hash('sha256', $tokenTexto),
-            'expira_em'     => date('Y-m-d H:i:s', time() + self::VALIDADE_CONVITE_SEGUNDOS),
-        ];
-
-        if ($existente) {
-            $conviteId = $existente['id'];
-            $this->conviteModel->update($conviteId, $campos);
-        } else {
-            $conviteId = $this->conviteModel->insert($campos + [
-                'empresa_id'         => $empresaId,
-                'email_destinatario' => $email,
-            ]);
-        }
-
-        try {
-            $this->enviarEmailDoConvite($conviteId, $tokenTexto);
-        } catch (\Throwable $e) {
-            // Sem e-mail a pessoa não tem como aceitar: um convite novo é desfeito.
-            if (! $existente) {
-                $this->conviteModel->delete($conviteId);
-            }
-            log_message('error', 'Falha ao enviar convite: {erro}', ['erro' => $e->getMessage()]);
-
-            throw new \RuntimeException('O serviço de e-mail não conseguiu enviar o convite agora. Tente de novo em instantes; se continuar, avise quem administra o Levit.', 0, $e);
-        }
-
-        AtividadeService::registrar('membro_convidado', "Convidou {$email} para a equipe (cargo {$cargo['nome']})");
-
-        return $this->resumoDoConvite($this->conviteModel->find($conviteId));
+        return $this->convites->convidar($empresaId, $convidadoPorId, $email, $cargoId, $mensagem);
     }
 
     /** Convites ainda não aceitos da empresa (inclui os expirados, marcados como tal). */
     public function listarConvitesPendentes(string $empresaId): array
     {
-        $convites = $this->conviteModel
-            ->select('convite.*, cargo.nome AS cargo_nome, usuario.nome AS convidado_por_nome')
-            ->join('cargo', 'cargo.id = convite.cargo_id')
-            ->join('usuario', 'usuario.id = convite.convidado_por', 'left')
-            ->where('convite.empresa_id', $empresaId)
-            ->where('convite.aceito_em', null)
-            ->orderBy('convite.criado_em', 'DESC')
-            ->findAll();
-
-        return array_map(fn (array $c) => $this->resumoDoConvite($c), $convites);
+        return $this->convites->listarPendentes($empresaId);
     }
 
     /** Novo link e nova validade, e manda o e-mail de novo. */
     public function reenviarConvite(string $empresaId, string $conviteId, string $usuarioId): array
     {
-        $convite = $this->convitePendente($empresaId, $conviteId);
-
-        $tokenTexto = bin2hex(random_bytes(32));
-        $this->conviteModel->update($conviteId, [
-            'convidado_por' => $usuarioId,
-            'token_hash'    => hash('sha256', $tokenTexto),
-            'expira_em'     => date('Y-m-d H:i:s', time() + self::VALIDADE_CONVITE_SEGUNDOS),
-        ]);
-
-        try {
-            $this->enviarEmailDoConvite($conviteId, $tokenTexto);
-        } catch (\Throwable $e) {
-            log_message('error', 'Falha ao reenviar convite: {erro}', ['erro' => $e->getMessage()]);
-
-            throw new \RuntimeException('Não foi possível reenviar o e-mail do convite. Tente de novo em instantes.', 0, $e);
-        }
-
-        return $this->resumoDoConvite($this->conviteModel->find($convite['id']));
+        return $this->convites->reenviar($empresaId, $conviteId, $usuarioId);
     }
 
     /** O link deixa de funcionar na hora. */
     public function cancelarConvite(string $empresaId, string $conviteId): void
     {
-        $this->convitePendente($empresaId, $conviteId);
-        $this->conviteModel->delete($conviteId);
-        AtividadeService::registrar('convite_cancelado', 'Cancelou um convite pendente');
+        $this->convites->cancelar($empresaId, $conviteId);
     }
 
-    /**
-     * O que a página pública do convite mostra antes de a pessoa aceitar.
-     * Não revela nada além do necessário para ela decidir.
-     *
-     * @throws NaoEncontradoException se o token não existir
-     */
+    /** Ver Equipe\ConvitesDaEquipe::detalhes(). */
     public function detalhesDoConvite(string $tokenTexto): array
     {
-        $convite = $this->conviteModel
-            ->select('convite.*, cargo.nome AS cargo_nome, usuario.nome AS convidado_por_nome, empresa.nome AS empresa_nome')
-            ->join('cargo', 'cargo.id = convite.cargo_id')
-            ->join('empresa', 'empresa.id = convite.empresa_id')
-            ->join('usuario', 'usuario.id = convite.convidado_por', 'left')
-            ->where('convite.token_hash', hash('sha256', $tokenTexto))
-            ->first();
-
-        if (! $convite) {
-            throw new NaoEncontradoException('Convite não encontrado. O link pode ter sido substituído por um mais novo.');
-        }
-
-        return [
-            'email'         => $convite['email_destinatario'],
-            'empresa'       => $convite['empresa_nome'],
-            'cargo'         => $convite['cargo_nome'],
-            'convidado_por' => $convite['convidado_por_nome'],
-            'mensagem'      => $convite['mensagem'] ?? null,
-            'expira_em'     => $convite['expira_em'],
-            'status'        => $convite['aceito_em'] !== null ? 'aceito' : (strtotime($convite['expira_em']) < time() ? 'expirado' : 'valido'),
-            // Com conta, a pessoa só confirma a senha para entrar em mais esta equipe.
-            'ja_tem_conta'  => (bool) $this->usuarioModel->where('LOWER(email)', mb_strtolower($convite['email_destinatario']))->first(),
-        ];
-    }
-
-    private function enviarEmailDoConvite(string $conviteId, string $tokenTexto): void
-    {
-        $convite = $this->conviteModel
-            ->select('convite.*, cargo.nome AS cargo_nome, usuario.nome AS convidado_por_nome, empresa.nome AS empresa_nome')
-            ->join('cargo', 'cargo.id = convite.cargo_id')
-            ->join('empresa', 'empresa.id = convite.empresa_id')
-            ->join('usuario', 'usuario.id = convite.convidado_por', 'left')
-            ->where('convite.id', $conviteId)
-            ->first();
-
-        $dados = [
-            'convidado_por' => $convite['convidado_por_nome'] ?: 'Alguém da equipe',
-            'empresa'       => $convite['empresa_nome'],
-            'cargo'         => $convite['cargo_nome'],
-            'mensagem'      => $convite['mensagem'] ?? null,
-            'link'          => self::linkDoConvite($tokenTexto),
-            'dias_validade' => intdiv(self::VALIDADE_CONVITE_SEGUNDOS, 86400),
-        ];
-
-        service('email')->enviar($convite['email_destinatario'], ModeloConvite::assunto($dados), ModeloConvite::html($dados));
+        return $this->convites->detalhes($tokenTexto);
     }
 
     /** Endereço da página de aceite no frontend (FRONTEND_URL no .env). */
     public static function linkDoConvite(string $tokenTexto): string
     {
-        return rtrim((string) env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/convite/' . $tokenTexto;
+        return ConvitesDaEquipe::linkDoConvite($tokenTexto);
     }
 
-    private function convitePendente(string $empresaId, string $conviteId): array
-    {
-        $convite = $this->conviteModel
-            ->where('id', $conviteId)
-            ->where('empresa_id', $empresaId)
-            ->where('aceito_em', null)
-            ->first();
-
-        if (! $convite) {
-            throw new NaoEncontradoException('Convite não encontrado ou já aceito.');
-        }
-
-        return $convite;
-    }
-
-    /** Formato devolvido pela API: nunca inclui o token nem o hash. */
-    private function resumoDoConvite(array $c): array
-    {
-        return [
-            'id'                 => $c['id'],
-            'email'              => $c['email_destinatario'],
-            'cargo_id'           => $c['cargo_id'],
-            'cargo_nome'         => $c['cargo_nome'] ?? null,
-            'convidado_por_nome' => $c['convidado_por_nome'] ?? null,
-            'mensagem'           => $c['mensagem'] ?? null,
-            'criado_em'          => $c['criado_em'] ?? null,
-            'expira_em'          => $c['expira_em'],
-            'expirado'           => strtotime($c['expira_em']) < time(),
-        ];
-    }
-
-    /**
-     * Aceita um convite: a pessoa entra na equipe com o cargo do convite.
-     * Sem conta, ela é criada com o nome e a senha informados; com conta (de
-     * outra equipe), basta a senha dela. O convite fica marcado como usado.
-     *
-     * @throws \DomainException se o token for inválido, expirado, já usado,
-     *         se a senha não conferir ou se os dados da conta nova forem inválidos
-     */
+    /** Ver Equipe\AceiteDeConvite::aceitar(). */
     public function aceitarConvite(string $tokenTexto, string $nome, string $senha): array
     {
-        $convite = $this->conviteModel
-            ->where('token_hash', hash('sha256', $tokenTexto))
-            ->first();
-
-        if (! $convite) {
-            throw new \DomainException('Convite inválido.');
-        }
-
-        if ($convite['aceito_em'] !== null) {
-            throw new \DomainException('Este convite já foi utilizado.');
-        }
-
-        if (strtotime($convite['expira_em']) < time()) {
-            throw new \DomainException('Este convite expirou.');
-        }
-
-        $email   = mb_strtolower($convite['email_destinatario']);
-        $usuario = $this->usuarioModel->where('LOWER(email)', $email)->first();
-
-        if ($usuario) {
-            if (! password_verify($senha, $usuario['senha_hash'])) {
-                throw new \DomainException('Senha incorreta. Use a senha da sua conta no Levit.');
-            }
-
-            if ($this->membroPorEmail($convite['empresa_id'], $email)) {
-                throw new \DomainException('Você já faz parte desta equipe. É só entrar.');
-            }
-        } else {
-            if (mb_strlen($nome) < 3) {
-                throw new \DomainException('Informe seu nome (pelo menos 3 letras).');
-            }
-
-            if (strlen($senha) < 8 || ! preg_match('/^(?=.*[A-Za-z])(?=.*\d).+$/', $senha)) {
-                throw new \DomainException('A senha precisa ter pelo menos 8 caracteres, com letras e números.');
-            }
-        }
-
-        $db = db_connect();
-        $db->transStart();
-
-        $usuarioId = $usuario['id'] ?? $this->usuarioModel->insert([
-            'nome'       => $nome,
-            'email'      => $convite['email_destinatario'],
-            'senha_hash' => password_hash($senha, PASSWORD_BCRYPT, ['cost' => 10]),
-        ]);
-
-        $this->membroModel->insert([
-            'usuario_id' => $usuarioId,
-            'empresa_id' => $convite['empresa_id'],
-            'cargo_id'   => $convite['cargo_id'],
-        ]);
-
-        $this->conviteModel->update($convite['id'], [
-            'aceito_em' => date('Y-m-d H:i:s'),
-        ]);
-
-        $db->transComplete();
-
-        if ($db->transStatus() === false) {
-            throw new \RuntimeException('Não foi possível aceitar o convite. Tente novamente.');
-        }
-
-        $nome = $usuario['nome'] ?? $nome;
-
-        $notificacoes = new NotificacaoService();
-        $notificacoes->notificarSemFalhar(
-            $convite['convidado_por'] ? [$convite['convidado_por']] : $notificacoes->administradores($convite['empresa_id']),
-            $convite['empresa_id'],
-            [
-                'tipo'     => 'convite_aceito',
-                'titulo'   => "{$nome} entrou na equipe",
-                'mensagem' => "Convite aceito por {$convite['email_destinatario']}.",
-                'link'     => '/team',
-            ]
-        );
-
-        // Ainda sem sessão: a própria pessoa aparece como autora.
-        AtividadeService::registrar('membro_entrou', "Entrou na equipe pelo convite ({$convite['email_destinatario']})", null, null, $convite['empresa_id'], $nome);
-
-        return [
-            'usuario' => $this->usuarioModel->find($usuarioId),
-            'empresa' => $this->empresaModel->find($convite['empresa_id']),
-        ];
-    }
-
-    /** A pessoa (pelo e-mail) dentro desta equipe, ou null. */
-    private function membroPorEmail(string $empresaId, string $email): ?array
-    {
-        return db_connect()->table('usuario_equipe')
-            ->where('empresa_id', $empresaId)
-            ->where('LOWER(email)', mb_strtolower($email))
-            ->get()->getRowArray();
-    }
-
-    /** A pessoa dentro desta equipe (com o cargo dela aqui), ou null. */
-    private function membroDaEquipe(string $empresaId, string $usuarioId): ?array
-    {
-        return db_connect()->table('usuario_equipe')
-            ->where('empresa_id', $empresaId)
-            ->where('id', $usuarioId)
-            ->get()->getRowArray();
+        return $this->aceite->aceitar($tokenTexto, $nome, $senha);
     }
 
     public function listarMembros(string $empresaId): array
     {
-        // criado_em = quando entrou nesta equipe (a conta pode ser mais antiga).
-        return db_connect()->table('usuario_equipe ue')
-            ->select('ue.id, ue.nome, ue.email, ue.criado_em, ue.cargo_id, cargo.nome AS cargo_nome')
-            ->join('cargo', 'cargo.id = ue.cargo_id')
-            ->where('ue.empresa_id', $empresaId)
-            ->orderBy('ue.criado_em', 'ASC')
-            ->get()->getResultArray();
+        return $this->membros->listar($empresaId);
     }
 
-    /**
-     * Nome de todos da empresa, para escolher o responsável de um item. Não
-     * exige permissão de ver a equipe (quem preenche uma tabela precisa
-     * escolher alguém) e por isso não devolve e-mail nem cargo.
-     */
+    /** Ver Equipe\MembrosDaEquipe::pessoas(). */
     public function listarPessoas(string $empresaId): array
     {
-        return db_connect()->table('usuario_equipe')
-            ->select('id, nome')
-            ->where('empresa_id', $empresaId)
-            ->orderBy('nome', 'ASC')
-            ->get()->getResultArray();
+        return $this->membros->pessoas($empresaId);
     }
 
     /**
@@ -397,7 +111,7 @@ class EquipeService
      */
     public function atualizarMembro(string $empresaId, string $usuarioId, array $dados): array
     {
-        $usuario = $this->membroDaEquipe($empresaId, $usuarioId);
+        $usuario = $this->membros->daEquipe($empresaId, $usuarioId);
 
         if (! $usuario) {
             throw new NaoEncontradoException('Membro não encontrado.');
@@ -446,12 +160,7 @@ class EquipeService
                 : "Alterou os dados de {$usuario['nome']}");
         }
 
-        return db_connect()->table('usuario_equipe ue')
-            ->select('ue.id, ue.nome, ue.email, ue.criado_em, ue.cargo_id, cargo.nome AS cargo_nome')
-            ->join('cargo', 'cargo.id = ue.cargo_id')
-            ->where('ue.empresa_id', $empresaId)
-            ->where('ue.id', $usuarioId)
-            ->get()->getRowArray();
+        return $this->membros->comCargo($empresaId, $usuarioId);
     }
 
     /**
@@ -460,7 +169,7 @@ class EquipeService
      */
     public function removerMembro(string $usuarioId, string $empresaId): void
     {
-        $usuario = $this->membroDaEquipe($empresaId, $usuarioId);
+        $usuario = $this->membros->daEquipe($empresaId, $usuarioId);
 
         if (! $usuario) {
             throw new NaoEncontradoException('Membro não encontrado.');
