@@ -12,9 +12,7 @@ final class AuthServiceTest extends CIUnitTestCase
 {
     private function paraBooleano(mixed $valor): bool
     {
-        $servico = new AuthService();
-
-        return (new ReflectionMethod($servico, 'paraBooleano'))->invoke($servico, $valor);
+        return (new ReflectionMethod(\App\Services\Auth\ContextoDeAutenticacao::class, 'paraBooleano'))->invoke(null, $valor);
     }
 
     public function testDocumentoFicaSoComDigitos(): void

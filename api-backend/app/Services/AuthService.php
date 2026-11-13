@@ -10,8 +10,14 @@ use App\Models\TokenRevogadoModel;
 use App\Models\CargoModel;
 use App\Models\PermissaoModel;
 use App\Models\CargoPermissaoModel;
-use App\Services\Email\ModeloRedefinicaoSenha;
+use App\Services\Auth\ContextoDeAutenticacao;
+use App\Services\Auth\RedefinicaoDeSenha;
 
+/**
+ * Cadastro, login, equipes da pessoa e sessão. A redefinição de senha fica
+ * em Auth\RedefinicaoDeSenha e a consulta do AuthFilter em
+ * Auth\ContextoDeAutenticacao; os métodos daqui repassam a chamada.
+ */
 class AuthService
 {
     protected EmpresaModel $empresaModel;
@@ -21,6 +27,8 @@ class AuthService
     protected PermissaoModel $permissaoModel;
     protected CargoPermissaoModel $cargoPermissaoModel;
     protected MembroModel $membroModel;
+    protected RedefinicaoDeSenha $redefinicao;
+    protected ContextoDeAutenticacao $contexto;
 
     public function __construct()
     {
@@ -31,6 +39,8 @@ class AuthService
         $this->permissaoModel      = new PermissaoModel();
         $this->cargoPermissaoModel = new CargoPermissaoModel();
         $this->membroModel         = new MembroModel();
+        $this->redefinicao         = new RedefinicaoDeSenha($this->usuarioModel);
+        $this->contexto            = new ContextoDeAutenticacao();
     }
 
     /**
@@ -201,7 +211,7 @@ class AuthService
         )->getResultArray();
 
         foreach ($equipes as &$equipe) {
-            $equipe['administrador_principal'] = $this->paraBooleano($equipe['administrador_principal']);
+            $equipe['administrador_principal'] = ContextoDeAutenticacao::paraBooleano($equipe['administrador_principal']);
         }
 
         return $equipes;
@@ -241,48 +251,10 @@ class AuthService
         ]);
     }
 
-    private const VALIDADE_REDEFINICAO_MINUTOS = 60;
-
-    /**
-     * Gera um link de redefinição e manda por e-mail. Não diz se o e-mail
-     * existe (quem chama sempre responde a mesma coisa): evita descobrir
-     * contas pelo formulário. O banco guarda só o hash do token.
-     */
+    /** Ver Auth\RedefinicaoDeSenha::solicitar(). */
     public function solicitarRedefinicaoDeSenha(string $email): void
     {
-        $usuario = $this->usuarioModel->where('LOWER(email)', mb_strtolower(trim($email)))->first();
-        if (! $usuario) {
-            return;
-        }
-
-        $token = bin2hex(random_bytes(32));
-        $this->usuarioModel->update($usuario['id'], [
-            'reset_hash'       => hash('sha256', $token),
-            'reset_expires_at' => date('Y-m-d H:i:s', time() + self::VALIDADE_REDEFINICAO_MINUTOS * 60),
-        ]);
-
-        $html = ModeloRedefinicaoSenha::html([
-            'nome'             => $usuario['nome'],
-            'link'             => rtrim((string) env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/reset-password?token=' . $token,
-            'minutos_validade' => self::VALIDADE_REDEFINICAO_MINUTOS,
-        ]);
-
-        // O envio acontece depois da resposta: se fosse antes, a resposta para
-        // um e-mail cadastrado demoraria mais que para um inexistente, e isso
-        // denunciaria quem tem conta. Com PHP-FPM a conexão fecha antes do envio.
-        $email = $usuario['email'];
-        register_shutdown_function(static function () use ($email, $html) {
-            if (function_exists('fastcgi_finish_request')) {
-                fastcgi_finish_request();
-            }
-
-            try {
-                service('email')->enviar($email, ModeloRedefinicaoSenha::ASSUNTO, $html);
-            } catch (\Throwable $e) {
-                // A resposta ao usuário é sempre a mesma; a falha fica registrada para quem administra.
-                log_message('error', 'Falha ao enviar redefinição de senha: {erro}', ['erro' => $e->getMessage()]);
-            }
-        });
+        $this->redefinicao->solicitar($email);
     }
 
     /**
@@ -292,123 +264,23 @@ class AuthService
      */
     public function redefinirSenha(string $token, string $senha): void
     {
-        $usuario = $this->usuarioModel
-            ->where('reset_hash', hash('sha256', $token))
-            ->where('reset_expires_at >', date('Y-m-d H:i:s'))
-            ->first();
-
-        if (! $usuario) {
-            throw new \DomainException('Este link não vale mais. Peça um novo em "Esqueceu a senha?".');
-        }
-
-        $campos = [
-            'senha_hash'       => password_hash($senha, PASSWORD_BCRYPT, ['cost' => 10]),
-            'reset_hash'       => null,
-            'reset_expires_at' => null,
-        ];
-        // Derruba as sessões abertas: tokens emitidos antes disso deixam de valer.
-        if (self::temColunaSenhaAlteradaEm()) {
-            $campos['senha_alterada_em'] = date('Y-m-d H:i:s');
-        }
-        $this->usuarioModel->update($usuario['id'], $campos);
+        $this->redefinicao->redefinir($token, $senha);
     }
 
     /**
-     * Tudo o que o filtro de autenticação precisa, numa única ida ao banco:
-     * se o token foi revogado, o cargo, a flag de acesso total, as permissões
-     * do cargo, o nível do cargo em cada tabela e quando a senha mudou pela
-     * última vez. Com banco remoto, cada consulta a menos é uma volta de rede
-     * a menos em toda requisição (os níveis evitam mais uma consulta em toda
-     * rota de tabela).
-     *
-     * Retorna `null` se o usuário não existir mais ou não fizer mais parte
-     * da equipe do token (foi removido dela).
+     * Ver Auth\ContextoDeAutenticacao::buscar().
      *
      * @return array{revogado: bool, cargo_id: string, acesso_total: bool, permissoes: string[], niveis: array<string, string>, senha_alterada_em: ?string}|null
      */
     public function contextoDeAutenticacao(string $usuarioId, string $empresaId, string $jti): ?array
     {
-        // Token sem equipe válida não chega ao banco (o cast para UUID quebraria a consulta).
-        $uuid = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
-        if (! preg_match($uuid, $usuarioId) || ! preg_match($uuid, $empresaId)) {
-            return null;
-        }
-
-        // Enquanto a migração da coluna não rodou, a consulta segue sem ela.
-        $senhaAlterada = self::temColunaSenhaAlteradaEm() ? 'u.senha_alterada_em' : 'NULL';
-
-        $linha = db_connect()->query(
-            // O criador da empresa (administrador principal) tem sempre acesso
-            // total, mesmo que o cargo dele tenha perdido a marca: senão a
-            // empresa pode ficar sem ninguém capaz de administrá-la.
-            // O cargo é o da pessoa na equipe do token: em outra equipe ela pode ter outro.
-            "SELECT m.cargo_id, (c.acesso_total OR e.administrador_principal_id = u.id) AS acesso_total,
-                    {$senhaAlterada} AS senha_alterada_em,
-                    EXISTS (SELECT 1 FROM token_revogado tr WHERE tr.jti = ?) AS revogado,
-                    (SELECT COALESCE(json_agg(p.codigo), '[]')
-                       FROM cargo_permissao cp JOIN permissao p ON p.id = cp.permissao_id
-                      WHERE cp.cargo_id = m.cargo_id) AS permissoes,
-                    (SELECT COALESCE(json_object_agg(cmp.modulo_id, cmp.nivel), '{}')
-                       FROM cargo_modulo_permissao cmp
-                      WHERE cmp.cargo_id = m.cargo_id) AS niveis
-               FROM usuario u
-               JOIN membro m ON m.usuario_id = u.id AND m.empresa_id = ?
-               JOIN cargo c ON c.id = m.cargo_id
-               JOIN empresa e ON e.id = m.empresa_id
-              WHERE u.id = ?",
-            [$jti, $empresaId, $usuarioId]
-        )->getRowArray();
-
-        if (! $linha) {
-            return null;
-        }
-
-        return [
-            'revogado'          => $this->paraBooleano($linha['revogado']),
-            'cargo_id'          => $linha['cargo_id'],
-            'acesso_total'      => $this->paraBooleano($linha['acesso_total'] ?? false),
-            'permissoes'        => json_decode((string) $linha['permissoes'], true) ?: [],
-            'niveis'            => json_decode((string) $linha['niveis'], true) ?: [],
-            'senha_alterada_em' => $linha['senha_alterada_em'],
-        ];
+        return $this->contexto->buscar($usuarioId, $empresaId, $jti);
     }
 
-    /**
-     * A coluna `usuario.senha_alterada_em` vem de uma migração nova. Até ela
-     * rodar, o código não pode depender dela (senão ninguém autentica). A
-     * resposta fica em cache para não custar uma consulta por requisição.
-     */
+    /** Ver Auth\ContextoDeAutenticacao::temColunaSenhaAlteradaEm(). */
     public static function temColunaSenhaAlteradaEm(): bool
     {
-        $emCache = cache('schema_usuario_senha_alterada_em');
-        if ($emCache !== null) {
-            return $emCache === 1;
-        }
-
-        $existe = db_connect()->fieldExists('senha_alterada_em', 'usuario');
-        // Se ainda não existe, confere de novo em 10 minutos (a migração pode rodar a qualquer hora).
-        cache()->save('schema_usuario_senha_alterada_em', $existe ? 1 : 0, $existe ? DAY : 600);
-
-        return $existe;
-    }
-
-
-    /**
-     * Normaliza um valor BOOLEAN vindo do banco para bool do PHP.
-     *
-     * Existe porque o driver Postgre pode devolver colunas BOOLEAN como
-     * bool nativo, inteiro (0/1) ou string curta ('t'/'f') dependendo do
-     * modo de fetch — filter_var(FILTER_VALIDATE_BOOLEAN) não cobre o
-     * caso 't'/'f', então tratamos manualmente para não depender de um
-     * formato específico de driver/config.
-     */
-    private function paraBooleano(mixed $valor): bool
-    {
-        if (is_bool($valor)) {
-            return $valor;
-        }
-
-        return in_array($valor, [1, '1', 't', 'true'], true);
+        return ContextoDeAutenticacao::temColunaSenhaAlteradaEm();
     }
 
     /**
