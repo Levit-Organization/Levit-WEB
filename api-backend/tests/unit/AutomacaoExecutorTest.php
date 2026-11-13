@@ -80,11 +80,12 @@ final class AutomacaoExecutorTest extends CIUnitTestCase
         );
 
         // Campos e módulo pré-carregados: os testes não precisam de banco.
-        (new ReflectionProperty($executor, 'campos'))->setValue($executor, [
+        $variaveis = (new ReflectionProperty($executor, 'variaveis'))->getValue($executor);
+        (new ReflectionProperty($variaveis, 'campos'))->setValue($variaveis, [
             self::MODULO => ['campo-nome' => 'Nome', 'campo-email' => 'Email', 'campo-tags' => 'Tags', 'campo-status' => 'Status'],
             'mod-2'      => ['d-titulo' => 'Título', 'd-origem' => 'Origem', 'd-lead' => 'Lead'],
         ]);
-        (new ReflectionProperty($executor, 'modulos'))->setValue($executor, [
+        (new ReflectionProperty($variaveis, 'modulos'))->setValue($variaveis, [
             self::MODULO => ['id' => self::MODULO, 'empresa_id' => 'emp-1', 'tipo' => 'dados', 'nome' => 'Leads'],
             'mod-2'      => ['id' => 'mod-2', 'empresa_id' => 'emp-1', 'tipo' => 'dados', 'nome' => 'Tarefas'],
             'vaga-1'     => ['id' => 'vaga-1', 'empresa_id' => 'emp-1', 'tipo' => 'recrutamento', 'nome' => 'Dev Front'],
@@ -432,16 +433,17 @@ final class AutomacaoExecutorTest extends CIUnitTestCase
         $executor = $this->executor([], $notificacoes);
         $uuid     = '0190a000-0000-7000-8000-000000000001';
 
-        $campos = (new ReflectionProperty($executor, 'campos'))->getValue($executor);
+        $variaveis = (new ReflectionProperty($executor, 'variaveis'))->getValue($executor);
+        $campos = (new ReflectionProperty($variaveis, 'campos'))->getValue($variaveis);
         $campos['mod-3'] = ['t-tarefa' => 'Tarefa', 't-resp' => 'Responsável', 't-prazo' => 'Prazo'];
-        (new ReflectionProperty($executor, 'campos'))->setValue($executor, $campos);
-        (new ReflectionProperty($executor, 'tipos'))->setValue($executor, [
+        (new ReflectionProperty($variaveis, 'campos'))->setValue($variaveis, $campos);
+        (new ReflectionProperty($variaveis, 'tipos'))->setValue($variaveis, [
             'mod-3' => ['t-tarefa' => 'texto', 't-resp' => 'responsavel', 't-prazo' => 'prazo'],
         ]);
-        $modulos = (new ReflectionProperty($executor, 'modulos'))->getValue($executor);
+        $modulos = (new ReflectionProperty($variaveis, 'modulos'))->getValue($variaveis);
         $modulos['mod-3'] = ['id' => 'mod-3', 'empresa_id' => 'emp-1', 'tipo' => 'dados', 'nome' => 'Obrigações'];
-        (new ReflectionProperty($executor, 'modulos'))->setValue($executor, $modulos);
-        (new ReflectionProperty($executor, 'pessoas'))->setValue($executor, [
+        (new ReflectionProperty($variaveis, 'modulos'))->setValue($variaveis, $modulos);
+        (new ReflectionProperty($variaveis, 'pessoas'))->setValue($variaveis, [
             $uuid => ['id' => $uuid, 'nome' => 'Ana Souza', 'email' => 'ana@escritorio.com'],
         ]);
 
