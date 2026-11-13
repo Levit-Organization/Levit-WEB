@@ -12,15 +12,15 @@ final class ModuloColunasTest extends CIUnitTestCase
 {
     private function validar(array $campo): void
     {
-        $servico = new ModuloService();
-        (new ReflectionMethod($servico, 'validarCampo'))->invoke($servico, $campo, 'emp-1', 'cargo-1', true);
+        $colunas = (new ReflectionProperty(ModuloService::class, 'colunas'))->getValue(new ModuloService());
+        (new ReflectionMethod($colunas, 'validar'))->invoke($colunas, $campo, 'emp-1', 'cargo-1', true);
     }
 
     private function paraGravar(array $campo, int $ordem = 0): array
     {
-        $servico = new ModuloService();
+        $colunas = (new ReflectionProperty(ModuloService::class, 'colunas'))->getValue(new ModuloService());
 
-        return (new ReflectionMethod($servico, 'colunaParaGravar'))->invoke($servico, 'mod-1', $campo, $ordem);
+        return (new ReflectionMethod($colunas, 'paraGravar'))->invoke($colunas, 'mod-1', $campo, $ordem);
     }
 
     private function erroAoValidar(array $campo): string
