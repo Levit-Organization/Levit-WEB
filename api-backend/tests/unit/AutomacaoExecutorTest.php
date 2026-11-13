@@ -489,4 +489,96 @@ final class AutomacaoExecutorTest extends CIUnitTestCase
             'mod-3'
         );
     }
+
+    public function testPassoDoWebhookResumeODestino(): void
+    {
+        $resultado = $this->executor([new Response(200)])
+            ->executar($this->automacao(), [$this->webhook()], [], 'criacao');
+
+        $passo = $resultado['passos'][0];
+        $this->assertSame(
+            ['indice' => 0, 'tipo' => 'webhook', 'status' => 'sucesso', 'mensagem' => 'Outro sistema avisado: https://exemplo.com/hook.'],
+            array_diff_key($passo, ['duracao_ms' => 0])
+        );
+        $this->assertIsInt($passo['duracao_ms']);
+        $this->assertIsInt($resultado['duracao_ms']);
+    }
+
+    public function testWebhookEnviaOsDadosEOEventoNoCabecalho(): void
+    {
+        $historico = [];
+        $pilha     = HandlerStack::create(new MockHandler([new Response(200)]));
+        $pilha->push(\GuzzleHttp\Middleware::history($historico));
+        $executor = new AutomacaoExecutor(
+            new Client(['handler' => $pilha]),
+            $this->notificacoesFalsas(),
+            $this->registrosFalsos(),
+            new \App\Services\Automacao\DestinoWebhook(static fn () => ['93.184.216.34'])
+        );
+
+        $executor->executar($this->automacao(), [$this->webhook()], ['campo-nome' => 'Ana'], 'atualizacao');
+
+        $requisicao = $historico[0]['request'];
+        $this->assertSame('POST', $requisicao->getMethod());
+        $this->assertSame('atualizacao', $requisicao->getHeaderLine('X-Levit-Evento'));
+        $this->assertSame('Levit-Automacoes/1.0', $requisicao->getHeaderLine('User-Agent'));
+        $this->assertSame('{"campo-nome":"Ana"}', (string) $requisicao->getBody());
+        $this->assertFalse($historico[0]['options']['allow_redirects']);
+    }
+
+    public function testWebhook408EhRetentavelComAMensagemDoStatus(): void
+    {
+        $resultado = $this->executor([new Response(408)])
+            ->executar($this->automacao(), [$this->webhook()], [], 'criacao');
+
+        $this->assertTrue($resultado['retentavel']);
+        $this->assertSame('O webhook respondeu 408.', $resultado['erro']);
+        $this->assertSame('O webhook respondeu 408.', $resultado['passos'][0]['mensagem']);
+    }
+
+    public function testTipoDeAcaoDesconhecidoEhFalhaPermanente(): void
+    {
+        $resultado = $this->executor()->executar($this->automacao(), [['tipo' => 'sms', 'configuracao' => []]], [], 'criacao');
+
+        $this->assertSame('erro', $resultado['status']);
+        $this->assertFalse($resultado['retentavel']);
+        $this->assertSame('Tipo de ação desconhecido: sms.', $resultado['erro']);
+    }
+
+    public function testNotificacaoParaUmaPessoaNoSingular(): void
+    {
+        $resultado = $this->executor([], $this->notificacoesFalsas(['u1']))->executar(
+            $this->automacao(),
+            [['tipo' => 'notificacao', 'configuracao' => ['titulo' => 'Oi']]],
+            [],
+            'criacao'
+        );
+
+        $this->assertSame('Notificação enviada para 1 pessoa.', $resultado['passos'][0]['mensagem']);
+    }
+
+    public function testAtualizarCampoComValorVazioEsvaziaAColuna(): void
+    {
+        $resultado = $this->executor()->executar(
+            $this->automacao(),
+            [['tipo' => 'atualizar_campo', 'configuracao' => ['campo_id' => 'campo-status', 'valor' => '']]],
+            [],
+            'atualizacao',
+            0,
+            ['registro_id' => 'reg-1']
+        );
+
+        $this->assertSame('Coluna Status esvaziada.', $resultado['passos'][0]['mensagem']);
+    }
+
+    public function testPreviaDeAtualizarCampoEscondeOIdDaColuna(): void
+    {
+        $simulacao = $this->executor()->simular(
+            $this->automacao(),
+            [['tipo' => 'atualizar_campo', 'configuracao' => ['campo_id' => 'campo-status', 'valor' => 'Oi {{nome}}']]],
+            ['campo-nome' => 'Ana']
+        );
+
+        $this->assertSame(['tipo' => 'atualizar_campo', 'campo' => 'Status', 'valor' => 'Oi Ana'], $simulacao['passos'][0]['previa']);
+    }
 }
