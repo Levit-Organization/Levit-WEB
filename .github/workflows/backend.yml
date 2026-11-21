@@ -43,7 +43,7 @@ jobs:
         run: composer validate --no-check-publish
 
       - name: Cache do Composer
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.composer/cache/files
           key: composer-${{ matrix.php }}-${{ hashFiles('api-backend/composer.lock') }}
