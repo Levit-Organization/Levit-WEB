@@ -29,7 +29,7 @@ jobs:
         php: ['8.2', '8.5']
     name: PHP ${{ matrix.php }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -95,7 +95,7 @@ jobs:
       JWT_SECRET_KEY: segredo-somente-para-o-ci-0123456789abcdef0123456789abcdef
       EMAIL_PROVIDER: log
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: shivammathur/setup-php@v2
         with:
