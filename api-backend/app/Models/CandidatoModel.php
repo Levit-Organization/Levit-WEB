@@ -15,8 +15,11 @@ class CandidatoModel extends BaseModel
         'nome',
         'email',
         'telefone',
-        'cargo_desejado',
         'mensagem',
+        'curriculo_chave',
+        'curriculo_nome',
+        'curriculo_mime',
+        'curriculo_tamanho',
     ];
 
     protected $useTimestamps = false;

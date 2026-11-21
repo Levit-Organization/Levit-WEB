@@ -8,7 +8,20 @@ use App\Models\EmpresaModel;
 use App\Models\FaseRecrutamentoModel;
 use App\Models\HistoricoFaseModel;
 use App\Models\ModuloModel;
+use App\Services\Recrutamento\Curriculo;
+use App\Services\Recrutamento\Inscricao;
+use App\Services\Recrutamento\Kanban;
+use App\Services\Recrutamento\MudancaDeEtapa;
+use CodeIgniter\HTTP\Files\UploadedFile;
 
+/**
+ * Candidatos das vagas (módulos de recrutamento): candidatura pública,
+ * cadastro pela equipe, kanban por vaga e geral, mudança de etapa e currículo.
+ *
+ * A entrada do candidato fica em Recrutamento\Inscricao, a mudança de etapa em
+ * Recrutamento\MudancaDeEtapa, o kanban em Recrutamento\Kanban e o arquivo
+ * em Recrutamento\Curriculo.
+ */
 class CandidatoService
 {
     protected EmpresaModel $empresaModel;
@@ -29,10 +42,30 @@ class CandidatoService
     }
 
     /**
+     * O que a página pública de candidatura mostra: o nome da vaga e da empresa.
+     * Vaga sem etapa ainda não recebe candidatos, então também não aparece.
+     */
+    public function vagaPublica(string $moduloId): array
+    {
+        $modulo = $this->moduloModel->where('id', $moduloId)->where('tipo', 'recrutamento')->first();
+
+        if (! $modulo || ! $this->faseRecrutamentoModel->where('modulo_id', $moduloId)->first()) {
+            throw new NaoEncontradoException('Vaga não encontrada ou não está recebendo candidaturas.');
+        }
+
+        $empresa = $this->empresaModel->select('nome')->find($modulo['empresa_id']);
+
+        return [
+            'vaga'    => $modulo['nome'],
+            'empresa' => $empresa['nome'] ?? null,
+        ];
+    }
+
+    /**
      * Candidatura pública — sem autenticação, sem cargo, sem checagem
      * de nível (não se aplica: quem chama isso não está logado).
      */
-    public function criarCandidatura(string $moduloId, array $dados): array
+    public function criarCandidatura(string $moduloId, array $dados, ?UploadedFile $curriculo = null): array
     {
         $modulo = $this->moduloModel->where('id', $moduloId)->where('tipo', 'recrutamento')->first();
 
@@ -40,27 +73,63 @@ class CandidatoService
             throw new NaoEncontradoException('Vaga não encontrada.');
         }
 
-        if ($this->candidatoModel->where('modulo_id', $moduloId)->where('email', $dados['email'])->first()) {
-            throw new \DomainException('Você já se candidatou para esta vaga anteriormente.');
+        $candidato = $this->inserirCandidato($modulo, $dados, $curriculo, 'Você já se candidatou para esta vaga anteriormente.');
+
+        // Candidaturas seguidas na mesma vaga viram uma notificação só.
+        $notificacoes = new NotificacaoService();
+        $notificacoes->notificarSemFalhar(
+            $notificacoes->usuariosComAcessoAoModulo($moduloId, $modulo['empresa_id']),
+            $modulo['empresa_id'],
+            [
+                'tipo'            => 'candidatura',
+                'titulo'          => "Nova candidatura em {$modulo['nome']}",
+                'titulo_agrupado' => "{n} novas candidaturas em {$modulo['nome']}",
+                'mensagem'        => "{$dados['nome']} se candidatou.",
+                'link'            => '/recrutamento',
+                'agrupador'       => "candidatura:{$moduloId}",
+            ]
+        );
+
+        return $candidato;
+    }
+
+    /** Candidato registrado por alguém da equipe (quem tem "editar" na vaga). */
+    public function adicionarCandidato(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $dados, ?UploadedFile $curriculo = null): array
+    {
+        $this->confirmarVagaDaEmpresa($moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
+
+        $modulo    = $this->moduloModel->find($moduloId);
+        $candidato = $this->inserirCandidato($modulo, $dados, $curriculo, 'Já existe um candidato com esse e-mail nesta vaga.');
+
+        AtividadeService::registrar('candidato_adicionado', 'Adicionou o candidato “' . $dados['nome'] . '”', $moduloId);
+
+        return $candidato;
+    }
+
+    public function baixarCurriculo(string $candidatoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
+    {
+        $candidato = $this->buscarCandidatoBruto($candidatoId, $moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
+
+        if (empty($candidato['curriculo_chave'])) {
+            throw new NaoEncontradoException('Este candidato não enviou currículo.');
         }
 
-        $primeiraFase = $this->faseRecrutamentoModel->where('modulo_id', $moduloId)->orderBy('ordem', 'ASC')->first();
+        return [
+            'conteudo'      => Curriculo::obter($candidato['curriculo_chave']),
+            'nome_original' => $candidato['curriculo_nome'] ?: 'curriculo',
+            'tipo_mime'     => $candidato['curriculo_mime'] ?: 'application/octet-stream',
+        ];
+    }
 
-        if (! $primeiraFase) {
-            throw new \RuntimeException('Esta vaga ainda não tem nenhuma fase configurada.');
-        }
+    /** Grava o candidato na primeira etapa da vaga (ver Recrutamento\Inscricao). */
+    private function inserirCandidato(array $modulo, array $dados, ?UploadedFile $curriculo, string $mensagemDuplicado): array
+    {
+        $candidatoId = (new Inscricao($this->candidatoModel, $this->faseRecrutamentoModel))
+            ->inserir($modulo, $dados, $curriculo, $mensagemDuplicado);
 
-        $candidatoId = $this->candidatoModel->insert([
-            'modulo_id'      => $moduloId,
-            'fase_atual_id'  => $primeiraFase['id'],
-            'nome'           => $dados['nome'],
-            'email'          => $dados['email'],
-            'telefone'       => $dados['telefone'] ?? null,
-            'cargo_desejado' => $dados['cargo_desejado'] ?? null,
-            'mensagem'       => $dados['mensagem'] ?? null,
-        ]);
-
-        return $this->buscarCandidato($candidatoId, $moduloId, $modulo['empresa_id']);
+        return $this->buscarCandidato($candidatoId, $modulo['id'], $modulo['empresa_id']);
     }
 
     public function listarKanban(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
@@ -71,20 +140,7 @@ class CandidatoService
         $fases      = $this->faseRecrutamentoModel->where('modulo_id', $moduloId)->orderBy('ordem', 'ASC')->findAll();
         $candidatos = $this->candidatoModel->where('modulo_id', $moduloId)->orderBy('criado_em', 'ASC')->findAll();
 
-        $kanban = [];
-        foreach ($fases as $fase) {
-            $kanban[$fase['id']] = ['fase' => $fase['nome'], 'total' => 0, 'candidatos' => []];
-        }
-
-        foreach ($candidatos as $candidato) {
-            $fase = $candidato['fase_atual_id'];
-            if (isset($kanban[$fase])) {
-                $kanban[$fase]['candidatos'][] = $candidato;
-                $kanban[$fase]['total']++;
-            }
-        }
-
-        return $kanban;
+        return Kanban::porEtapa($fases, $candidatos);
     }
 
     /**
@@ -115,33 +171,10 @@ class CandidatoService
         $vagaIds       = array_column($vagas, 'id');
         $nomeVagaPorId = array_column($vagas, 'nome', 'id');
 
-        $fases         = $this->faseRecrutamentoModel->whereIn('modulo_id', $vagaIds)->orderBy('ordem', 'ASC')->findAll();
-        $nomeFasePorId = array_column($fases, 'nome', 'id');
-
-        $kanban = [];
-        foreach ($fases as $fase) {
-            $chave = strtolower(trim($fase['nome']));
-            if (! isset($kanban[$chave])) {
-                $kanban[$chave] = ['fase' => $fase['nome'], 'total' => 0, 'candidatos' => []];
-            }
-        }
-
+        $fases      = $this->faseRecrutamentoModel->whereIn('modulo_id', $vagaIds)->orderBy('ordem', 'ASC')->findAll();
         $candidatos = $this->candidatoModel->whereIn('modulo_id', $vagaIds)->orderBy('criado_em', 'ASC')->findAll();
 
-        foreach ($candidatos as $candidato) {
-            $nomeFase = $nomeFasePorId[$candidato['fase_atual_id']] ?? null;
-            $chave    = $nomeFase ? strtolower(trim($nomeFase)) : 'outros';
-
-            if (! isset($kanban[$chave])) {
-                $kanban[$chave] = ['fase' => $nomeFase ?? 'Outros', 'total' => 0, 'candidatos' => []];
-            }
-
-            $candidato['vaga'] = $nomeVagaPorId[$candidato['modulo_id']] ?? null;
-            $kanban[$chave]['candidatos'][] = $candidato;
-            $kanban[$chave]['total']++;
-        }
-
-        return $kanban;
+        return Kanban::porNomeDaEtapa($fases, $candidatos, $nomeVagaPorId);
     }
 
     public function moverFase(string $candidatoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $novaFaseId, string $usuarioId): array
@@ -164,23 +197,7 @@ class CandidatoService
             throw new \DomainException('O candidato já está nessa fase.');
         }
 
-        $db = db_connect();
-        $db->transStart();
-
-        $this->candidatoModel->update($candidatoId, ['fase_atual_id' => $novaFaseId]);
-
-        $this->historicoFaseModel->insert([
-            'candidato_id'     => $candidatoId,
-            'fase_anterior_id' => $candidato['fase_atual_id'],
-            'fase_nova_id'     => $novaFaseId,
-            'alterado_por'     => $usuarioId,
-        ]);
-
-        $db->transComplete();
-
-        if ($db->transStatus() === false) {
-            throw new \RuntimeException('Não foi possível mover o candidato. Tente novamente.');
-        }
+        $this->mudancaDeEtapa()->gravar($candidatoId, $candidato, $moduloId, $novaFaseId, $usuarioId);
 
         return $this->buscarCandidato($candidatoId, $moduloId, $empresaId);
     }
@@ -198,24 +215,18 @@ class CandidatoService
             throw new NaoEncontradoException('Candidato não encontrado.');
         }
 
-        $nomeFaseNormalizado = strtolower(trim($nomeFase));
-        $faseAlvo = null;
-
-        foreach ($this->faseRecrutamentoModel->where('modulo_id', $candidato['modulo_id'])->findAll() as $fase) {
-            if (strtolower(trim($fase['nome'])) === $nomeFaseNormalizado) {
-                $faseAlvo = $fase;
-                break;
-            }
-        }
-
-        if ($faseAlvo === null) {
-            throw new NaoEncontradoException("A vaga deste candidato não possui uma fase chamada '{$nomeFase}'.");
-        }
+        $faseAlvo = $this->mudancaDeEtapa()->etapaPeloNome($candidato['modulo_id'], $nomeFase);
 
         return $this->moverFase($candidatoId, $candidato['modulo_id'], $empresaId, $cargoId, $acessoTotal, $faseAlvo['id'], $usuarioId);
     }
 
     public function buscarCandidato(string $candidatoId, string $moduloId, string $empresaId): array
+    {
+        return Kanban::apresentar($this->buscarCandidatoBruto($candidatoId, $moduloId, $empresaId));
+    }
+
+    /** Linha do banco como está, com a chave do currículo (uso interno). */
+    private function buscarCandidatoBruto(string $candidatoId, string $moduloId, string $empresaId): array
     {
         $candidato = $this->candidatoModel
             ->select('candidato.*')
@@ -242,10 +253,14 @@ class CandidatoService
 
     public function excluirCandidato(string $candidatoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
     {
-        $this->buscarCandidato($candidatoId, $moduloId, $empresaId);
+        $candidato = $this->buscarCandidatoBruto($candidatoId, $moduloId, $empresaId);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'editar');
 
         $this->candidatoModel->delete($candidatoId);
+
+        if (! empty($candidato['curriculo_chave'])) {
+            Curriculo::excluir($candidato['curriculo_chave']);
+        }
     }
 
     private function confirmarVagaDaEmpresa(string $moduloId, string $empresaId): void
@@ -259,5 +274,10 @@ class CandidatoService
         if (! $existe) {
             throw new NaoEncontradoException('Vaga não encontrada.');
         }
+    }
+
+    private function mudancaDeEtapa(): MudancaDeEtapa
+    {
+        return new MudancaDeEtapa($this->candidatoModel, $this->faseRecrutamentoModel, $this->historicoFaseModel);
     }
 }

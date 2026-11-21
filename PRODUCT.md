@@ -4,7 +4,7 @@
 
 product
 
-Nota: o app (dashboard, módulos, kanban, equipe) é a superfície primária e segue
+Nota: o app (início, tabelas, quadros, equipe, automações) é a superfície primária e segue
 registro de produto. A landing page pública (`/`, `src/pages/Landing.jsx`) é uma
 exceção deliberada — uma superfície de marketing dentro do mesmo app — e deve
 ser tratada com os critérios de página de marca (ver `reference/brand.md`)
@@ -16,16 +16,39 @@ Times operacionais de pequenas e médias empresas que querem montar seu próprio
 sistema (tabelas, formulários, fluxos) sem depender de desenvolvimento sob
 demanda. Chegam via a landing pública, geralmente comparando com planilhas ou
 ferramentas genéricas, decidindo se vale criar uma conta. Depois de dentro,
-usam o produto no dia a dia para cadastrar módulos, gerenciar candidatos em um
-Kanban de recrutamento, gerenciar equipe/permissões e configurar automações.
+usam o produto no dia a dia para organizar tabelas, acompanhar quadros de
+etapas (como o de recrutamento), gerenciar a equipe e os acessos, e configurar
+automações.
 
 ## Product Purpose
 
-O Levit é uma plataforma para montar sistemas internos sob medida: módulos
-customizáveis (tabelas/formulários com campos definidos pelo usuário),
-recrutamento em Kanban, gestão de equipe com permissões por módulo, e
-automações. Sucesso = o visitante entende em segundos que pode construir o
-próprio sistema sem código, e converte em cadastro (`/register`).
+**Identidade (decidida em 10/2026): o Levit centraliza o trabalho da equipe num
+lugar só.** Tabelas, quadros, avisos, e-mails e acessos da equipe juntos, em vez
+de espalhados entre planilhas, mensagens e caixa de entrada. Recrutamento é um
+quadro pronto, um dos usos, e não a identidade do produto.
+
+Sucesso = o visitante entende em segundos que pode organizar a empresa inteira
+num lugar só, sem código, e converte em cadastro (`/register`).
+
+## Glossário (obrigatório em toda superfície)
+
+Mesmas palavras na landing, no menu, nos títulos, nos estados vazios, nos
+e-mails e nas mensagens de erro (inclusive as que vêm da API). Nomes de código,
+rotas e tabelas do banco continuam como estão (`modulo`, `registro`, `campo`).
+
+| Conceito (código) | Palavra na tela |
+|---|---|
+| módulo | **Tabela** |
+| campo | **Coluna** |
+| registro | **Item** |
+| kanban / funil | **Quadro** |
+| gatilho / condição / ação | **Quando / Se / Então** |
+| nível visualizar / editar / gerenciar | **Só ver / Editar / Tudo** |
+| automação | **Automação** |
+
+Português do Brasil em tudo ("senha", nunca "palavra-passe"). Sem termos que
+excluam o público (ex.: "e-mail corporativo"). Textos de exemplo e estados
+vazios falam da operação inteira (clientes, pedidos, estoque), não só de RH.
 
 ## Brand Personality
 

@@ -1,0 +1,7 @@
+# <tipo>(<escopo>): <resumo no imperativo, até ~72 caracteres>
+#
+# Tipos: feat, fix, refactor, test, docs, ci, chore, perf, style
+# Escopos comuns: auth, equipes, modulos, registros, recrutamento,
+#                 financeiro, automacoes, relatorios, backup, front, api
+#
+# Corpo (opcional): o PORQUÊ da mudança, não o como.

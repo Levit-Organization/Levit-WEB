@@ -1,0 +1,65 @@
+@startuml Navegacao_Equipe_Web_Mobile
+skinparam style strictuml
+top to bottom direction
+
+package "Interfaces do Usuário (Frontend)" {
+    package "Plataforma Web (React / Vite)" {
+        rectangle "Dashboard.jsx\n(Início)" as WebInicio
+        rectangle "SeletorDeEquipe.jsx\n(Menu lateral: trocar\nou criar equipe)" as WebSeletor
+        rectangle "TeamManagement.jsx\n(Aba Colaboradores:\nmembros e convites)" as WebColaboradores
+        rectangle "TeamManagement.jsx\n(Aba Cargos e permissões:\ncargos e nível por tabela)" as WebCargos
+        rectangle "AceitarConvite.jsx\n(Link do e-mail de convite)" as WebConvite
+    }
+
+    package "Plataforma Mobile (Android / Kotlin)" {
+        rectangle "DashboardActivity\n(Início)" as MobileInicio
+        rectangle "EquipeActivity\n(Aba Colaboradores:\nmembros e convites)" as MobileColaboradores
+        rectangle "EquipeActivity\n(Aba Cargos e permissões:\ncargos e nível por tabela)" as MobileCargos
+    }
+}
+
+package "Camada de Serviços & Controle (Backend)" {
+    package "Backend Web (PHP / CodeIgniter 4 - API REST)" {
+        usecase "EquipeController\nconvidar() / listarMembros()\natualizarMembro() / removerMembro()\nreenviarConvite() / cancelarConvite()\naceitarConvite()" as PHPEquipe
+        usecase "CargoController\nlistar() / criar() / atualizar() / excluir()" as PHPCargo
+        usecase "CargoModuloPermissaoController\nlistar() / definir() / remover()" as PHPNivel
+        usecase "AuthController\nequipes() / trocarEquipe() / criarEquipe()" as PHPAuth
+    }
+
+    package "Backend Mobile (Kotlin / API Rest)" {
+        usecase "EquipeApi\nmembros() / convidar() / atualizarMembro()\nremoverMembro() / convites() / reenviarConvite()\ncargos() / criarCargo() / definirNivel()" as KotlinEquipe
+    }
+}
+
+database "Banco de Dados Unificado\n(PostgreSQL)" as DB
+
+' Fluxos Web (Frontend <-> Backend <-> BD)
+WebSeletor --> PHPAuth : GET /auth/equipes\nPOST /auth/trocar-equipe\nPOST /auth/equipes
+WebColaboradores --> PHPEquipe : GET /equipe\nPOST /equipe/convidar\nPUT / DELETE /equipe/{id}
+WebCargos --> PHPCargo : GET / POST / PUT /cargos
+WebCargos --> PHPNivel : PUT / DELETE\n/cargos/{id}/modulos/{modulo}
+WebConvite --> PHPEquipe : GET /publico/convite/{token}\nPOST /publico/convite/aceitar
+PHPEquipe --> DB : Leitura / Escrita\n(membro, convite, usuário)
+PHPCargo --> DB : Leitura / Escrita
+PHPNivel --> DB : Leitura / Escrita
+PHPAuth --> DB : Leitura / Escrita\n(equipe, cargo Admin, membro)
+
+' Fluxos Mobile (Frontend <-> Backend <-> BD)
+MobileColaboradores --> KotlinEquipe : membros() / convidar()\natualizarMembro() / removerMembro()
+MobileCargos --> KotlinEquipe : cargos() / criarCargo()\nniveisDoCargo() / definirNivel()
+KotlinEquipe --> PHPEquipe : Envia JSON\n(mesma API REST)
+KotlinEquipe --> PHPCargo : Envia JSON
+KotlinEquipe --> PHPNivel : Envia JSON
+
+' Navegação Interna das Interfaces
+WebInicio --> WebColaboradores : Clica em 'Convidar' / 'Ver equipe'
+WebColaboradores --> WebCargos : Clica na aba 'Cargos e permissões'
+WebCargos --> WebColaboradores : Clica na aba 'Colaboradores'
+WebSeletor --> WebInicio : Troca ou cria equipe\n(abre o Início dela)
+WebConvite --> WebInicio : Retorna após aceitar\n(já dentro da equipe)
+
+MobileInicio --> MobileColaboradores : Toque em 'Convidar' / 'Ver equipe'
+MobileColaboradores --> MobileCargos : Toque na aba 'Cargos e permissões'
+MobileCargos --> MobileColaboradores : Toque na aba 'Colaboradores'
+
+@enduml

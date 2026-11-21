@@ -1,0 +1,69 @@
+@startuml Navegacao_Relatorios_Web_Mobile
+skinparam style strictuml
+top to bottom direction
+
+package "Interfaces do Usuário (Frontend)" {
+    package "Plataforma Web (React / Vite)" {
+        rectangle "Dashboard.jsx\n(Início)" as WebInicio
+        rectangle "Relatorios.jsx\n(Aba Painel: indicadores)" as WebPainel
+        rectangle "Relatorios.jsx\n(Aba Montar relatório)" as WebMontar
+        rectangle "Relatorios.jsx\n(Aba Históricos: PDF\ne relatórios agendados)" as WebHistoricos
+        rectangle "Formulário de Relatório\n(Novo / Editar agendado)" as WebAgendado
+    }
+
+    package "Plataforma Mobile (Android / Kotlin)" {
+        rectangle "DashboardActivity\n(Início)" as MobileInicio
+        rectangle "RelatoriosActivity\n(Aba Painel: indicadores)" as MobilePainel
+        rectangle "RelatoriosActivity\n(Aba Montar relatório)" as MobileMontar
+        rectangle "RelatoriosActivity\n(Aba Históricos: PDF\ne relatórios agendados)" as MobileHistoricos
+        rectangle "Formulário de Relatório\n(Novo / Editar agendado)" as MobileAgendado
+    }
+}
+
+package "Camada de Serviços & Controle (Backend)" {
+    package "Backend Web (PHP / CodeIgniter 4 - API REST)" {
+        usecase "RelatorioController\nindicadores() / tabelas() / agrupar()\nagruparPdf() / pdf()\nlistar() / criar() / atualizar() / excluir()\nenvios() / enviarAgora()\n(só cargo com acesso total)" as PHPRelatorio
+        usecase "RotinasDiarias (cron)\nphp spark rotinas:diarias\nenvia os relatórios do dia" as PHPRotina
+    }
+
+    package "Backend Mobile (Kotlin / API Rest)" {
+        usecase "RelatorioApi\nindicadores() / tabelas() / agrupar()\npdf() / pdfMontado()\nlistar() / criar() / atualizar() / excluir()\nenvios() / enviarAgora()" as KotlinRelatorio
+    }
+}
+
+database "Banco de Dados Unificado\n(PostgreSQL)" as DB
+cloud "Brevo\n(E-mail com PDF anexo)" as Brevo
+
+' Fluxos Web (Frontend <-> Backend <-> BD)
+WebPainel --> PHPRelatorio : GET /relatorios/indicadores
+WebMontar --> PHPRelatorio : GET /relatorios/tabelas\nGET /relatorios/agrupar\nGET /relatorios/agrupar/pdf
+WebHistoricos --> PHPRelatorio : GET /relatorios/pdf\nGET /relatorios\nPOST /relatorios/{id}/enviar-agora
+WebAgendado --> PHPRelatorio : POST /relatorios\nPUT / DELETE /relatorios/{id}
+PHPRelatorio --> DB : Leitura / Escrita\n(atividade, itens, financeiro,\nrelatórios agendados)
+PHPRelatorio --> Brevo : Enviar agora
+PHPRotina --> DB : Relatórios agendados do dia
+PHPRotina --> Brevo : Envia o PDF
+
+' Fluxos Mobile (Frontend <-> Backend <-> BD)
+MobilePainel --> KotlinRelatorio : indicadores()
+MobileMontar --> KotlinRelatorio : tabelas() / agrupar()\npdfMontado()
+MobileHistoricos --> KotlinRelatorio : pdf() / listar()\nenvios() / enviarAgora()
+MobileAgendado --> KotlinRelatorio : criar() / atualizar() / excluir()
+KotlinRelatorio --> PHPRelatorio : Envia JSON\n(mesma API REST)
+
+' Navegação Interna das Interfaces
+WebInicio --> WebPainel : Menu lateral 'Relatórios'
+WebPainel --> WebMontar : Clica na aba 'Montar relatório'
+WebMontar --> WebHistoricos : Clica na aba 'Históricos'
+WebHistoricos --> WebPainel : Clica na aba 'Painel'
+WebHistoricos --> WebAgendado : Clica em 'Novo relatório' / 'Editar'
+WebAgendado --> WebHistoricos : Retorna após salvar
+
+MobileInicio --> MobilePainel : Menu ☰ 'Relatórios'
+MobilePainel --> MobileMontar : Toque na aba 'Montar relatório'
+MobileMontar --> MobileHistoricos : Toque na aba 'Históricos'
+MobileHistoricos --> MobilePainel : Toque na aba 'Painel'
+MobileHistoricos --> MobileAgendado : Toque em 'Novo relatório' / 'Editar'
+MobileAgendado --> MobileHistoricos : Retorna após salvar
+
+@enduml

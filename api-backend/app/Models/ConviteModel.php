@@ -17,6 +17,7 @@ class ConviteModel extends BaseModel
         'token_hash',
         'expira_em',
         'aceito_em',
+        'mensagem',
     ];
 
     protected $useTimestamps = false;

@@ -52,7 +52,7 @@ export default function Button({
       {loading ? (
         <Spinner size="sm" light={variant === 'primary' || variant === 'danger'} />
       ) : (
-        icon && <span className="material-icons text-[18px] leading-none">{icon}</span>
+        icon && <span className="material-icons text-[18px] leading-none" aria-hidden="true">{icon}</span>
       )}
       {children}
     </>

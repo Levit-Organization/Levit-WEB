@@ -1,0 +1,44 @@
+name: Commits
+
+# Confere se as mensagens dos commits do PR seguem o padrão do CONTRIBUTING.md
+# (Conventional Commits): "<tipo>(<escopo opcional>): <resumo>".
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  mensagens:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validar mensagens
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          padrao='^(feat|fix|refactor|test|docs|ci|chore|perf|style|build|revert)(\([a-z0-9-]+\))?!?: .{3,}'
+          # Vale a partir do commit que criou esta verificação: os anteriores
+          # não são cobrados.
+          inicio=$(git log --diff-filter=A --format=%H "$HEAD" -- .github/workflows/commits.yml | tail -1)
+          antes=()
+          if [ -n "$inicio" ] && git rev-parse -q --verify "$inicio~1" >/dev/null; then
+            antes=("^$inicio~1")
+          fi
+          falhas=0
+          while IFS= read -r linha; do
+            hash=${linha%% *}
+            titulo=${linha#* }
+            case "$titulo" in Merge\ *) continue ;; esac
+            if ! printf '%s' "$titulo" | grep -Eq "$padrao"; then
+              echo "::error::$hash: \"$titulo\" não segue <tipo>(<escopo>): <resumo> (ver CONTRIBUTING.md)"
+              falhas=1
+            fi
+          done < <(git log --format='%h %s' "$HEAD" "^$BASE" "${antes[@]}")
+          exit $falhas

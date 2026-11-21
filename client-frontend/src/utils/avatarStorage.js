@@ -13,7 +13,7 @@ export function setAvatar(usuarioId, dataUrl) {
   try {
     if (dataUrl) localStorage.setItem(AVATAR_PREFIX + usuarioId, dataUrl);
     else localStorage.removeItem(AVATAR_PREFIX + usuarioId);
-  } catch { /* localStorage indisponível ou cheio */ }
+  } catch (e) { console.warn('[avatarStorage] Falha ao salvar avatar:', e.message); }
 }
 
 export function getLogo(empresaId) {
@@ -26,5 +26,5 @@ export function setLogo(empresaId, dataUrl) {
   try {
     if (dataUrl) localStorage.setItem(LOGO_PREFIX + empresaId, dataUrl);
     else localStorage.removeItem(LOGO_PREFIX + empresaId);
-  } catch { /* localStorage indisponível ou cheio */ }
+  } catch (e) { console.warn('[avatarStorage] Falha ao salvar logo:', e.message); }
 }

@@ -6,11 +6,19 @@ use App\Exceptions\NaoEncontradoException;
 use App\Models\CategoriaFinanceiraModel;
 use App\Models\LancamentoFinanceiroModel;
 use App\Models\ModuloModel;
+use App\Services\Financeiro\Categorias;
+use App\Services\Financeiro\Extrato;
+use App\Services\Financeiro\ValidadorDeLancamento;
 
+/**
+ * Módulos do tipo "financeiro": categorias da empresa e lançamentos de cada
+ * módulo, com campos extras guardados num registro vinculado.
+ *
+ * As categorias ficam em Financeiro\Categorias, a validação dos campos fixos
+ * em Financeiro\ValidadorDeLancamento e o saldo em Financeiro\Extrato.
+ */
 class FinanceiroService
 {
-    private const TIPOS_LANCAMENTO_VALIDOS = ['entrada', 'saida'];
-
     protected ModuloModel $moduloModel;
     protected CategoriaFinanceiraModel $categoriaModel;
     protected LancamentoFinanceiroModel $lancamentoModel;
@@ -33,10 +41,7 @@ class FinanceiroService
 
     public function listarCategorias(string $empresaId): array
     {
-        return $this->categoriaModel
-            ->where('empresa_id', $empresaId)
-            ->orderBy('nome', 'ASC')
-            ->findAll();
+        return $this->categorias()->listar($empresaId);
     }
 
     /**
@@ -44,51 +49,18 @@ class FinanceiroService
      */
     public function criarCategoria(string $empresaId, string $nome): array
     {
-        $nome = trim($nome);
-
-        if ($nome === '') {
-            throw new \DomainException('O nome da categoria não pode ficar vazio.');
-        }
-
-        $existente = $this->categoriaModel
-            ->where('empresa_id', $empresaId)
-            ->where('nome', $nome)
-            ->first();
-
-        if ($existente) {
-            throw new \DomainException('Já existe uma categoria com esse nome nesta empresa.');
-        }
-
-        $categoriaId = $this->categoriaModel->insert([
-            'empresa_id' => $empresaId,
-            'nome'       => $nome,
-        ]);
-
-        return $this->categoriaModel->find($categoriaId);
+        return $this->categorias()->criar($empresaId, $nome);
     }
 
     /**
-     * Não bloqueia a exclusão se houver lançamentos usando a categoria:
-     * a FK é ON DELETE SET NULL, então os lançamentos continuam válidos,
-     * só perdem o rótulo de categoria. Diferente da exclusão de cargo
-     * (onde perder o vínculo quebraria acesso de alguém), aqui é uma
-     * perda de rótulo, reversível e de baixo risco — não precisa da
-     * mesma checagem proativa.
+     * Não bloqueia a exclusão se houver lançamentos usando a categoria (ver
+     * Financeiro\Categorias::excluir).
      *
      * @throws NaoEncontradoException se a categoria não existir/pertencer à empresa
      */
     public function excluirCategoria(string $empresaId, string $categoriaId): void
     {
-        $categoria = $this->categoriaModel
-            ->where('id', $categoriaId)
-            ->where('empresa_id', $empresaId)
-            ->first();
-
-        if (! $categoria) {
-            throw new NaoEncontradoException('Categoria não encontrada.');
-        }
-
-        $this->categoriaModel->delete($categoriaId);
+        $this->categorias()->excluir($empresaId, $categoriaId);
     }
 
     // ==========================================================
@@ -122,33 +94,7 @@ class FinanceiroService
             ->orderBy('lancamento_financeiro.criado_em', 'ASC')
             ->findAll();
 
-        $saldoAcumulado = 0.0;
-        $totalEntradas  = 0.0;
-        $totalSaidas    = 0.0;
-
-        foreach ($lancamentos as &$lancamento) {
-            $valor = (float) $lancamento['valor'];
-
-            if ($lancamento['tipo'] === 'entrada') {
-                $saldoAcumulado += $valor;
-                $totalEntradas  += $valor;
-            } else {
-                $saldoAcumulado -= $valor;
-                $totalSaidas    += $valor;
-            }
-
-            $lancamento['saldo_acumulado'] = round($saldoAcumulado, 2);
-        }
-        unset($lancamento);
-
-        return [
-            'lancamentos' => $lancamentos,
-            'resumo'      => [
-                'total_entradas' => round($totalEntradas, 2),
-                'total_saidas'   => round($totalSaidas, 2),
-                'saldo_periodo'  => round($totalEntradas - $totalSaidas, 2),
-            ],
-        ];
+        return Extrato::comSaldo($lancamentos);
     }
 
     /**
@@ -272,7 +218,7 @@ class FinanceiroService
             ->first();
 
         if (! $modulo) {
-            throw new NaoEncontradoException('Módulo financeiro não encontrado.');
+            throw new NaoEncontradoException('Financeiro não encontrado.');
         }
     }
 
@@ -308,82 +254,20 @@ class FinanceiroService
     }
 
     /**
-     * Valida e monta só os campos FIXOS do lançamento (data, tipo, valor
-     * etc). Campos extras são tratados à parte, via RegistroService.
-     *
-     * @param bool $parcial quando true (update), campos ausentes em
-     *        $dados são ignorados; quando false (create), os campos
-     *        obrigatórios precisam estar presentes
+     * Valida e monta só os campos FIXOS do lançamento (ver
+     * Financeiro\ValidadorDeLancamento); a categoria tem de ser da empresa.
      *
      * @throws \DomainException
      */
     private function validarCamposLancamento(string $empresaId, array $dados, bool $parcial): array
     {
-        $campos = [];
+        $categorias = $this->categorias();
 
-        if (array_key_exists('descricao', $dados)) {
-            $descricao = trim((string) $dados['descricao']);
+        return ValidadorDeLancamento::validar($dados, $parcial, static fn (mixed $categoriaId): bool => $categorias->daEmpresa($empresaId, $categoriaId));
+    }
 
-            if ($descricao === '') {
-                throw new \DomainException('A descrição não pode ficar vazia.');
-            }
-
-            $campos['descricao'] = $descricao;
-        } elseif (! $parcial) {
-            throw new \DomainException('A descrição é obrigatória.');
-        }
-
-        if (array_key_exists('data', $dados)) {
-            $data = \DateTime::createFromFormat('Y-m-d', (string) ($dados['data'] ?? ''));
-
-            if (! $data || $data->format('Y-m-d') !== $dados['data']) {
-                throw new \DomainException('A data precisa estar no formato AAAA-MM-DD.');
-            }
-
-            $campos['data_lancamento'] = $dados['data'];
-        } elseif (! $parcial) {
-            throw new \DomainException('A data é obrigatória.');
-        }
-
-        if (array_key_exists('tipo', $dados)) {
-            if (! in_array($dados['tipo'], self::TIPOS_LANCAMENTO_VALIDOS, true)) {
-                throw new \DomainException("Tipo de lançamento inválido: '{$dados['tipo']}'. Use 'entrada' ou 'saida'.");
-            }
-
-            $campos['tipo'] = $dados['tipo'];
-        } elseif (! $parcial) {
-            throw new \DomainException('O tipo do lançamento é obrigatório.');
-        }
-
-        if (array_key_exists('valor', $dados)) {
-            if (! is_numeric($dados['valor']) || $dados['valor'] <= 0) {
-                throw new \DomainException('O valor precisa ser um número maior que zero.');
-            }
-
-            $campos['valor'] = $dados['valor'] + 0;
-        } elseif (! $parcial) {
-            throw new \DomainException('O valor é obrigatório.');
-        }
-
-        if (array_key_exists('conciliado', $dados)) {
-            $campos['conciliado'] = (bool) $dados['conciliado'];
-        }
-
-        if (array_key_exists('categoria_id', $dados)) {
-            if ($dados['categoria_id'] !== null) {
-                $categoria = $this->categoriaModel
-                    ->where('id', $dados['categoria_id'])
-                    ->where('empresa_id', $empresaId)
-                    ->first();
-
-                if (! $categoria) {
-                    throw new \DomainException('Categoria inválida ou não pertence à empresa.');
-                }
-            }
-
-            $campos['categoria_id'] = $dados['categoria_id'];
-        }
-
-        return $campos;
+    private function categorias(): Categorias
+    {
+        return new Categorias($this->categoriaModel);
     }
 }

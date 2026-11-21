@@ -3,22 +3,36 @@
 namespace App\Services;
 
 use App\Exceptions\NaoEncontradoException;
-use App\Models\AutomacaoModel;
 use App\Models\AutomacaoAcaoModel;
+use App\Models\AutomacaoLogModel;
+use App\Models\AutomacaoModel;
 use App\Models\CampoModuloModel;
 use App\Models\ModuloModel;
+use App\Models\RegistroModel;
+use App\Services\Automacao\ExecucoesDeAutomacao;
+use App\Services\Automacao\ListagemDeAutomacoes;
+use App\Services\Automacao\ModulosComAutomacao;
+use App\Services\Automacao\ValidadorDeAutomacao;
 
+/**
+ * Cadastro de automações (criar, alterar, ligar, desligar, excluir e listar),
+ * com a conferência de acesso de cada operação. A validação da definição fica
+ * em Automacao\ValidadorDeAutomacao, o formato da listagem em
+ * Automacao\ListagemDeAutomacoes e o histórico, a reexecução e a simulação
+ * em Automacao\ExecucoesDeAutomacao.
+ */
 class AutomacaoService
 {
-    private const GATILHOS_VALIDOS   = ['criacao', 'atualizacao', 'exclusao'];
-    private const OPERADORES_VALIDOS = ['igual', 'diferente'];
-    private const TIPOS_ACAO_VALIDOS = ['enviar_email', 'webhook'];
-
     protected ModuloModel $moduloModel;
     protected CampoModuloModel $campoModuloModel;
     protected AutomacaoModel $automacaoModel;
     protected AutomacaoAcaoModel $automacaoAcaoModel;
     protected AutorizacaoModuloService $autorizacaoModuloService;
+    protected AutomacaoLogModel $automacaoLogModel;
+    protected RegistroModel $registroModel;
+    protected ListagemDeAutomacoes $listagem;
+    protected ExecucoesDeAutomacao $execucoes;
+    protected ValidadorDeAutomacao $validador;
 
     public function __construct()
     {
@@ -27,6 +41,11 @@ class AutomacaoService
         $this->automacaoModel           = new AutomacaoModel();
         $this->automacaoAcaoModel       = new AutomacaoAcaoModel();
         $this->autorizacaoModuloService = new AutorizacaoModuloService();
+        $this->automacaoLogModel        = new AutomacaoLogModel();
+        $this->registroModel            = new RegistroModel();
+        $this->validador                = new ValidadorDeAutomacao($this->moduloModel, $this->campoModuloModel, $this->autorizacaoModuloService);
+        $this->listagem                 = new ListagemDeAutomacoes($this->automacaoModel);
+        $this->execucoes                = new ExecucoesDeAutomacao($this->automacaoLogModel, $this->registroModel);
     }
 
     public function criarAutomacao(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $usuarioId, array $dados): array
@@ -34,48 +53,72 @@ class AutomacaoService
         $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
 
-        $gatilho = $dados['gatilho'] ?? '';
-        if (! in_array($gatilho, self::GATILHOS_VALIDOS, true)) {
-            throw new \DomainException("Gatilho inválido: '{$gatilho}'.");
+        $definicao = $this->validador->validarDefinicao($moduloId, $empresaId, $dados);
+
+        $db = db_connect();
+        $db->transStart();
+
+        ModulosComAutomacao::esquecer($moduloId);
+        $automacaoId = $this->automacaoModel->insert([
+            'modulo_id'  => $moduloId,
+            'criado_por' => $usuarioId,
+            'ativo'      => (bool) ($dados['ativo'] ?? true),
+        ] + $definicao['campos']);
+
+        $this->gravarAcoes($automacaoId, $definicao['acoes']);
+
+        $db->transComplete();
+
+        if ($db->transStatus() === false) {
+            throw new \RuntimeException('Não foi possível criar a automação. Tente novamente.');
         }
 
-        $acoes = $dados['acoes'] ?? [];
-        if (empty($acoes)) {
-            throw new \DomainException('A automação precisa de pelo menos uma ação.');
-        }
-        foreach ($acoes as $acao) {
-            $this->validarAcao($acao);
-        }
+        $automacao = $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+        AtividadeService::registrar('automacao_criada', "Criou a automação “{$automacao['nome']}”", $moduloId);
 
-        $campoCondicaoId  = $dados['campo_condicao_id'] ?? null;
-        $condicaoOperador = $dados['condicao_operador'] ?? null;
-        $condicaoValor    = $dados['condicao_valor'] ?? null;
+        return $automacao;
+    }
 
-        if ($campoCondicaoId !== null) {
-            if (! $this->campoModuloModel->where('id', $campoCondicaoId)->where('modulo_id', $moduloId)->first()) {
-                throw new \DomainException('Campo de condição não pertence a este módulo.');
-            }
-            if (! in_array($condicaoOperador, self::OPERADORES_VALIDOS, true)) {
-                throw new \DomainException("Operador de condição inválido: '{$condicaoOperador}'.");
-            }
-            if ($condicaoValor === null || $condicaoValor === '') {
-                throw new \DomainException('A condição precisa de um valor para comparação.');
+    /**
+     * Substitui a definição inteira (gatilhos, condição e ações) numa única
+     * transação. O id e o histórico de execuções são preservados.
+     */
+    public function atualizarAutomacao(string $automacaoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $dados): array
+    {
+        $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
+
+        $definicao = $this->validador->validarDefinicao($moduloId, $empresaId, $dados);
+        $campos    = $definicao['campos'];
+        if (array_key_exists('ativo', $dados)) {
+            $campos['ativo'] = (bool) $dados['ativo'];
+            if ($campos['ativo']) {
+                $campos['pausada_por_falhas_em'] = null;
             }
         }
 
         $db = db_connect();
         $db->transStart();
 
-        $automacaoId = $this->automacaoModel->insert([
-            'modulo_id'         => $moduloId,
-            'nome'              => $dados['nome'],
-            'gatilho'           => $gatilho,
-            'campo_condicao_id' => $campoCondicaoId,
-            'condicao_operador' => $campoCondicaoId ? $condicaoOperador : null,
-            'condicao_valor'    => $campoCondicaoId ? $condicaoValor : null,
-            'criado_por'        => $usuarioId,
-        ]);
+        ModulosComAutomacao::esquecer($moduloId);
+        $this->automacaoModel->update($automacaoId, $campos);
+        $this->automacaoAcaoModel->where('automacao_id', $automacaoId)->delete();
+        $this->gravarAcoes($automacaoId, $definicao['acoes']);
 
+        $db->transComplete();
+
+        if ($db->transStatus() === false) {
+            throw new \RuntimeException('Não foi possível salvar a automação. Tente novamente.');
+        }
+
+        $automacao = $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+        AtividadeService::registrar('automacao_alterada', "Alterou a automação “{$automacao['nome']}”", $moduloId);
+
+        return $automacao;
+    }
+
+    private function gravarAcoes(string $automacaoId, array $acoes): void
+    {
         foreach ($acoes as $ordem => $acao) {
             $this->automacaoAcaoModel->insert([
                 'automacao_id' => $automacaoId,
@@ -84,32 +127,6 @@ class AutomacaoService
                 'ordem'        => $ordem,
             ]);
         }
-
-        $db->transComplete();
-
-        if ($db->transStatus() === false) {
-            throw new \RuntimeException('Não foi possível criar a automação. Tente novamente.');
-        }
-
-        return $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
-    }
-
-    private function validarAcao(array $acao): void
-    {
-        $tipo = $acao['tipo'] ?? null;
-        if (! in_array($tipo, self::TIPOS_ACAO_VALIDOS, true)) {
-            throw new \DomainException("Tipo de ação inválido: '{$tipo}'.");
-        }
-
-        $config = $acao['configuracao'] ?? [];
-
-        if ($tipo === 'enviar_email' && ((empty($config['destinatario_campo_id']) && empty($config['destinatario'])) || empty($config['assunto']) || empty($config['corpo']))) {
-            throw new \DomainException('Ação de e-mail precisa de destinatário, assunto e corpo.');
-        }
-
-        if ($tipo === 'webhook' && (empty($config['url']) || ! filter_var($config['url'], FILTER_VALIDATE_URL))) {
-            throw new \DomainException('Ação de webhook precisa de uma URL válida.');
-        }
     }
 
     public function listarAutomacoes(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): array
@@ -117,13 +134,27 @@ class AutomacaoService
         $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
 
-        $automacoes = $this->automacaoModel->where('modulo_id', $moduloId)->findAll();
+        return $this->listagem->doModulo($moduloId);
+    }
+
+    /**
+     * Automações de todos os módulos que o cargo enxerga, numa só chamada.
+     * A tela de automações fazia uma requisição por módulo.
+     */
+    public function listarTodas(string $empresaId, string $cargoId, bool $acessoTotal): array
+    {
+        $modulos  = $this->moduloModel->select('id, nome, icone, tipo')->where('empresa_id', $empresaId)->findAll();
+        $visiveis = $this->autorizacaoModuloService->filtrarModulosComNivel(array_column($modulos, 'id'), $acessoTotal, $cargoId, 'visualizar');
+        if ($visiveis === []) {
+            return [];
+        }
+
+        $porId      = array_column($modulos, null, 'id');
+        $automacoes = $this->listagem->dosModulos($visiveis);
 
         foreach ($automacoes as &$automacao) {
-            $automacao['acoes'] = $this->automacaoAcaoModel
-                ->where('automacao_id', $automacao['id'])
-                ->orderBy('ordem', 'ASC')
-                ->findAll();
+            $automacao['modulo_nome']  = $porId[$automacao['modulo_id']]['nome'] ?? null;
+            $automacao['modulo_icone'] = $porId[$automacao['modulo_id']]['icone'] ?? null;
         }
         unset($automacao);
 
@@ -144,6 +175,7 @@ class AutomacaoService
             throw new NaoEncontradoException('Automação não encontrada.');
         }
 
+        $automacao = ListagemDeAutomacoes::comGatilhos($automacao);
         $automacao['acoes'] = $this->automacaoAcaoModel
             ->where('automacao_id', $automacaoId)
             ->orderBy('ordem', 'ASC')
@@ -157,23 +189,67 @@ class AutomacaoService
         $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
 
-        $this->automacaoModel->update($automacaoId, ['ativo' => $ativo]);
+        // Reativar manualmente limpa a marca de "pausada por falhas".
+        ModulosComAutomacao::esquecer($moduloId);
+        $this->automacaoModel->update($automacaoId, $ativo ? ['ativo' => true, 'pausada_por_falhas_em' => null] : ['ativo' => false]);
 
-        return $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+        $automacao = $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+        AtividadeService::registrar($ativo ? 'automacao_ligada' : 'automacao_desligada', ($ativo ? 'Ligou' : 'Desligou') . " a automação “{$automacao['nome']}”", $moduloId);
+
+        return $automacao;
     }
 
     public function excluirAutomacao(string $automacaoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
     {
-        $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+        $automacao = $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
 
+        ModulosComAutomacao::esquecer($moduloId);
         $this->automacaoModel->delete($automacaoId);
+        AtividadeService::registrar('automacao_excluida', "Excluiu a automação “{$automacao['nome']}”", $moduloId);
+    }
+
+    /**
+     * Execuções mais recentes primeiro, paginadas por cursor (`antes_de` = data
+     * da última execução da página anterior).
+     */
+    public function listarExecucoes(string $automacaoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, ?string $antesDe, int $limite): array
+    {
+        $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
+
+        return $this->execucoes->listar($automacaoId, $antesDe, $limite);
+    }
+
+    /**
+     * Mostra o que a automação faria, sem enviar nada. Aceita a definição ainda
+     * não salva (formulário) e um registro real do módulo, dados avulsos, ou —
+     * sem nenhum dos dois — o registro mais recente.
+     */
+    public function simular(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $entrada): array
+    {
+        $this->confirmarModuloDaEmpresa($moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
+
+        // O nome não importa no teste (e pode nem ter sido preenchido ainda).
+        $definicao = $this->validador->validarDefinicao($moduloId, $empresaId, ['nome' => 'Teste'] + ($entrada['automacao'] ?? []));
+
+        return $this->execucoes->simular($moduloId, $definicao, $entrada, $this->validador->tipoDoModulo($moduloId) === 'recrutamento');
+    }
+
+    /** Coloca de novo na fila uma execução que falhou, com os mesmos dados. */
+    public function reexecutar(string $execucaoId, string $automacaoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
+    {
+        $automacao = $this->buscarAutomacao($automacaoId, $moduloId, $empresaId);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
+
+        $this->execucoes->reexecutar($automacao, $execucaoId, $automacaoId, $moduloId);
     }
 
     private function confirmarModuloDaEmpresa(string $moduloId, string $empresaId): void
     {
         if (! $this->moduloModel->where('id', $moduloId)->where('empresa_id', $empresaId)->first()) {
-            throw new NaoEncontradoException('Módulo não encontrado.');
+            throw new NaoEncontradoException('Tabela não encontrada.');
         }
     }
 }

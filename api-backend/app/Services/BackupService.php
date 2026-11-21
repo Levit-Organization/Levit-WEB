@@ -13,12 +13,10 @@ use App\Models\FaseRecrutamentoModel;
 use App\Models\HistoricoFaseModel;
 use App\Models\ModuloModel;
 use App\Models\RegistroModel;
-use App\Models\UsuarioModel;
 
 class BackupService
 {
     protected EmpresaModel $empresaModel;
-    protected UsuarioModel $usuarioModel;
     protected CargoModel $cargoModel;
     protected CargoPermissaoModel $cargoPermissaoModel;
     protected ModuloModel $moduloModel;
@@ -32,7 +30,6 @@ class BackupService
     public function __construct()
     {
         $this->empresaModel          = new EmpresaModel();
-        $this->usuarioModel          = new UsuarioModel();
         $this->cargoModel            = new CargoModel();
         $this->cargoPermissaoModel   = new CargoPermissaoModel();
         $this->moduloModel           = new ModuloModel();
@@ -55,10 +52,11 @@ class BackupService
             throw new NaoEncontradoException('Empresa não encontrada.');
         }
 
-        $usuarios = $this->usuarioModel
-            ->select('id, empresa_id, cargo_id, nome, email, criado_em, atualizado_em')
+        // Quem faz parte desta equipe, com o cargo daqui (criado_em = entrada na equipe).
+        $usuarios = db_connect()->table('usuario_equipe')
+            ->select('id, empresa_id, cargo_id, nome, email, criado_em')
             ->where('empresa_id', $empresaId)
-            ->findAll();
+            ->get()->getResultArray();
 
         $cargos   = $this->cargoModel->where('empresa_id', $empresaId)->findAll();
         $cargoIds = array_column($cargos, 'id');
@@ -103,7 +101,7 @@ class BackupService
         $modulo = $this->moduloModel->where('id', $moduloId)->where('empresa_id', $empresaId)->first();
 
         if (! $modulo) {
-            throw new NaoEncontradoException('Módulo não encontrado.');
+            throw new NaoEncontradoException('Tabela não encontrada.');
         }
 
         $campos    = $this->campoModuloModel->where('modulo_id', $moduloId)->orderBy('ordem', 'ASC')->findAll();
@@ -111,15 +109,26 @@ class BackupService
 
         $cabecalho = ['Criado em'];
         foreach ($campos as $campo) {
-            $cabecalho[] = $campo['nome'];
+            $cabecalho[] = self::celulaSegura($campo['nome']);
+        }
+
+        // Colunas de ligação saem com o nome dos itens ligados, não com o identificador.
+        $titulos = [];
+        foreach ($campos as $campo) {
+            if ($campo['tipo'] === 'vinculo' && ! empty($campo['modulo_vinculado_id'])) {
+                $titulos[$campo['id']] ??= (new RegistroService())->titulosDosItens($campo['modulo_vinculado_id']);
+            }
         }
 
         $linhas = [];
         foreach ($registros as $registro) {
             $linha = [$registro['criado_em']];
             foreach ($campos as $campo) {
-                $valor    = $registro['dados'][$campo['id']] ?? '';
-                $linha[]  = is_array($valor) ? json_encode($valor) : (string) $valor;
+                $valor = $registro['dados'][$campo['id']] ?? '';
+                if (isset($titulos[$campo['id']])) {
+                    $valor = implode(', ', array_map(static fn ($id) => $titulos[$campo['id']][$id] ?? '', (array) $valor));
+                }
+                $linha[] = self::celulaSegura(is_array($valor) ? json_encode($valor) : (string) $valor);
             }
             $linhas[] = $linha;
         }
@@ -158,5 +167,20 @@ class BackupService
         }
 
         $this->moduloModel->where('empresa_id', $empresaId)->delete();
+    }
+
+    /**
+     * Excel e LibreOffice executam células que começam com = + - @ (ex.:
+     * =HYPERLINK(...) ou =cmd|...). Como os valores vêm de quem preenche a
+     * tabela (inclusive do formulário público de candidatura), essas células
+     * ganham um apóstrofo na frente e abrem como texto. Números ficam como estão.
+     */
+    public static function celulaSegura(string $valor): string
+    {
+        if ($valor === '' || is_numeric($valor)) {
+            return $valor; // número negativo continua número
+        }
+
+        return in_array($valor[0], ['=', '+', '-', '@', "\t", "\r"], true) ? "'" . $valor : $valor;
     }
 }

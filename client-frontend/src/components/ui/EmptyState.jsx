@@ -28,7 +28,7 @@ export default function EmptyState({
   return (
     <div className={cn('text-center flex flex-col items-center', className)}>
       <div className={cn('bg-primary-100 text-primary flex items-center justify-center mb-3.5', sizeInfo.box)}>
-        <span className={cn('material-icons', sizeInfo.icon)}>{icon}</span>
+        <span aria-hidden="true" className={cn('material-icons', sizeInfo.icon)}>{icon}</span>
       </div>
       {title && <p className="text-sm font-semibold text-ink mb-1">{title}</p>}
       {description && (

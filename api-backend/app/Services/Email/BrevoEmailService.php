@@ -2,7 +2,9 @@
 
 namespace App\Services\Email;
 
+use App\Exceptions\FalhaPermanenteException;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\GuzzleException;
 
 class BrevoEmailService implements EmailServiceInterface
@@ -20,8 +22,13 @@ class BrevoEmailService implements EmailServiceInterface
         $this->client         = new Client();
     }
 
-    public function enviar(string $destinatarioEmail, string $assunto, string $corpoHtml): void
+    public function enviar(string $destinatarioEmail, string $assunto, string $corpoHtml, array $anexos = []): void
     {
+        $extras = $anexos === [] ? [] : ['attachment' => array_map(
+            static fn (array $a) => ['name' => $a['nome'], 'content' => base64_encode($a['conteudo'])],
+            $anexos
+        )];
+
         try {
             $this->client->post('https://api.brevo.com/v3/smtp/email', [
                 'headers' => [
@@ -39,10 +46,15 @@ class BrevoEmailService implements EmailServiceInterface
                     ],
                     'subject'     => $assunto,
                     'htmlContent' => $corpoHtml,
-                ],
+                ] + $extras,
             ]);
+        } catch (ClientException $e) {
+            // 4xx (exceto limite de taxa) não melhora repetindo: destinatário ou conta inválidos.
+            $status = $e->getResponse()->getStatusCode();
+            $classe = $status === 429 ? \RuntimeException::class : FalhaPermanenteException::class;
+            throw new $classe('Não foi possível enviar o e-mail: ' . $e->getMessage(), $status, $e);
         } catch (GuzzleException $e) {
-            throw new \RuntimeException('Não foi possível enviar o e-mail: ' . $e->getMessage());
+            throw new \RuntimeException('Não foi possível enviar o e-mail: ' . $e->getMessage(), 0, $e);
         }
     }
 }

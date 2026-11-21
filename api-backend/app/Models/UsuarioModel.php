@@ -10,11 +10,13 @@ class UsuarioModel extends BaseModel
     protected $returnType = 'array';
 
     protected $allowedFields = [
-        'empresa_id',
-        'cargo_id',
+        'ultima_empresa_id',
         'nome',
         'email',
         'senha_hash',
+        'reset_hash',
+        'reset_expires_at',
+        'senha_alterada_em',
     ];
 
     protected $useTimestamps = true;

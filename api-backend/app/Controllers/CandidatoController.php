@@ -5,46 +5,110 @@ namespace App\Controllers;
 use App\Exceptions\AcessoNegadoException;
 use App\Exceptions\NaoEncontradoException;
 use App\Services\CandidatoService;
+use CodeIgniter\HTTP\ResponseInterface;
 
 class CandidatoController extends BaseApiController
 {
     protected CandidatoService $candidatoService;
+
+    private const REGRAS_CANDIDATO = [
+        'nome'     => ['required', 'min_length[3]', 'max_length[150]'],
+        'email'    => ['required', 'valid_email', 'max_length[150]'],
+        'telefone' => ['permit_empty', 'max_length[20]'],
+        'mensagem' => ['permit_empty', 'max_length[5000]'],
+    ];
 
     public function __construct()
     {
         $this->candidatoService = new CandidatoService();
     }
 
-    public function candidatar($moduloId)
+    /** Com currículo o envio é multipart; sem ele, ainda aceita JSON. */
+    private function dadosDoCandidato(): array
     {
-        $dados = $this->request->getJSON(true) ?? [];
+        $dados = str_contains($this->request->getHeaderLine('Content-Type'), 'multipart/form-data')
+            ? $this->request->getPost()
+            : ($this->request->getJSON(true) ?? []);
 
-        $rules = [
-            'nome'           => ['required', 'min_length[3]', 'max_length[150]'],
-            'email'          => ['required', 'valid_email', 'max_length[150]'],
-            'telefone'       => ['permit_empty', 'max_length[20]'],
-            'cargo_desejado' => ['permit_empty', 'max_length[100]'],
-            'mensagem'       => ['permit_empty'],
-        ];
+        return array_intersect_key(array_map(static fn ($v) => is_string($v) ? trim($v) : $v, $dados), self::REGRAS_CANDIDATO);
+    }
 
-        if (! $this->validateData($dados, $rules)) {
+    public function vagaPublica(string $moduloId): ResponseInterface
+    {
+        try {
+            return $this->respondSuccess($this->candidatoService->vagaPublica($moduloId), 200);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        }
+    }
+
+    public function candidatar(string $moduloId): ResponseInterface
+    {
+        $dados = $this->dadosDoCandidato();
+
+        if (! $this->validateData($dados, self::REGRAS_CANDIDATO)) {
             return $this->respondError('Dados inválidos.', 422, $this->validator->getErrors());
         }
 
         try {
-            $candidato = $this->candidatoService->criarCandidatura($moduloId, $dados);
+            $candidato = $this->candidatoService->criarCandidatura($moduloId, $dados, $this->request->getFile('curriculo'));
         } catch (NaoEncontradoException $e) {
             return $this->respondError($e->getMessage(), 404);
         } catch (\DomainException $e) {
             return $this->respondError($e->getMessage(), 409);
         } catch (\RuntimeException $e) {
-            return $this->respondError($e->getMessage(), 500);
+            return $this->respondFalha($e, 500);
         }
 
         return $this->respondSuccess($candidato, 201);
     }
 
-    public function kanban($moduloId)
+    public function adicionar(string $moduloId): ResponseInterface
+    {
+        $dados = $this->dadosDoCandidato();
+        $user  = service('authenticatedUser');
+
+        if (! $this->validateData($dados, self::REGRAS_CANDIDATO)) {
+            return $this->respondError('Dados inválidos.', 422, $this->validator->getErrors());
+        }
+
+        try {
+            $candidato = $this->candidatoService->adicionarCandidato(
+                $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal, $dados, $this->request->getFile('curriculo')
+            );
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
+        } catch (\DomainException $e) {
+            return $this->respondError($e->getMessage(), 409);
+        } catch (\RuntimeException $e) {
+            return $this->respondFalha($e, 500);
+        }
+
+        return $this->respondSuccess($candidato, 201);
+    }
+
+    public function curriculo(string $moduloId, string $candidatoId): ResponseInterface
+    {
+        $user = service('authenticatedUser');
+
+        try {
+            $arquivo = $this->candidatoService->baixarCurriculo($candidatoId, $moduloId, $user->empresaId, $user->cargoId, $user->acessoTotal);
+        } catch (NaoEncontradoException $e) {
+            return $this->respondError($e->getMessage(), 404);
+        } catch (AcessoNegadoException $e) {
+            return $this->respondError($e->getMessage(), 403);
+        }
+
+        return $this->response
+            ->setContentType($arquivo['tipo_mime'])
+            ->setHeader('Content-Disposition', $this->cabecalhoDeAnexo($arquivo['nome_original']))
+            ->setHeader('X-Content-Type-Options', 'nosniff')
+            ->setBody($arquivo['conteudo']);
+    }
+
+    public function kanban(string $moduloId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -59,7 +123,7 @@ class CandidatoController extends BaseApiController
         return $this->respondSuccess($kanban, 200);
     }
 
-    public function kanbanGlobal()
+    public function kanbanGlobal(): ResponseInterface
     {
         $user   = service('authenticatedUser');
         $kanban = $this->candidatoService->listarKanbanGlobal($user->empresaId, $user->cargoId, $user->acessoTotal);
@@ -67,7 +131,7 @@ class CandidatoController extends BaseApiController
         return $this->respondSuccess($kanban, 200);
     }
 
-    public function detalhes($moduloId, $candidatoId)
+    public function detalhes(string $moduloId, string $candidatoId): ResponseInterface
     {
         $user = service('authenticatedUser');
 
@@ -82,7 +146,7 @@ class CandidatoController extends BaseApiController
         return $this->respondSuccess($candidato, 200);
     }
 
-    public function moverFase($moduloId, $candidatoId)
+    public function moverFase(string $moduloId, string $candidatoId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -102,7 +166,7 @@ class CandidatoController extends BaseApiController
         return $this->respondSuccess($candidato, 200);
     }
 
-    public function moverFaseGlobal($candidatoId)
+    public function moverFaseGlobal(string $candidatoId): ResponseInterface
     {
         $dados = $this->request->getJSON(true) ?? [];
         $user  = service('authenticatedUser');
@@ -122,7 +186,7 @@ class CandidatoController extends BaseApiController
         return $this->respondSuccess($candidato, 200);
     }
 
-    public function excluir($moduloId, $candidatoId)
+    public function excluir(string $moduloId, string $candidatoId): ResponseInterface
     {
         $user = service('authenticatedUser');
 

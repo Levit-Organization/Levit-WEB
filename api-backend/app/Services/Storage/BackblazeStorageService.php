@@ -10,8 +10,18 @@ class BackblazeStorageService implements StorageServiceInterface
     private S3Client $client;
     private string $bucket;
 
+    private const VARIAVEIS = ['B2_ENDPOINT', 'B2_REGION', 'B2_BUCKET', 'B2_KEY_ID', 'B2_APPLICATION_KEY'];
+
     public function __construct()
     {
+        $faltando = array_filter(self::VARIAVEIS, static fn (string $nome): bool => trim((string) env($nome)) === '');
+
+        if ($faltando !== []) {
+            log_message('error', '[Storage] Variáveis ausentes no .env: ' . implode(', ', $faltando));
+
+            throw new \RuntimeException('O armazenamento de arquivos não está configurado no servidor. Avise o administrador.');
+        }
+
         $this->bucket = env('B2_BUCKET');
 
         $this->client = new S3Client([

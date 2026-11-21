@@ -14,6 +14,7 @@ class RegistroModel extends BaseModel
         'dados',
         'criado_por',
         'atualizado_por',
+        'recorrencia_origem_id',
     ];
 
     protected array $casts = [

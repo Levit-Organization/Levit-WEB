@@ -36,6 +36,7 @@ class Filters extends BaseFilters
         'performance'   => PerformanceMetrics::class,
         'auth'          => \App\Filters\AuthFilter::class,
         'ratelimit'     => \App\Filters\RateLimitFilter::class,
+        'compressao'    => \App\Filters\CompressaoFilter::class,
     ];
 
     /**
@@ -82,7 +83,9 @@ class Filters extends BaseFilters
         ],
         'after' => [
             // 'honeypot',
-            // 'secureheaders',
+            // nosniff, X-Frame-Options e afins em toda resposta (filtro nativo do CI4).
+            'secureheaders',
+            'compressao',
         ],
     ];
 

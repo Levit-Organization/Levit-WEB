@@ -1,0 +1,182 @@
+@startuml diagrama-navegacao
+' Diagrama de navegação do Levit Web.
+' Reconstruído a partir de client-frontend/src/App.jsx (20 rotas),
+' components/Layout.jsx (menu lateral), components/equipes/SeletorDeEquipe.jsx,
+' components/ProtectedRoute.jsx e dos links/redirecionamentos de cada página.
+' Atualizado em 02/11/2026 (inclui o seletor de equipes: uma pessoa, várias equipes).
+'
+' Legenda:
+'   seta contínua  = link ou botão na tela
+'   seta tracejada = acontece fora da tela (e-mail) ou redirecionamento automático
+'   seta verde     = entrada na área logada
+
+!pragma layout smetana
+left to right direction
+skinparam shadowing false
+skinparam dpi 150
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam packageStyle rectangle
+skinparam roundCorner 10
+skinparam ArrowColor #6E6A8E
+skinparam ArrowFontColor #4A4766
+skinparam ArrowFontSize 10
+skinparam package {
+  BorderColor #9AA5B1
+  FontStyle bold
+}
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #9692BE
+  FontColor #1F1D33
+}
+skinparam rectangle<<pública>> {
+  BackgroundColor #FFFFFF
+  BorderColor #9692BE
+}
+skinparam rectangle<<menu lateral>> {
+  BackgroundColor #FFFFFF
+  BorderColor #534BAF
+  BorderThickness 2
+}
+skinparam rectangle<<subtela>> {
+  BackgroundColor #FFFFFF
+  BorderColor #AAA5E1
+}
+skinparam rectangle<<fora do app>> {
+  BackgroundColor #FFF6E5
+  BorderColor #B26E0A
+  FontColor #6E4200
+}
+skinparam rectangle<<navegação>> {
+  BackgroundColor #E9E7F8
+  BorderColor #534BAF
+  FontColor #342E78
+}
+skinparam note {
+  BackgroundColor #FAFAFE
+  BorderColor #C9C6DE
+  FontColor #4A4766
+}
+
+title Levit Web — Diagrama de navegação
+
+' ------------------------------------------------------------------ entradas externas
+package "Entradas de fora do app" {
+  rectangle "**E-mail: redefinir senha**\nlink com token, enviado\npela tela Recuperar senha" as email_senha <<fora do app>>
+  rectangle "**E-mail: convite**\nenviado pela tela Equipe\n(vale 7 dias)" as email_convite <<fora do app>>
+  rectangle "**Link público da vaga**\ncopiado no Recrutamento\ne divulgado pela empresa" as link_vaga <<fora do app>>
+}
+
+' ------------------------------------------------------------------ área pública
+package "Área pública (sem login)" {
+  rectangle "**Landing**\n/\nlogado: vai para o Início" as landing <<pública>>
+  rectangle "**Sobre nós**\n/sobre" as sobre <<pública>>
+  rectangle "**Entrar**\n/login\nentra na última equipe usada" as login <<pública>>
+  rectangle "**Criar conta**\n/register\nnome, e-mail, nome da equipe e senha\n(CPF/CNPJ não é pedido)" as cadastro <<pública>>
+  rectangle "**Recuperar senha**\n/forgot-password" as recuperar <<pública>>
+  rectangle "**Redefinir senha**\n/reset-password?token=" as redefinir <<pública>>
+  rectangle "**Aceitar convite**\n/convite/:token\nsem conta: nome e senha\ncom conta: só a senha" as convite <<pública>>
+  rectangle "**Candidatura**\n/vagas/:id\nformulário com currículo" as candidatura <<pública>>
+  rectangle "**Página não encontrada**\n* (qualquer rota inexistente)" as notfound <<pública>>
+}
+
+' ------------------------------------------------------------------ área logada
+package "Área logada" {
+  rectangle "**Menu lateral**\n(em todas as telas logadas)\nInício · Tabelas · Recrutamento · Automações\nEquipe · Relatórios · Configurações\nSair da conta" as menu <<navegação>>
+  rectangle "**Seletor de equipe**\n(topo do menu lateral)\nsuas equipes, com o cargo em cada uma\n+ Criar nova equipe" as seletor <<navegação>>
+
+  rectangle "**Início**\n/dashboard\nresumo do dia e atalhos" as inicio <<menu lateral>>
+  rectangle "**Tabelas**\n/modulos" as tabelas <<menu lateral>>
+  rectangle "**Recrutamento**\n/recrutamento\nquadro de candidatos por etapa" as recrutamento <<menu lateral>>
+  rectangle "**Automações**\n/automacoes" as automacoes <<menu lateral>>
+  rectangle "**Equipe**\n/team\nabas: Colaboradores · Cargos e permissões" as equipe <<menu lateral>>
+  rectangle "**Relatórios**\n/relatorios\nabas: Painel · Montar relatório · Históricos" as relatorios <<menu lateral>>
+  rectangle "**Configurações**\n/configuracoes\nabas: Perfil · Empresa e tabelas · Avançado e dados" as configuracoes <<menu lateral>>
+
+  rectangle "**Nova tabela**\n/modulos/novo" as nova_tabela <<subtela>>
+  rectangle "**Configurar tabela**\n/modulos/:id/editar" as config_tabela <<subtela>>
+  rectangle "**Itens da tabela**\n/modulos/:id/registros\nlista ou quadro; tabela de arquivos" as itens <<subtela>>
+  rectangle "**Financeiro**\n/modulos/:id/financeiro" as financeiro <<subtela>>
+  rectangle "**Nova automação**\n/automacoes/nova" as nova_automacao <<subtela>>
+  rectangle "**Editar automação**\n/automacoes/:moduloId/:id/editar" as editar_automacao <<subtela>>
+}
+
+' ------------------------------------------------------------------ navegação pública
+sobre <--> landing
+landing --> login : Entrar
+landing --> cadastro : Criar conta
+login <--> cadastro
+login <--> recuperar : Esqueceu a senha?
+recuperar ..> email_senha : envia e-mail
+email_senha ..> redefinir
+redefinir --> login : senha nova
+email_convite ..> convite
+link_vaga ..> candidatura
+notfound ..> landing : sem sessão
+notfound ..> inicio : com sessão
+
+' ------------------------------------------------------------------ entrada na área logada
+login -[#1A8F5A,bold]-> inicio : entrar
+cadastro -[#1A8F5A,bold]-> inicio : cria a equipe e entra
+convite -[#1A8F5A,bold]-> inicio : entra na equipe do convite
+convite --> login : convite já usado
+
+' ------------------------------------------------------------------ menu lateral e equipes
+menu --> inicio
+menu --> tabelas
+menu --> recrutamento
+menu --> automacoes
+menu --> equipe
+menu --> relatorios
+menu --> configuracoes
+menu --> login : Sair da conta
+menu --> seletor
+seletor --> inicio : trocar de equipe\nou criar nova equipe
+
+' ------------------------------------------------------------------ subtelas
+tabelas --> nova_tabela
+tabelas --> config_tabela
+tabelas --> itens : tabela de lista ou arquivos
+tabelas --> financeiro : tabela financeira
+tabelas --> recrutamento : tabela de vagas
+itens --> config_tabela : Configurar
+itens ..> recrutamento : redireciona se for de vagas
+itens ..> financeiro : redireciona se for financeira
+automacoes --> nova_automacao
+automacoes --> editar_automacao
+
+' ------------------------------------------------------------------ notas
+note right of seletor
+  Uma pessoa pode estar em várias equipes,
+  com um cargo diferente em cada uma.
+  Trocar de equipe gera uma sessão nova
+  e abre o Início da equipe escolhida.
+end note
+
+note right of itens
+  Lista: colunas, busca, filtros e "Só os meus".
+  Quadro (kanban): quando há coluna de lista.
+  Tabela de arquivos: enviar vários (botão,
+  arrastar ou colar), visualizar, baixar.
+  Item ligado abre na outra tabela (?item=id).
+end note
+
+note bottom of menu
+  Sem sessão, qualquer rota logada vai para /login
+  e volta à página pedida depois de entrar.
+  Sino de notificações e painel de prazos (topo)
+  levam ao item ou à tela da notificação.
+end note
+
+legend right
+  |= Caixa |= Significado |
+  | <back:#FFFFFF>  pública  </back> | tela sem login |
+  | <back:#E9E7F8>  navegação  </back> | menu lateral e seletor de equipe |
+  | <back:#FFFFFF>  menu lateral  </back> | tela principal (item do menu) |
+  | <back:#FFFFFF>  subtela  </back> | abre a partir de outra tela |
+  | <back:#FFF6E5>  fora do app  </back> | e-mail ou link externo |
+  Seta contínua: link ou botão · tracejada: e-mail ou redirecionamento · verde: entrada na área logada
+endlegend
+
+@enduml

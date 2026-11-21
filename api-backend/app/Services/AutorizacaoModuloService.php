@@ -23,8 +23,35 @@ class AutorizacaoModuloService
         $this->moduloModel               = new ModuloModel();
     }
 
+    /** Níveis já carregados pela autenticação, quando o cargo é o de quem fez a requisição. */
+    private function niveisEmMemoria(string $cargoId): ?array
+    {
+        $usuario = service('authenticatedUser');
+
+        return $usuario->cargoId === $cargoId ? $usuario->niveisPorModulo : null;
+    }
+
+    /** Mantém a cópia em memória igual ao banco depois de mudar um nível do próprio cargo. */
+    private function atualizarMemoria(string $cargoId, string $moduloId, ?string $nivel): void
+    {
+        $usuario = service('authenticatedUser');
+        if ($usuario->cargoId !== $cargoId || $usuario->niveisPorModulo === null) {
+            return;
+        }
+        if ($nivel === null) {
+            unset($usuario->niveisPorModulo[$moduloId]);
+        } else {
+            $usuario->niveisPorModulo[$moduloId] = $nivel;
+        }
+    }
+
     public function nivelDeAcesso(string $cargoId, string $moduloId): ?string
     {
+        $memoria = $this->niveisEmMemoria($cargoId);
+        if ($memoria !== null) {
+            return $memoria[$moduloId] ?? null;
+        }
+
         $linha = $this->cargoModuloPermissaoModel
             ->where('cargo_id', $cargoId)
             ->where('modulo_id', $moduloId)
@@ -46,11 +73,11 @@ class AutorizacaoModuloService
         $nivelAtual = $this->nivelDeAcesso($cargoId, $moduloId);
 
         if ($nivelAtual === null) {
-            throw new NaoEncontradoException('Módulo não encontrado.');
+            throw new NaoEncontradoException('Tabela não encontrada.');
         }
 
         if (self::NIVEIS[$nivelAtual] < self::NIVEIS[$nivelMinimo]) {
-            throw new AcessoNegadoException('Você não tem nível de acesso suficiente neste módulo.');
+            throw new AcessoNegadoException('Você não tem nível de acesso suficiente nesta tabela.');
         }
     }
 
@@ -64,6 +91,8 @@ class AutorizacaoModuloService
             ->where('cargo_id', $cargoId)
             ->where('modulo_id', $moduloId)
             ->first();
+
+        $this->atualizarMemoria($cargoId, $moduloId, 'gerenciar');
 
         if ($jaExiste) {
             $this->cargoModuloPermissaoModel->update($jaExiste['id'], ['nivel' => 'gerenciar']);
@@ -111,13 +140,20 @@ class AutorizacaoModuloService
         $this->confirmarCargoDaEmpresa($cargoId, $empresaId);
 
         if (! $this->moduloModel->where('id', $moduloId)->where('empresa_id', $empresaId)->first()) {
-            throw new NaoEncontradoException('Módulo não encontrado.');
+            throw new NaoEncontradoException('Tabela não encontrada.');
         }
+
+        $limite = new LimiteDeAcesso();
+        $limite->exigirQueNaoSejaOProprioCargo($cargoId);
+        $limite->exigirPodeAtuarNoCargo($cargoId);
+        $limite->exigirPodeConcederNivel($moduloId, $nivel);
 
         $existente = $this->cargoModuloPermissaoModel
             ->where('cargo_id', $cargoId)
             ->where('modulo_id', $moduloId)
             ->first();
+
+        $this->atualizarMemoria($cargoId, $moduloId, $nivel);
 
         if ($existente) {
             $this->cargoModuloPermissaoModel->update($existente['id'], ['nivel' => $nivel]);
@@ -135,6 +171,13 @@ class AutorizacaoModuloService
     public function removerNivel(string $empresaId, string $cargoId, string $moduloId): void
     {
         $this->confirmarCargoDaEmpresa($cargoId, $empresaId);
+
+        $limite = new LimiteDeAcesso();
+        $limite->exigirQueNaoSejaOProprioCargo($cargoId);
+        $limite->exigirPodeAtuarNoCargo($cargoId);
+        $limite->exigirPodeConcederNivel($moduloId, 'gerenciar');
+
+        $this->atualizarMemoria($cargoId, $moduloId, null);
 
         $this->cargoModuloPermissaoModel
             ->where('cargo_id', $cargoId)
@@ -155,6 +198,14 @@ class AutorizacaoModuloService
 
         if (empty($moduloIds)) {
             return [];
+        }
+
+        $memoria = $this->niveisEmMemoria($cargoId);
+        if ($memoria !== null) {
+            return array_values(array_filter(
+                $moduloIds,
+                static fn ($id) => isset($memoria[$id]) && self::NIVEIS[$memoria[$id]] >= self::NIVEIS[$nivelMinimo]
+            ));
         }
 
         $niveis = $this->cargoModuloPermissaoModel

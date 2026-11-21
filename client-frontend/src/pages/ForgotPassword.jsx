@@ -32,8 +32,8 @@ export default function ForgotPassword() {
 
   return (
     <AuthLayout>
-      <h2 className="text-xl font-bold text-ink mt-2">Redefinir Senha</h2>
-      <p className="text-sm text-light-text mb-6 text-center mt-1">Será enviado um e-mail com link de redefinição</p>
+      <h2 className="text-xl font-bold text-ink mt-2">Recuperar senha</h2>
+      <p className="text-sm text-light-text mb-6 text-center mt-1">Enviamos um link para você criar uma senha nova.</p>
 
       {message && (
         <div className="mb-4 w-full">
@@ -48,20 +48,24 @@ export default function ForgotPassword() {
 
       <form className="w-full space-y-4" onSubmit={handleSubmit}>
         <Input
-          label="E-Mail"
+          label="E-mail"
           type="email"
-          placeholder="godofredo@empresa.com"
+          name="email"
+          autoComplete="email"
+          inputMode="email"
+          required
+          placeholder="voce@empresa.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
 
         <Button type="submit" loading={loading} className="w-full justify-center mt-2">
-          {loading ? 'Enviando...' : 'Enviar'}
+          {loading ? 'Enviando...' : 'Enviar link'}
         </Button>
 
         <div className="text-center mt-4">
           <Link to="/login" className="text-sm text-primary hover:underline">
-            Voltar para o Login
+            Voltar para o login
           </Link>
         </div>
       </form>

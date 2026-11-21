@@ -1,0 +1,110 @@
+name: Backend
+
+on:
+  push:
+    branches: [main, master]
+    paths: ['api-backend/**', '.github/workflows/backend.yml']
+  pull_request:
+    paths: ['api-backend/**', '.github/workflows/backend.yml']
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: api-backend
+
+jobs:
+  qualidade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.2 é o mínimo do composer.json; 8.5 é a versão usada no desenvolvimento.
+        php: ['8.2', '8.5']
+    name: PHP ${{ matrix.php }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          # sqlite3: banco em memória do grupo 'tests' (tests/database).
+          extensions: intl, mbstring, curl, xml, pgsql, pdo_pgsql, sqlite3
+          coverage: none
+          tools: composer:v2
+
+      - name: Validar composer.json
+        run: composer validate --no-check-publish
+
+      - name: Cache do Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ matrix.php }}-${{ hashFiles('api-backend/composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Sintaxe PHP
+        run: find app -name '*.php' -print0 | xargs -0 -n1 -P4 php -l > /dev/null
+
+      - name: Análise estática (PHPStan)
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+      - name: Testes
+        run: vendor/bin/phpunit --no-coverage
+
+      - name: Vulnerabilidades (dependências)
+        run: composer audit --no-dev
+
+  integracao:
+    # Testes de ponta a ponta (rotas + filtros + banco) contra PostgreSQL 18,
+    # a versão mínima: o schema usa uuidv7() nativo.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: levit
+          POSTGRES_PASSWORD: levit
+          POSTGRES_DB: levit_tests
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U levit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      database.tests.DBDriver: Postgre
+      database.tests.hostname: 127.0.0.1
+      database.tests.port: '5432'
+      database.tests.database: levit_tests
+      database.tests.username: levit
+      database.tests.password: levit
+      database.tests.DBPrefix: ''
+      database.tests.charset: utf8
+      database.tests.DBCollat: ''
+      database.tests.pConnect: 'false'
+      JWT_SECRET_KEY: segredo-somente-para-o-ci-0123456789abcdef0123456789abcdef
+      EMAIL_PROVIDER: log
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: intl, mbstring, curl, xml, pgsql
+          coverage: none
+          tools: composer:v2
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Testes de integração
+        run: vendor/bin/phpunit --no-coverage tests/integracao --fail-on-skipped

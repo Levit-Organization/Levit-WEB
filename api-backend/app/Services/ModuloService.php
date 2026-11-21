@@ -8,17 +8,27 @@ use App\Models\CampoModuloModel;
 use App\Models\CandidatoModel;
 use App\Models\FaseRecrutamentoModel;
 use App\Models\ModuloModel;
+use App\Services\Modulos\ColunasDoModulo;
+use App\Services\Modulos\FasesDoModulo;
+use App\Services\Modulos\LigacoesDoModulo;
 
+/**
+ * Cadastro das tabelas (módulos) e a conferência de acesso a elas. As
+ * colunas ficam em Modulos\ColunasDoModulo, as fases do recrutamento em
+ * Modulos\FasesDoModulo e as ligações entre tabelas em
+ * Modulos\LigacoesDoModulo.
+ */
 class ModuloService
 {
-    private const TIPOS_VALIDOS = ['texto', 'numero', 'data', 'selecao'];
-
     protected ModuloModel $moduloModel;
     protected CampoModuloModel $campoModuloModel;
     protected FaseRecrutamentoModel $faseRecrutamentoModel;
     protected CandidatoModel $candidatoModel;
     protected AutomacaoModel $automacaoModel;
     protected AutorizacaoModuloService $autorizacaoModuloService;
+    protected ColunasDoModulo $colunas;
+    protected FasesDoModulo $fases;
+    protected LigacoesDoModulo $ligacoes;
 
     public function __construct()
     {
@@ -28,28 +38,31 @@ class ModuloService
         $this->candidatoModel           = new CandidatoModel();
         $this->automacaoModel           = new AutomacaoModel();
         $this->autorizacaoModuloService = new AutorizacaoModuloService();
+        $this->colunas                  = new ColunasDoModulo($this->moduloModel, $this->campoModuloModel, $this->automacaoModel, $this->autorizacaoModuloService);
+        $this->fases                    = new FasesDoModulo($this->faseRecrutamentoModel, $this->candidatoModel);
+        $this->ligacoes                 = new LigacoesDoModulo($this->moduloModel, $this->campoModuloModel, $this->autorizacaoModuloService);
     }
 
-    public function criarModulo(string $empresaId, string $usuarioId, string $cargoId, array $dados): array
+    public function criarModulo(string $empresaId, string $usuarioId, string $cargoId, array $dados, bool $acessoTotal = false): array
     {
         $tipo   = $dados['tipo'] ?? 'dados';
         $campos = $dados['campos'] ?? [];
         $fases  = $dados['fases'] ?? [];
 
         if (! in_array($tipo, ['dados', 'arquivo', 'recrutamento', 'financeiro'], true)) {
-            throw new \DomainException("Tipo de módulo inválido: '{$tipo}'.");
+            throw new \DomainException("Tipo de tabela inválida: '{$tipo}'.");
         }
 
         if ($tipo === 'dados' && empty($campos)) {
-            throw new \DomainException('O módulo precisa de pelo menos um campo.');
+            throw new \DomainException('A tabela precisa de pelo menos uma coluna.');
         }
 
         if ($tipo === 'recrutamento' && empty($fases)) {
-            throw new \DomainException('O módulo de recrutamento precisa de pelo menos uma fase.');
+            throw new \DomainException('A tabela de recrutamento precisa de pelo menos uma fase.');
         }
 
         foreach ($campos as $campo) {
-            $this->validarCampo($campo);
+            $this->colunas->validar($campo, $empresaId, $cargoId, $acessoTotal);
         }
 
         foreach ($fases as $nomeFase) {
@@ -70,13 +83,7 @@ class ModuloService
         ]);
 
         foreach ($campos as $ordem => $campo) {
-            $this->campoModuloModel->insert([
-                'modulo_id' => $moduloId,
-                'nome'      => $campo['nome'],
-                'tipo'      => $campo['tipo'],
-                'opcoes'    => $campo['opcoes'] ?? null,
-                'ordem'     => $ordem,
-            ]);
+            $this->campoModuloModel->insert($this->colunas->paraGravar($moduloId, $campo, $ordem));
         }
 
         foreach ($fases as $ordem => $nomeFase) {
@@ -93,26 +100,12 @@ class ModuloService
         $db->transComplete();
 
         if ($db->transStatus() === false) {
-            throw new \RuntimeException('Não foi possível criar o módulo. Tente novamente.');
+            throw new \RuntimeException('Não foi possível criar a tabela. Tente novamente.');
         }
+
+        AtividadeService::registrar('tabela_criada', "Criou a tabela “{$dados['nome']}”", $moduloId, $dados['nome']);
 
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, true);
-    }
-
-    private function validarCampo(array $campo): void
-    {
-        if (empty($campo['nome'])) {
-            throw new \DomainException('Todo campo precisa de um nome.');
-        }
-
-        if (! in_array($campo['tipo'] ?? null, self::TIPOS_VALIDOS, true)) {
-            $tipoRecebido = $campo['tipo'] ?? '(vazio)';
-            throw new \DomainException("Tipo de campo inválido: '{$tipoRecebido}'.");
-        }
-
-        if ($campo['tipo'] === 'selecao' && empty($campo['opcoes'])) {
-            throw new \DomainException('Campos do tipo Seleção Única precisam de ao menos uma opção.');
-        }
     }
 
     /**
@@ -146,7 +139,7 @@ class ModuloService
             ->first();
 
         if (! $modulo) {
-            throw new NaoEncontradoException('Módulo não encontrado.');
+            throw new NaoEncontradoException('Tabela não encontrada.');
         }
 
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'visualizar');
@@ -155,6 +148,8 @@ class ModuloService
             ->where('modulo_id', $moduloId)
             ->orderBy('ordem', 'ASC')
             ->findAll();
+
+        $modulo = $this->ligacoes->anexar($modulo, $cargoId, $acessoTotal);
 
         if ($modulo['tipo'] === 'recrutamento') {
             $modulo['fases'] = $this->faseRecrutamentoModel
@@ -185,64 +180,52 @@ class ModuloService
             $this->moduloModel->update($moduloId, $camposParaAtualizar);
         }
 
-        return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
+        $modulo = $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
+        if (! empty($camposParaAtualizar)) {
+            AtividadeService::registrar('tabela_alterada', "Alterou nome ou ícone da tabela “{$modulo['nome']}”", $moduloId, $modulo['nome']);
+        }
+
+        return $modulo;
     }
+
+    public function excluirModulo(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
+    {
+        $modulo = $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
+        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
+
+        // Ligações de outras tabelas para esta (as dela mesma somem junto).
+        $dependentes = $this->campoModuloModel
+            ->select('modulo.nome')
+            ->join('modulo', 'modulo.id = campo_modulo.modulo_id')
+            ->where('campo_modulo.modulo_vinculado_id', $moduloId)
+            ->where('campo_modulo.modulo_id !=', $moduloId)
+            ->findAll();
+
+        if ($dependentes !== []) {
+            $nomes = implode('”, “', array_unique(array_column($dependentes, 'nome')));
+            throw new \DomainException("Não é possível excluir: a tabela “{$nomes}” tem uma coluna ligada a esta. Exclua essa coluna antes.");
+        }
+
+        $this->moduloModel->delete($moduloId);
+        AtividadeService::registrar('tabela_excluida', "Excluiu a tabela “{$modulo['nome']}”", $moduloId, $modulo['nome']);
+    }
+
+    // Colunas (ver Modulos\ColunasDoModulo).
 
     public function adicionarCampo(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $campo): array
     {
         $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
 
-        $this->validarCampo($campo);
-
-        $proximaOrdem = $this->campoModuloModel->where('modulo_id', $moduloId)->countAllResults();
-
-        $this->campoModuloModel->insert([
-            'modulo_id' => $moduloId,
-            'nome'      => $campo['nome'],
-            'tipo'      => $campo['tipo'],
-            'opcoes'    => $campo['opcoes'] ?? null,
-            'ordem'     => $proximaOrdem,
-        ]);
+        $this->colunas->adicionar($moduloId, $empresaId, $cargoId, $acessoTotal, $campo);
 
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
-    }
-
-    private function buscarCampoValidado(string $campoId, string $moduloId, string $empresaId): array
-    {
-        $campo = $this->campoModuloModel
-            ->select('campo_modulo.*')
-            ->join('modulo', 'modulo.id = campo_modulo.modulo_id')
-            ->where('campo_modulo.id', $campoId)
-            ->where('campo_modulo.modulo_id', $moduloId)
-            ->where('modulo.empresa_id', $empresaId)
-            ->first();
-
-        if (! $campo) {
-            throw new NaoEncontradoException('Campo não encontrado.');
-        }
-
-        return $campo;
     }
 
     public function atualizarCampo(string $campoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, array $dados): array
     {
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
-        $this->buscarCampoValidado($campoId, $moduloId, $empresaId);
-
-        $camposParaAtualizar = [];
-
-        if (isset($dados['nome'])) {
-            $camposParaAtualizar['nome'] = $dados['nome'];
-        }
-
-        if (array_key_exists('opcoes', $dados)) {
-            $camposParaAtualizar['opcoes'] = $dados['opcoes'];
-        }
-
-        if (! empty($camposParaAtualizar)) {
-            $this->campoModuloModel->update($campoId, $camposParaAtualizar);
-        }
+        $this->colunas->atualizar($campoId, $moduloId, $empresaId, $dados);
 
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
     }
@@ -252,27 +235,7 @@ class ModuloService
         $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
 
-        $idsExistentes = array_column($this->campoModuloModel->where('modulo_id', $moduloId)->findAll(), 'id');
-
-        $listaBate = count($ordemCampoIds) === count($idsExistentes)
-            && empty(array_diff($ordemCampoIds, $idsExistentes));
-
-        if (! $listaBate) {
-            throw new \DomainException('A lista enviada não corresponde exatamente aos campos deste módulo.');
-        }
-
-        $db = db_connect();
-        $db->transStart();
-
-        foreach ($ordemCampoIds as $ordem => $campoId) {
-            $this->campoModuloModel->update($campoId, ['ordem' => $ordem]);
-        }
-
-        $db->transComplete();
-
-        if ($db->transStatus() === false) {
-            throw new \RuntimeException('Não foi possível reordenar os campos. Tente novamente.');
-        }
+        $this->colunas->reordenar($moduloId, $ordemCampoIds);
 
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
     }
@@ -280,81 +243,25 @@ class ModuloService
     public function excluirCampo(string $campoId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
     {
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
-        $this->buscarCampoValidado($campoId, $moduloId, $empresaId);
-
-        $db = db_connect();
-
-        $linha = $db->query(
-            'SELECT COUNT(*) AS total FROM registro WHERE modulo_id = ? AND jsonb_exists(dados, ?)',
-            [$moduloId, $campoId]
-        )->getRow();
-
-        if ((int) $linha->total > 0) {
-            throw new \DomainException('Não é possível excluir um campo que já possui registros preenchidos.');
-        }
-
-        if ($this->automacaoModel->where('campo_condicao_id', $campoId)->first()) {
-            throw new \DomainException('Não é possível excluir um campo usado como condição em uma automação.');
-        }
-
-        $this->campoModuloModel->delete($campoId);
+        $this->colunas->excluir($campoId, $moduloId, $empresaId);
     }
 
-    public function excluirModulo(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
-    {
-        $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
-        $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
-
-        $this->moduloModel->delete($moduloId);
-    }
+    // Fases do recrutamento (ver Modulos\FasesDoModulo).
 
     public function adicionarFase(string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $nomeFase): array
     {
         $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
 
-        if (trim($nomeFase) === '') {
-            throw new \DomainException('Toda fase precisa de um nome.');
-        }
-
-        $proximaOrdem = $this->faseRecrutamentoModel->where('modulo_id', $moduloId)->countAllResults();
-
-        $this->faseRecrutamentoModel->insert([
-            'modulo_id' => $moduloId,
-            'nome'      => $nomeFase,
-            'ordem'     => $proximaOrdem,
-        ]);
+        $this->fases->adicionar($moduloId, $nomeFase);
 
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
-    }
-
-    private function buscarFaseValidada(string $faseId, string $moduloId, string $empresaId): array
-    {
-        $fase = $this->faseRecrutamentoModel
-            ->select('fase_recrutamento.*')
-            ->join('modulo', 'modulo.id = fase_recrutamento.modulo_id')
-            ->where('fase_recrutamento.id', $faseId)
-            ->where('fase_recrutamento.modulo_id', $moduloId)
-            ->where('modulo.empresa_id', $empresaId)
-            ->first();
-
-        if (! $fase) {
-            throw new NaoEncontradoException('Fase não encontrada.');
-        }
-
-        return $fase;
     }
 
     public function atualizarFase(string $faseId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal, string $novoNome): array
     {
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
-        $this->buscarFaseValidada($faseId, $moduloId, $empresaId);
-
-        if (trim($novoNome) === '') {
-            throw new \DomainException('Toda fase precisa de um nome.');
-        }
-
-        $this->faseRecrutamentoModel->update($faseId, ['nome' => $novoNome]);
+        $this->fases->renomear($faseId, $moduloId, $empresaId, $novoNome);
 
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
     }
@@ -364,27 +271,7 @@ class ModuloService
         $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
 
-        $idsExistentes = array_column($this->faseRecrutamentoModel->where('modulo_id', $moduloId)->findAll(), 'id');
-
-        $listaBate = count($ordemFaseIds) === count($idsExistentes)
-            && empty(array_diff($ordemFaseIds, $idsExistentes));
-
-        if (! $listaBate) {
-            throw new \DomainException('A lista enviada não corresponde exatamente às fases desta vaga.');
-        }
-
-        $db = db_connect();
-        $db->transStart();
-
-        foreach ($ordemFaseIds as $ordem => $faseId) {
-            $this->faseRecrutamentoModel->update($faseId, ['ordem' => $ordem]);
-        }
-
-        $db->transComplete();
-
-        if ($db->transStatus() === false) {
-            throw new \RuntimeException('Não foi possível reordenar as fases. Tente novamente.');
-        }
+        $this->fases->reordenar($moduloId, $ordemFaseIds);
 
         return $this->buscarModuloComCampos($moduloId, $empresaId, $cargoId, $acessoTotal);
     }
@@ -392,14 +279,6 @@ class ModuloService
     public function excluirFase(string $faseId, string $moduloId, string $empresaId, string $cargoId, bool $acessoTotal): void
     {
         $this->autorizacaoModuloService->exigirNivel($acessoTotal, $cargoId, $moduloId, 'gerenciar');
-        $this->buscarFaseValidada($faseId, $moduloId, $empresaId);
-
-        $totalCandidatos = $this->candidatoModel->where('fase_atual_id', $faseId)->countAllResults();
-
-        if ($totalCandidatos > 0) {
-            throw new \DomainException('Não é possível excluir uma fase que ainda possui candidatos.');
-        }
-
-        $this->faseRecrutamentoModel->delete($faseId);
+        $this->fases->excluir($faseId, $moduloId, $empresaId);
     }
 }
