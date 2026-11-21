@@ -20,7 +20,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",
-    "read-excel-file": "^6.0.3"
+    "read-excel-file": "^9.3.17"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
